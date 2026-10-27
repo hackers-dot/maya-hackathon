@@ -7,9 +7,10 @@ from src.budget import DEFAULT_CAP, BudgetExceeded, TokenBudget
 
 def test_tracks_run_totals(tmp_path):
     b = TokenBudget("r1", path=tmp_path / "u.jsonl")
-    b.add({"prompt_tokens": 151, "completion_tokens": 657, "total_tokens": 808})
+    b.add({"prompt_tokens": 151, "completion_tokens": 657, "total_tokens": 808,
+           "completion_tokens_details": {"reasoning_tokens": 600}})
     run = b.add({"prompt_tokens": 10, "completion_tokens": 5})  # total derived when missing
-    assert run == {"prompt_tokens": 161, "completion_tokens": 662, "total_tokens": 823}
+    assert run == {"prompt_tokens": 161, "completion_tokens": 662, "total_tokens": 823, "reasoning_tokens": 600}
     assert b.remaining == DEFAULT_CAP - 823 and DEFAULT_CAP == 200_000
 
 
@@ -30,9 +31,10 @@ def test_overall_across_runs(tmp_path):
     path = tmp_path / "u.jsonl"
     TokenBudget("a", path=path).add({"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3})
     TokenBudget("b", path=path).add({"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30})
-    assert TokenBudget.overall(path) == {"prompt_tokens": 11, "completion_tokens": 22, "total_tokens": 33}
+    assert TokenBudget.overall(path) == {"prompt_tokens": 11, "completion_tokens": 22, "total_tokens": 33,
+                                        "reasoning_tokens": 0}
     assert TokenBudget.overall(tmp_path / "missing.jsonl") == {"prompt_tokens": 0, "completion_tokens": 0,
-                                                                "total_tokens": 0}
+                                                                "total_tokens": 0, "reasoning_tokens": 0}
 
 
 def test_invalid_input(tmp_path):

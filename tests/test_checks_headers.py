@@ -23,7 +23,13 @@ def test_missing_security_headers():
         assert f.severity == severity(f.check)
         assert f.location == "/shop/cart" and f.target == "http://127.0.0.1:8081"
         assert f.evidence[0].record_id == "ev-123"
-        assert f.demo is False
+        assert f.demo is True  # loopback = our demo app
+
+
+def test_demo_flag_false_for_non_loopback_target():
+    # pure function over a fabricated response; no request is made
+    findings = check_security_headers(resp([], url="https://shop.example/login"))
+    assert findings and all(f.demo is False for f in findings)
 
 
 def test_good_headers_no_findings():

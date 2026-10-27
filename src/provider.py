@@ -6,8 +6,10 @@ from pathlib import Path
 
 import httpx
 
-DEFAULT_MAX_TOKENS = 16384  # reasoning eats budget before the answer starts
+DEFAULT_MAX_TOKENS = 1500
+DEFAULT_REASONING_EFFORT = "low"
 REASONING_FIELDS = ("reasoning_content", "reasoning")
+ZERO_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
 
 class ProviderError(RuntimeError):
@@ -18,8 +20,10 @@ class ProviderError(RuntimeError):
 class ChatResult:
     answer: str
     reasoning_present: bool
-    usage: dict
+    usage: dict  # OpenAI-style, may include completion_tokens_details.reasoning_tokens (fed to TokenBudget)
     demo: bool = False
+    tool_calls: list = field(default_factory=list)
+    finish_reason: str | None = None
     reasoning: str | None = field(default=None, repr=False)  # kept out of repr so it never lands in logs
 
 
@@ -53,26 +57,38 @@ def _scrub(text: str, secret: str) -> str:
 class Provider:
     demo = False
 
-    def __init__(self, base_url: str, model: str, api_key_env: str,
-                 max_tokens: int = DEFAULT_MAX_TOKENS, timeout: float = 300.0, transport=None):
+    def __init__(self, base_url: str, model: str, api_key_env: str, max_tokens: int = DEFAULT_MAX_TOKENS,
+                 reasoning_effort: str | None = DEFAULT_REASONING_EFFORT, timeout: float = 300.0, transport=None):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key_env = api_key_env
         self.max_tokens = max_tokens
+        self.reasoning_effort = reasoning_effort
         self.timeout = timeout
         self.transport = transport  # tests inject httpx.MockTransport
 
     @classmethod
     def from_config(cls, path: str | Path = "config.yaml", **kw) -> "Provider":
         c = load_config(path)
+        kw.setdefault("max_tokens", int(c.get("max_tokens", DEFAULT_MAX_TOKENS)))
+        kw.setdefault("reasoning_effort", c.get("reasoning_effort", DEFAULT_REASONING_EFFORT))
         return cls(c["base_url"], c["model"], c["api_key_env"], **kw)
 
-    def chat(self, messages: list[dict], max_tokens: int | None = None) -> ChatResult:
+    def chat(self, messages: list[dict], max_tokens: int | None = None, tools: list | None = None,
+             tool_choice: str | dict | None = None, response_format: dict | None = None,
+             reasoning_effort: str | None = None) -> ChatResult:
         key = os.environ.get(self.api_key_env)
         if not key:
             raise ProviderError(f"environment variable {self.api_key_env} is not set; "
                                 "set it as a user environment variable (never in a file)")
         body = {"model": self.model, "messages": messages, "max_tokens": max_tokens or self.max_tokens}
+        if reasoning_effort or self.reasoning_effort:
+            body["reasoning_effort"] = reasoning_effort or self.reasoning_effort
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = tool_choice or "auto"
+        if response_format:
+            body["response_format"] = response_format
         try:
             with httpx.Client(transport=self.transport, timeout=self.timeout) as client:
                 r = client.post(f"{self.base_url}/chat/completions", json=body,
@@ -88,17 +104,25 @@ class Provider:
         except (ValueError, KeyError, IndexError, TypeError):
             raise ProviderError("unexpected response shape: no choices[0].message") from None
         answer, reasoning = split_reasoning(message)
-        if not answer and choice.get("finish_reason") == "length":
+        tool_calls = message.get("tool_calls") or []
+        finish = choice.get("finish_reason")
+        if not answer and not tool_calls and finish == "length":
             raise ProviderError("hit max_tokens before the final answer; raise max_tokens")
-        return ChatResult(answer, reasoning is not None, data.get("usage") or {}, reasoning=reasoning)
+        return ChatResult(answer, reasoning is not None, data.get("usage") or {}, tool_calls=tool_calls,
+                          finish_reason=finish, reasoning=reasoning)
 
 
 class MockProvider:
+    """Offline provider (demo=True). With `script`, returns those ChatResults in order (tests, offline demos)."""
     demo = True
 
-    def __init__(self, answer: str = "Hello from MAYA's mock provider."):
+    def __init__(self, answer: str = "Hello from MAYA's mock provider.", script: list[ChatResult] | None = None):
         self.answer = answer
+        self.script = list(script or [])
+        self.calls: list[dict] = []
 
-    def chat(self, messages: list[dict], max_tokens: int | None = None) -> ChatResult:
-        return ChatResult(self.answer, False,
-                          {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}, demo=True)
+    def chat(self, messages: list[dict], **kw) -> ChatResult:
+        self.calls.append({"messages": [dict(m) for m in messages], **kw})
+        if self.script:
+            return self.script.pop(0)
+        return ChatResult(self.answer, False, dict(ZERO_USAGE), demo=True)

@@ -11,9 +11,10 @@ Intentional weaknesses (default mode):
   - Server header revealing a version
   - /.env served with FAKE values
   - directory listing on /backup/
+  - a downloadable database dump at /db.sql (FAKE content)
 
 --fixed applies FIXED_CONFIG: security headers added, cookie flags set, version hidden,
-/.env and /backup/ return 404. A re-test against --fixed proves the fixes.
+/.env, /backup/ and /db.sql return 404. A re-test against --fixed proves the fixes.
 
 Run:  python demo_app/app.py [--port 8081] [--fixed]
 """
@@ -44,7 +45,7 @@ FIXED_CONFIG = {
     },
     "cookie_flags": "; Secure; HttpOnly; SameSite=Lax",
     "server": "DemoShop",
-    "blocked_paths": {"/.env", "/backup", "/backup/", "/backup/shop-db.sql.bak"},
+    "blocked_paths": {"/.env", "/backup", "/backup/", "/backup/shop-db.sql.bak", "/db.sql"},
 }
 
 
@@ -74,7 +75,7 @@ class DemoHandler(BaseHTTPRequestHandler):
             return self._send(200, "text/plain", FAKE_ENV, send_body)
         if path in ("/backup", "/backup/"):
             return self._send(200, "text/html", LISTING_HTML, send_body)
-        if path == "/backup/shop-db.sql.bak":
+        if path in ("/backup/shop-db.sql.bak", "/db.sql"):
             return self._send(200, "application/octet-stream", FAKE_BACKUP, send_body)
         return self._send(404, "text/plain", "Not found", send_body)
 

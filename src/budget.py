@@ -5,7 +5,7 @@ from pathlib import Path
 
 DEFAULT_CAP = 200_000
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "data" / "usage.jsonl"
-KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
+KEYS = ("prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens")  # reasoning is part of completion
 
 
 class BudgetExceeded(RuntimeError):
@@ -24,14 +24,15 @@ class TokenBudget:
         p = int(usage.get("prompt_tokens") or 0)
         c = int(usage.get("completion_tokens") or 0)
         t = int(usage.get("total_tokens") or p + c)
-        if min(p, c, t) < 0:
+        r = int((usage.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0)
+        if min(p, c, t, r) < 0:
             raise ValueError("token counts cannot be negative")
-        for k, v in zip(KEYS, (p, c, t)):
+        for k, v in zip(KEYS, (p, c, t, r)):
             self.run[k] += v
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as f:  # logged even when this call breaks the cap
             f.write(json.dumps({"run_id": self.run_id, "at": datetime.now(timezone.utc).isoformat(),
-                                **dict(zip(KEYS, (p, c, t))), "run_total": self.run["total_tokens"]}) + "\n")
+                                **dict(zip(KEYS, (p, c, t, r))), "run_total": self.run["total_tokens"]}) + "\n")
         if self.run["total_tokens"] > self.cap:
             raise BudgetExceeded(f"run {self.run_id!r} used {self.run['total_tokens']} tokens, cap is {self.cap}")
         return dict(self.run)
@@ -49,5 +50,5 @@ class TokenBudget:
             for line in path.read_text(encoding="utf-8").splitlines():
                 rec = json.loads(line)
                 for k in KEYS:
-                    totals[k] += rec[k]
+                    totals[k] += rec.get(k, 0)
         return totals

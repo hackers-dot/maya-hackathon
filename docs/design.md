@@ -28,10 +28,31 @@ The model plans, explains and drafts patches. It never touches the network direc
 - At most 256 KB of a response body is read.
 - Every response is written to the evidence store, and the response carries its `evidence_id`.
 
-## Tools (checks)
+## Scanner checks
 
-Checks are read-only, non-destructive observations. No exploit code, no attack payloads, no brute force.
-- `src/scanner/checks_headers.py`: pure functions over a `Response` (no network). They cover missing CSP/HSTS/X-Frame-Options/X-Content-Type-Options, cookie flags (Secure/HttpOnly/SameSite), and version disclosure in `Server`/`X-Powered-By`. Each `Finding` carries the check id, location (URL path), severity from the table, and the evidence record id.
+Checks are read-only, non-destructive observations. No exploit code, no attack payloads, no brute force. Every check is a pure function (no network); fetching happens only in `HttpClient`.
+- `checks_headers.py`: missing CSP/HSTS/X-Frame-Options/X-Content-Type-Options, cookie flags (Secure/HttpOnly/SameSite), and version disclosure in `Server`/`X-Powered-By`.
+- `checks_files.py`: exposed `/.env` (non-HTML 200 with `KEY=value` lines), `/.git/HEAD` (`ref: refs/...` or a 40-hex SHA), common backup files (`/backup.zip`, `/db.sql`, `/index.php.bak`; non-HTML 200), and directory listings (`Index of /`, `Directory listing for /`). HTML 200s are ignored to avoid catch-all false positives. Body excerpts are redacted before they go into a Finding.
+- `checks_dns.py`: SPF (missing, more than one record, `+all`/bare `all`) and DMARC (missing, duplicates, no valid `p=`), parsed from TXT strings. The lookup itself is not implemented (stdlib has no TXT resolver; adding one needs a dependency).
+- `findings.py` builds every `Finding`: severity from the table, `id = check:location[:suffix]`, and `demo=True` when the target is loopback (our demo app).
+- `runner.py`: `run_check(client, base, check_id, path)` for the agent, and `scan_all()`, a deterministic full scan. DNS/TLS checks raise `NotRunnable` over HTTP.
+
+## Agent: `src/agent/`
+
+- **`tools.py`: allowlisted tools.** `run_check(check_id, path)`, `list_findings()`, `get_evidence(id)`.
+  - Every call is validated before anything runs: the tool name must be on the allowlist, args must be a JSON-object string with exactly the expected keys, `check_id` must be from the table, and `path` must start with a single `/` with no scheme, host, `..`, `@`, backslash or whitespace. Evidence ids must be 32-char hex.
+  - Rejected calls are logged and never executed. Accepted calls are executed by code and logged (args redacted).
+- **`loop.py`: bounded loop on native tool calling** (`tools` + `tool_choice="auto"`).
+  - Stops after `MAX_STEPS` (default 8), at most 4 tool calls per step. `reasoning_effort` and `max_tokens` come from `config.yaml` (low, 1500) through the provider.
+  - Every reply's usage, including `reasoning_tokens`, goes into `TokenBudget`. `BudgetExceeded` stops the loop cleanly before any further tool runs.
+  - Every step writes a trace entry: step, tool, args (redacted), result summary, tokens.
+  - The final answer must be JSON claims; there is no free-text report.
+- **`verifier.py`: claim verification.** Claims are typed: `{finding_id, claim_type (enum), quoted_evidence}`, with extra keys forbidden, so a model-supplied `severity` makes the claim malformed. A claim is kept only if:
+  1. the finding exists (it was produced by code in this run),
+  2. `claim_type` matches the finding's check,
+  3. the evidence record's sha256 verifies,
+  4. the quote appears verbatim in that record (request line, status, headers, body).
+  Anything else is listed as "insufficient evidence" with a reason. Report text comes from fixed templates; severity comes from the finding, i.e. the table.
 
 ## Evidence store: `src/evidence.py`
 
@@ -85,4 +106,4 @@ See `src/models.py`:
 
 ## Model provider
 
-An OpenAI-compatible chat endpoint (`config.yaml`). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. `MockProvider` (demo=True) is used for offline runs and tests.
+An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

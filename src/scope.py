@@ -45,3 +45,13 @@ def check_target(url: str, verified: frozenset[str] | set[str] = frozenset()) ->
 
 
 check = check_target
+
+
+def is_loopback(host: str) -> bool:
+    """True for our own demo app's hosts (localhost, 127.0.0.0/8, ::1)."""
+    if host.lower() in LOOPBACK_NAMES:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
