@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAYA - Sign in</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header><span class="brand">MAYA</span><span></span></header>
+<main>
+<h1>Sign in to MAYA</h1>
+<form id="signin-form">
+<label for="signin-email">Email</label>
+<input id="signin-email" name="email" type="email" autocomplete="username" required>
+<label for="signin-password">Password</label>
+<input id="signin-password" name="password" type="password" autocomplete="current-password" required minlength="10">
+<button type="submit">Sign in</button>
+</form>
+<h2>New here? Create an account</h2>
+<form id="signup-form">
+<label for="signup-email">Email</label>
+<input id="signup-email" name="email" type="email" autocomplete="username" required>
+<label for="signup-password">Password (at least 10 characters)</label>
+<input id="signup-password" name="password" type="password" autocomplete="new-password" required minlength="10">
+<button type="submit">Create account</button>
+</form>
+<p id="message" class="message" role="status"></p>
+</main>
+</body>
+</html>

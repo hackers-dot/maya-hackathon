@@ -1,0 +1,24 @@
+:root { --fg: #1d1d1f; --muted: #5f6368; --line: #d9d9de; --accent: #1f5fbf; --bg: #fff; --err: #a3261b; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); line-height: 1.5; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
+header .brand { font-weight: 700; letter-spacing: 0.04em; }
+header .who { color: var(--muted); font-size: 0.9rem; margin-right: 0.5rem; }
+main { max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+h1 { font-size: 1.5rem; margin: 0 0 1rem; }
+h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+form { display: grid; gap: 0.5rem; margin-bottom: 1.5rem; }
+label { font-size: 0.9rem; color: var(--muted); }
+input { font: inherit; padding: 0.55rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; }
+button { font: inherit; padding: 0.6rem 1rem; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+button.secondary { background: #fff; color: var(--accent); }
+.choices { display: grid; gap: 0.5rem; }
+.choices button { text-align: left; }
+.soon { display: block; padding: 0.6rem 1rem; border: 1px dashed var(--line); border-radius: 6px; color: var(--muted); }
+.soon em { font-style: normal; font-size: 0.85rem; margin-left: 0.5rem; }
+.row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.message { min-height: 1.5rem; margin: 0.5rem 0; color: var(--muted); }
+.message.error { color: var(--err); }
+.hint { color: var(--muted); font-size: 0.9rem; }
+ul.will li::marker { content: "+ "; }
+ul.wont li::marker { content: "- "; }

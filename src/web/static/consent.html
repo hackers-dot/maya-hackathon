@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAYA - Consent</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header><span class="brand">MAYA</span><span><span id="who" class="who"></span><button id="signout" class="secondary" type="button">Sign out</button></span></header>
+<main>
+<h1>Before MAYA starts</h1>
+<h2>MAYA will (read-only checks)</h2>
+<ul class="will">
+<li>Read the HTTP response headers your website sends.</li>
+<li>Read the flags on the cookies your website sets.</li>
+<li>Check whether files such as .env, .git and backups are publicly reachable, using GET requests only.</li>
+<li>Read your public DNS records for email settings (SPF and DMARC).</li>
+</ul>
+<h2>MAYA will NOT</h2>
+<ul class="wont">
+<li>Run exploits or send attack payloads.</li>
+<li>Brute force or guess passwords.</li>
+<li>Change anything on your website without your approval.</li>
+</ul>
+<p class="hint">Checks run only on a website you have verified you own.</p>
+<div class="row"><button id="consent-allow" type="button">Allow</button></div>
+<p id="message" class="message" role="status"></p>
+</main>
+</body>
+</html>

@@ -27,6 +27,10 @@ All code in this repository was written during the Meta Global AI Developer Hack
   - The re-test reruns the same checks and reports FIXED only when every original finding is gone, with a before/after diff.
   - `scripts/demo_fix_flow.py` runs the whole flow without a model.
   - Small fixes: `.env` evidence now shows a masked secret-looking line, backups show a SQL/zip signature line, and notes may name the `Secure` cookie attribute.
+- **2026-10-27 (Web step 1):** A stdlib web app on `127.0.0.1:8090` (`scripts/run_web.py`).
+  - Security headers on every response, Host-header check, static files only from the repo, no inline scripts, and no `innerHTML` (enforced by a test).
+  - Email + password accounts with scrypt hashing, a login limit of 5 failures per 5 minutes per account, HttpOnly + SameSite=Strict server-side sessions, and a CSRF token on every POST.
+  - User flow: account type → what you have (only Website works for now) → connect yes/no → consent screen listing what MAYA will and will not do → placeholder chat.
 
 ## License
 

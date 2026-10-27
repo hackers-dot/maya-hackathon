@@ -168,6 +168,30 @@ See `src/models.py`:
 5. **The demo app's fixes are independent,** keyed by check id (`FIX_HEADERS`, `FIX_COOKIE`, `FIX_BLOCKED`, server version), so a partial apply leaves exactly the unapplied issues. `--fixed` turns on all of them.
 6. `scripts/demo_fix_flow.py` runs the whole flow on loopback with no model: scan → proposals → approve as "demo-user" → apply → health check → re-test → before/after → audit-chain check.
 
+## Web app (Web step 1): `src/web/`
+
+- **Server (`server.py`):** stdlib `ThreadingHTTPServer`, bound to `127.0.0.1` only (any other host raises), default port 8090; started with `scripts/run_web.py`.
+  - Requests whose `Host` header is not `127.0.0.1` or `localhost` (any port) get 400. This guards against DNS rebinding.
+  - Every response, errors and 501s included, carries `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. `Server` is just `MAYA`.
+  - Request bodies are always drained first (up to 1 MB), so early refusals don't reset the connection. JSON bodies are limited to 16 KB; anything else gets 415.
+  - Nothing is logged per request, so nothing a user types reaches a log.
+- **Static files** come only from `src/web/static/` (name pattern `[a-z0-9_-]+.(html|js|css)`, no traversal). There are no CDNs, external fonts, inline scripts, inline styles or inline handlers. `app.js` writes server strings with `textContent` only and follows only same-origin `next` paths. A test fails if any static file contains `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `eval(`, `new Function` or an `http(s)://` URL.
+- **Auth (`auth.py`):**
+  - Email + password, hashed with `hashlib.scrypt` (n=2^14, r=8, p=1, 16-byte random salt) and checked with `hmac.compare_digest`. Passwords must be 10 to 1024 characters.
+  - Users are stored in `data/web.db`.
+  - Unknown accounts still cost one scrypt hash, so response time does not reveal which accounts exist.
+  - **Login limit:** after 5 failed attempts for an account within 5 minutes, that account's sign-in is refused (429), even with the right password, until the window passes. Other accounts are unaffected.
+  - **Sessions:** a random 256-bit token in a cookie with `HttpOnly; SameSite=Strict; Path=/`. The store is server-side, in memory, with an 8-hour expiry. Signing in replaces the session, which prevents session fixation.
+  - The cookie has no `Secure` flag because the app is plain HTTP on loopback only. Add `Secure` when it is served over HTTPS.
+  - **CSRF:** every POST needs the session's own CSRF token in `X-CSRF-Token` (from `GET /api/session`). An anonymous session is issued first, so sign-in and sign-up are covered too.
+- **Flow:**
+  - sign in / sign up → Individual or Company.
+  - Company → "what do you have?": only Website works; Web app/API, Source code, Server/tool and Mobile/desktop are plain "coming soon" labels, not buttons.
+  - "Connect MAYA for security checks?" Yes / No.
+  - Yes → consent screen: will do read-only checks (headers, cookies, exposed files via GET, public DNS); will NOT run exploits, brute force, or change anything without approval. Allow records a timestamp.
+  - Individual, "No" and a completed consent lead to the placeholder chat page ("coming next").
+  - The server decides each next page, and out-of-order steps get 409.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.
