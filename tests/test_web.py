@@ -213,11 +213,31 @@ def test_static_only_serves_known_files(web, path):
 SINKS = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function|https?://", re.I)
 
 
+EXPECTED_STATIC = {"app.js", "theme.js", "style.css", "signin.html", "onboarding.html", "company.html",
+                   "connect.html", "consent.html", "chat.html"}
+
+
 def test_static_files_have_no_injection_sinks_or_external_urls():
     files = sorted(STATIC_DIR.glob("*"))
-    assert {p.suffix for p in files} == {".html", ".js", ".css"} and len(files) == 8
+    assert {p.name for p in files} == EXPECTED_STATIC  # a new file must be added here, and so gets scanned
     hits = [(p.name, m.group()) for p in files for m in SINKS.finditer(p.read_text(encoding="utf-8"))]
     assert hits == []
+
+
+def test_local_storage_only_inside_try_catch():
+    for name in ("app.js", "theme.js"):
+        for line in (STATIC_DIR / name).read_text(encoding="utf-8").splitlines():
+            if "localStorage" in line:
+                assert line.strip().startswith("try {"), (name, line)
+
+
+def test_chat_is_not_faked():
+    page = (STATIC_DIR / "chat.html").read_text(encoding="utf-8")
+    assert '<textarea id="prompt"' in page and "disabled></textarea>" in page
+    assert 'class="send" type="submit" aria-label="Send" disabled' in page
+    assert "Chat coming next" in page
+    js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    assert "fetch(\"/api/chat" not in js and "/api/chat" not in js  # no chat endpoint, no generated replies
 
 
 def test_static_scanner_catches_bad_patterns(tmp_path):
@@ -273,7 +293,7 @@ def test_individual_and_no_lead_to_chat_placeholder(web, steps):
         r = post(client, path, body)
     assert r.json()["next"] == "/chat"
     page = client.get("/chat")
-    assert page.status_code == 200 and "Coming next." in page.text
+    assert page.status_code == 200 and "Chat coming next" in page.text
 
 
 def test_out_of_order_steps_refused(web):
@@ -293,9 +313,67 @@ def test_consent_page_lists_will_and_will_not():
 
 def test_coming_soon_items_are_not_buttons():
     text = (STATIC_DIR / "company.html").read_text(encoding="utf-8")
-    main = text[text.index("<main>"):text.index("</main>")]  # the header also has a Sign out button
+    main = text[text.index("<main"):text.index("</main>")]  # the corner also has theme and Sign out buttons
     assert main.count("<button") == 1 and 'id="asset-website"' in main
-    assert main.count("coming soon") == 4 and main.count('class="soon"') == 4
+    assert main.count("coming soon") == 4 and main.count('class="option is-soon" aria-disabled="true"') == 4
+
+
+def test_signout_issues_fresh_anonymous_session(web):
+    client, _, _ = web
+    signed_up(client)
+    signed_in_token = client.cookies["maya_session"]
+    r = post(client, "/api/signout", {})
+    assert r.status_code == 200 and r.json()["next"] == "/signin"
+    assert client.cookies["maya_session"] != signed_in_token
+    assert client.get("/api/session").json()["user"] is None
+    # the returned CSRF token belongs to the new session, so the client can sign in again without a reload
+    again = client.post("/api/signin", json={"email": EMAIL, "password": PASSWORD},
+                        headers={"X-CSRF-Token": r.json()["csrf"]})
+    assert again.status_code == 200
+
+
+# --- test-only preview route ---
+
+@pytest.mark.parametrize("path", ["/__preview/chat.html", "/__preview/consent.html", "/__preview/signin.html"])
+def test_preview_route_refused_by_default(web, path):
+    client, _, _ = web
+    assert client.get(path).status_code == 404
+
+
+def test_preview_route_only_in_preview_mode(tmp_path):
+    server = make_server(port=0, data_dir=tmp_path, ui_preview=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with httpx.Client(base_url=f"http://127.0.0.1:{server.server_address[1]}", trust_env=False) as c:
+            r = c.get("/__preview/chat.html")
+            assert r.status_code == 200 and 'id="composer"' in r.text
+            assert r.headers["content-security-policy"] == SECURITY_HEADERS["Content-Security-Policy"]
+            for bad in ["/__preview/app.js", "/__preview/../auth.py", "/__preview/style.css", "/__preview/x.html"]:
+                assert c.get(bad).status_code == 404, bad  # page HTML only
+            assert c.get("/api/session").json()["user"] is None  # preview grants no session or data
+            assert c.get("/chat").headers["location"] == "/signin"  # normal routes still need sign-in
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("value", [1, "yes", "1", None])
+def test_preview_mode_needs_explicit_true(tmp_path, value):
+    server = make_server(port=0, data_dir=tmp_path, ui_preview=value)
+    try:
+        assert server.RequestHandlerClass.app.ui_preview is False
+    finally:
+        server.server_close()
+
+
+# --- automated UI flow script ---
+
+def test_ui_flow_check_script(capsys):
+    from scripts import ui_flow_check
+    assert ui_flow_check.main([]) == 0
+    out = capsys.readouterr().out
+    assert "ALL CHECKS PASSED" in out and "FAIL" not in out
+    assert "(throwaway)" in out and str(Path("data") / "web.db") not in out
 
 
 def test_body_limits(web):

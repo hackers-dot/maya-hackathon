@@ -1,32 +1,38 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MAYA - Sign in</title>
+<meta name="color-scheme" content="dark light">
+<title>MAYA · Sign in</title>
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
 <script src="/static/app.js" defer></script>
 </head>
-<body>
-<header><span class="brand">MAYA</span><span></span></header>
-<main>
-<h1>Sign in to MAYA</h1>
-<form id="signin-form">
-<label for="signin-email">Email</label>
-<input id="signin-email" name="email" type="email" autocomplete="username" required>
-<label for="signin-password">Password</label>
-<input id="signin-password" name="password" type="password" autocomplete="current-password" required minlength="10">
-<button type="submit">Sign in</button>
+<body class="center-page">
+<div class="corner">
+<button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">&#9680;</button>
+</div>
+<main class="card">
+<div class="brand brand-lg"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></div>
+<h1 class="title">Welcome to MAYA</h1>
+<p class="sub">Your AI security agent for websites you own.</p>
+<div class="tabs" role="tablist" aria-label="Sign in or create an account">
+<button id="tab-signin" class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="signin-form">Sign in</button>
+<button id="tab-signup" class="tab" type="button" role="tab" aria-selected="false" aria-controls="signup-form">Create account</button>
+</div>
+<form id="signin-form" class="form">
+<div class="field"><label for="signin-email">Email</label><input id="signin-email" name="email" type="email" autocomplete="username" required></div>
+<div class="field"><label for="signin-password">Password</label><input id="signin-password" name="password" type="password" autocomplete="current-password" required minlength="10"></div>
+<button class="btn btn-primary btn-block" type="submit">Sign in</button>
 </form>
-<h2>New here? Create an account</h2>
-<form id="signup-form">
-<label for="signup-email">Email</label>
-<input id="signup-email" name="email" type="email" autocomplete="username" required>
-<label for="signup-password">Password (at least 10 characters)</label>
-<input id="signup-password" name="password" type="password" autocomplete="new-password" required minlength="10">
-<button type="submit">Create account</button>
+<form id="signup-form" class="form" hidden>
+<div class="field"><label for="signup-email">Email</label><input id="signup-email" name="email" type="email" autocomplete="username" required></div>
+<div class="field"><label for="signup-password">Password (at least 10 characters)</label><input id="signup-password" name="password" type="password" autocomplete="new-password" required minlength="10"></div>
+<button class="btn btn-primary btn-block" type="submit">Create account</button>
 </form>
 <p id="message" class="message" role="status"></p>
 </main>
+<p class="footnote">MAYA runs read-only checks on sites you own. Nothing changes without your approval.</p>
 </body>
 </html>

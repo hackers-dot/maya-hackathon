@@ -31,6 +31,11 @@ All code in this repository was written during the Meta Global AI Developer Hack
   - Security headers on every response, Host-header check, static files only from the repo, no inline scripts, and no `innerHTML` (enforced by a test).
   - Email + password accounts with scrypt hashing, a login limit of 5 failures per 5 minutes per account, HttpOnly + SameSite=Strict server-side sessions, and a CSRF token on every POST.
   - User flow: account type → what you have (only Website works for now) → connect yes/no → consent screen listing what MAYA will and will not do → placeholder chat.
+- **2026-10-27 (Web 1.5):** UI redesign and automated UI checks.
+  - A ChatGPT-style shell (sidebar, suggestion cards, disabled composer marked "Chat coming next", no fake replies) and centered cards for every onboarding step. Dark theme with a light toggle; responsive down to 360 px.
+  - `scripts/ui_flow_check.py` drives the whole flow over HTTP with a throwaway data dir.
+  - `scripts/ui_screens.py` screenshots every page at desktop and mobile size with the installed Chrome over the DevTools protocol, which gives an exact mobile viewport.
+  - Fixes found by these checks: sign-out now returns a fresh CSRF token; tall cards no longer slide under the top controls on mobile; dead space under cards removed; the shell's logo mark is centered.
 
 ## License
 

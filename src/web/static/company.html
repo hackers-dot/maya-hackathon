@@ -1,25 +1,33 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MAYA - What do you have</title>
+<meta name="color-scheme" content="dark light">
+<title>MAYA · What do you have</title>
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
 <script src="/static/app.js" defer></script>
 </head>
-<body>
-<header><span class="brand">MAYA</span><span><span id="who" class="who"></span><button id="signout" class="secondary" type="button">Sign out</button></span></header>
-<main>
-<h1>What do you have?</h1>
-<p class="hint">MAYA checks only things you own. Only websites are supported right now.</p>
-<div class="choices">
-<button id="asset-website" type="button">Website</button>
-<span class="soon">Web app / API<em>coming soon</em></span>
-<span class="soon">Source code<em>coming soon</em></span>
-<span class="soon">Server / tool<em>coming soon</em></span>
-<span class="soon">Mobile / desktop app<em>coming soon</em></span>
+<body class="center-page">
+<div class="corner">
+<span id="who" class="who"></span>
+<button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">&#9680;</button>
+<button id="signout" class="btn btn-quiet" type="button">Sign out</button>
+</div>
+<main class="card">
+<div class="brand brand-lg"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></div>
+<h1 class="title">What do you have?</h1>
+<p class="sub">MAYA checks only things you own. Websites are supported today.</p>
+<div class="options">
+<button id="asset-website" class="option" type="button"><span class="option-title">Website</span><span class="option-desc">Headers, cookies, exposed files and email DNS records.</span></button>
+<div class="option is-soon" aria-disabled="true"><span class="option-title">Web app / API</span><span class="badge">coming soon</span></div>
+<div class="option is-soon" aria-disabled="true"><span class="option-title">Source code</span><span class="badge">coming soon</span></div>
+<div class="option is-soon" aria-disabled="true"><span class="option-title">Server / tool</span><span class="badge">coming soon</span></div>
+<div class="option is-soon" aria-disabled="true"><span class="option-title">Mobile / desktop app</span><span class="badge">coming soon</span></div>
 </div>
 <p id="message" class="message" role="status"></p>
 </main>
+<p class="footnote">MAYA runs read-only checks on sites you own. Nothing changes without your approval.</p>
 </body>
 </html>

@@ -1,18 +1,67 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MAYA - Chat</title>
+<meta name="color-scheme" content="dark light">
+<title>MAYA · Chat</title>
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
 <script src="/static/app.js" defer></script>
 </head>
-<body>
-<header><span class="brand">MAYA</span><span><span id="who" class="who"></span><button id="signout" class="secondary" type="button">Sign out</button></span></header>
-<main>
-<h1>MAYA chat</h1>
-<p>Coming next.</p>
-<p id="message" class="message" role="status"></p>
+<body class="app-body">
+<div class="shell">
+<aside id="sidebar" class="sidebar" aria-label="Sidebar">
+<div class="side-top">
+<a class="brand" href="/chat"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></a>
+<button id="sidebar-close" class="icon-btn only-mobile" type="button" aria-label="Close sidebar">&#10005;</button>
+</div>
+<button id="new-chat" class="btn btn-secondary new-chat" type="button">&#65291; New chat</button>
+<nav class="side-lists" aria-label="History">
+<h3 class="side-heading">Chats</h3>
+<p class="side-empty">No chats yet</p>
+<h3 class="side-heading">Connected assets</h3>
+<ul id="assets-list" class="side-list"></ul>
+<p id="assets-empty" class="side-empty">Nothing connected yet</p>
+</nav>
+<div class="side-bottom">
+<div class="user"><span id="avatar" class="avatar" aria-hidden="true"></span><span id="who" class="who"></span></div>
+<div class="side-actions">
+<button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">&#9680;</button>
+<button id="signout" class="btn btn-quiet" type="button">Sign out</button>
+</div>
+</div>
+</aside>
+<div id="scrim" class="scrim"></div>
+<main class="main">
+<header class="topbar">
+<button id="sidebar-open" class="icon-btn only-mobile" type="button" aria-label="Open sidebar" aria-controls="sidebar" aria-expanded="false">&#9776;</button>
+<span class="brand"><span class="wordmark">MAYA</span></span>
+</header>
+<section class="conversation" aria-label="Conversation">
+<div class="column">
+<div class="empty-state">
+<span class="mark big" aria-hidden="true"></span>
+<h1 class="greeting">How can MAYA help today?</h1>
+<p class="sub">Security checks and answers for the sites you own.</p>
+<div class="suggestions">
+<button class="suggestion" type="button"><span class="suggestion-title">Check my website's security</span><span class="suggestion-desc">Run read-only checks on a site you own.</span></button>
+<button class="suggestion" type="button"><span class="suggestion-title">Explain a vulnerability simply</span><span class="suggestion-desc">Plain-language answers, no jargon.</span></button>
+<button class="suggestion" type="button"><span class="suggestion-title">What should I fix first?</span><span class="suggestion-desc">Prioritize findings by severity.</span></button>
+<button class="suggestion" type="button"><span class="suggestion-title">How does MAYA stay safe?</span><span class="suggestion-desc">What it does and never does.</span></button>
+</div>
+</div>
+<div id="messages" class="messages" aria-live="polite"></div>
+</div>
+</section>
+<footer class="composer-wrap">
+<form id="composer" class="composer" aria-label="Message composer">
+<textarea id="prompt" rows="1" placeholder="Message MAYA..." aria-label="Message" aria-describedby="composer-hint" disabled></textarea>
+<button class="send" type="submit" aria-label="Send" disabled>&#8593;</button>
+</form>
+<p id="composer-hint" class="composer-hint">Chat coming next. MAYA only runs read-only checks on sites you own.</p>
+</footer>
 </main>
+</div>
 </body>
 </html>

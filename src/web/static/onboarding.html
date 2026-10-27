@@ -1,21 +1,30 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MAYA - Account type</title>
+<meta name="color-scheme" content="dark light">
+<title>MAYA · Account type</title>
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
 <script src="/static/app.js" defer></script>
 </head>
-<body>
-<header><span class="brand">MAYA</span><span><span id="who" class="who"></span><button id="signout" class="secondary" type="button">Sign out</button></span></header>
-<main>
-<h1>How will you use MAYA?</h1>
-<div class="choices">
-<button id="choose-individual" type="button">Individual</button>
-<button id="choose-company" type="button">Company</button>
+<body class="center-page">
+<div class="corner">
+<span id="who" class="who"></span>
+<button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">&#9680;</button>
+<button id="signout" class="btn btn-quiet" type="button">Sign out</button>
+</div>
+<main class="card">
+<div class="brand brand-lg"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></div>
+<h1 class="title">How will you use MAYA?</h1>
+<p class="sub">Pick the one that fits. You can change it later.</p>
+<div class="options">
+<button id="choose-individual" class="option" type="button"><span class="option-title">Individual</span><span class="option-desc">Learn about security and ask questions in plain language.</span></button>
+<button id="choose-company" class="option" type="button"><span class="option-title">Company</span><span class="option-desc">Check websites and services your organization owns.</span></button>
 </div>
 <p id="message" class="message" role="status"></p>
 </main>
+<p class="footnote">MAYA runs read-only checks on sites you own. Nothing changes without your approval.</p>
 </body>
 </html>

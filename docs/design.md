@@ -192,6 +192,24 @@ See `src/models.py`:
   - Individual, "No" and a completed consent lead to the placeholder chat page ("coming next").
   - The server decides each next page, and out-of-order steps get 409.
 
+### Web 1.5: UI and automated UI checks
+
+- **Look:** a ChatGPT-style shell (`chat.html`) and centered cards for sign-in and onboarding, in one visual language defined by `style.css`.
+  - Dark theme by default; a light theme via `[data-theme="light"]` and CSS variables.
+  - `theme.js` loads synchronously in `<head>` so the saved theme applies before first paint. `localStorage` is used only inside try/catch, and `?theme=light|dark` previews a theme without saving it.
+  - System font stack, gradient brand and primary buttons, visible `:focus-visible` outlines, `prefers-reduced-motion` respected.
+  - Below 860 px the sidebar becomes an off-canvas drawer (hamburger button, scrim, Esc closes it). Below 560 px everything is one column.
+  - Card pages use auto margins instead of `justify-content: center`, so a tall card never slides under the top corner controls.
+- **Chat is not built yet.** The composer is disabled with a "Chat coming next" hint, suggestion cards only show that hint, and there is no chat endpoint, so no replies are generated or faked (a test checks this).
+- **Security rules are unchanged:** no inline scripts or styles, no external URLs, `textContent` / `createElement` only. The static scan now names the exact set of expected files, so any new file must be listed and is scanned.
+- **Sign-out** now issues a fresh anonymous session and returns its CSRF token, so a client can sign in again without reloading. The flow check found this.
+- **`scripts/ui_flow_check.py`:** browserless flow test with `urllib`, a cookie jar and CSRF tokens. Environment proxies are disabled, redirects are not followed, and it runs against a throwaway data dir by default (or `--base` for a server started with `run_web.py --data-dir`). It covers both paths, refusals, page status and security headers on every page.
+- **Test-only preview route `/__preview/<page>.html`:** serves page HTML with no session or data, only when the server is started with `ui_preview=True` (`run_web.py --ui-preview`). It returns 404 otherwise. It is an explicit flag rather than an environment variable, because the project rule is not to read environment variables.
+- **`scripts/ui_screens.py`:** screenshots with the installed Chrome.
+  - Headless Chrome never lays a page out narrower than about 504 px (measured: `--window-size=390` gives `innerWidth=504`), so CLI `--screenshot` shots at 390 px are cropped and wrong.
+  - The script therefore drives Chrome over the DevTools protocol with a minimal stdlib WebSocket client, sets exact viewports with `Emulation.setDeviceMetricsOverride` (1280×800 and 390×844 mobile), records each page's scroll width to catch horizontal overflow, and stops Chrome afterwards.
+  - Chrome uses a throwaway profile and a debug port it picks on 127.0.0.1. PNGs go to `data/ui_screens/`.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

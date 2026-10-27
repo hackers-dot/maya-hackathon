@@ -1,32 +1,46 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MAYA - Consent</title>
+<meta name="color-scheme" content="dark light">
+<title>MAYA · Consent</title>
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
 <script src="/static/app.js" defer></script>
 </head>
-<body>
-<header><span class="brand">MAYA</span><span><span id="who" class="who"></span><button id="signout" class="secondary" type="button">Sign out</button></span></header>
-<main>
-<h1>Before MAYA starts</h1>
-<h2>MAYA will (read-only checks)</h2>
-<ul class="will">
+<body class="center-page">
+<div class="corner">
+<span id="who" class="who"></span>
+<button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">&#9680;</button>
+<button id="signout" class="btn btn-quiet" type="button">Sign out</button>
+</div>
+<main class="card card-wide">
+<div class="brand brand-lg"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></div>
+<h1 class="title">Before MAYA starts</h1>
+<p class="sub">Here is exactly what MAYA will and will not do.</p>
+<div class="consent-grid">
+<section class="consent-box will"><h2>MAYA will (read-only checks)</h2>
+<ul class="checklist">
 <li>Read the HTTP response headers your website sends.</li>
 <li>Read the flags on the cookies your website sets.</li>
 <li>Check whether files such as .env, .git and backups are publicly reachable, using GET requests only.</li>
 <li>Read your public DNS records for email settings (SPF and DMARC).</li>
-</ul>
-<h2>MAYA will NOT</h2>
-<ul class="wont">
+</ul></section>
+<section class="consent-box wont"><h2>MAYA will NOT</h2>
+<ul class="checklist">
 <li>Run exploits or send attack payloads.</li>
 <li>Brute force or guess passwords.</li>
 <li>Change anything on your website without your approval.</li>
-</ul>
+</ul></section>
+</div>
 <p class="hint">Checks run only on a website you have verified you own.</p>
-<div class="row"><button id="consent-allow" type="button">Allow</button></div>
+<div class="actions">
+<button id="consent-allow" class="btn btn-primary" type="button">Allow</button>
+<a class="btn btn-secondary" href="/connect">Back</a>
+</div>
 <p id="message" class="message" role="status"></p>
 </main>
+<p class="footnote">MAYA runs read-only checks on sites you own. Nothing changes without your approval.</p>
 </body>
 </html>

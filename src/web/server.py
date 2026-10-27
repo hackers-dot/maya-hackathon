@@ -67,12 +67,16 @@ def public_user(user: dict | None) -> dict | None:
             "connect": user["connect"], "consented": user["consent_at"] is not None}
 
 
+PREVIEW_PREFIX = "/__preview/"  # test-only: exists only when the server is started with ui_preview=True
+
+
 class App:
-    def __init__(self, data_dir: Path | None, session_ttl: float, clock):
+    def __init__(self, data_dir: Path | None, session_ttl: float, clock, ui_preview: bool = False):
         db = Path(data_dir) / "web.db" if data_dir else DEFAULT_DB
         self.accounts = Accounts(db, clock=clock)
         self.sessions = Sessions(ttl=session_ttl, clock=clock)
         self.clock = clock
+        self.ui_preview = ui_preview
 
 
 class Reply(Exception):
@@ -155,6 +159,12 @@ class WebHandler(BaseHTTPRequestHandler):
             return self._json(200, {"csrf": session.csrf, "user": public_user(user)}, headers)
         if path.startswith("/static/"):
             return self._static(path[len("/static/"):])
+        if path.startswith(PREVIEW_PREFIX):
+            # page HTML only (no data, no session), for screenshots; refused unless started in preview mode
+            name = path[len(PREVIEW_PREFIX):]
+            if not self.app.ui_preview or name not in {f for f, _ in PAGES.values()}:
+                return self._json(404, {"error": "not found"})
+            return self._static(name)
         if path in PAGES:
             name, needs_user = PAGES[path]
             if needs_user and user is None:
@@ -248,8 +258,10 @@ class WebHandler(BaseHTTPRequestHandler):
         return self._signed_in(session, user_id)
 
     def _post_signout(self, session, body):
+        """End the signed-in session and hand out a fresh anonymous one (new token and CSRF)."""
         self.app.sessions.destroy(session.token)
-        return 200, {"ok": True, "next": "/signin"}, {"Set-Cookie": f"{COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"}
+        anon = self.app.sessions.create()
+        return 200, {"ok": True, "next": "/signin", "csrf": anon.csrf}, self._cookie_header(anon)
 
     def _done(self, user_id: int):
         return 200, {"ok": True, "next": next_page(self.app.accounts.get(user_id))}, None
@@ -296,9 +308,9 @@ class WebHandler(BaseHTTPRequestHandler):
 
 
 def make_server(port: int = DEFAULT_PORT, host: str = HOST, data_dir=None, session_ttl: float = SESSION_TTL,
-                clock=None) -> ThreadingHTTPServer:
+                clock=None, ui_preview: bool = False) -> ThreadingHTTPServer:
     if host != HOST:
         raise ValueError(f"MAYA web binds to {HOST} only; refused {host!r}")
-    app = App(data_dir, session_ttl, clock or time.time)
+    app = App(data_dir, session_ttl, clock or time.time, ui_preview=ui_preview is True)
     handler = type("Handler", (WebHandler,), {"app": app})
     return ThreadingHTTPServer((HOST, port), handler)
