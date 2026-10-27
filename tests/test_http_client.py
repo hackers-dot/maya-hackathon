@@ -80,7 +80,7 @@ def test_rate_limit():
     stamps = []
 
     def handler(req):
-        stamps.append(time.monotonic())
+        stamps.append(time.perf_counter())
         return httpx.Response(200)
 
     c = client_with(handler, min_interval=0.2)

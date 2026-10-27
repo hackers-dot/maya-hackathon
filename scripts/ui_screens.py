@@ -39,8 +39,12 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("what-do-you-have", "/__preview/company.html"),
     ("consent", "/__preview/consent.html"),
     ("shell", "/__preview/chat.html"),
+    ("connect-website", "/__preview/connect-website.html"),
+    ("trace-running", "/__preview/chat.html?view=running"),
+    ("result-finished", "/__preview/chat.html?view=finished"),
+    ("result-finished-bottom", "/__preview/chat.html?view=finished&scroll=bottom"),
 ]
-LIGHT = [("signin", "/signin"), ("shell", "/__preview/chat.html"), ("consent", "/__preview/consent.html")]
+LIGHT = [("signin", "/signin"), ("shell", "/__preview/chat.html"), ("result-finished", "/__preview/chat.html?view=finished")]
 CANDIDATES = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
               Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe")]
 
@@ -181,6 +185,10 @@ def shoot(cdp: CDP, url: str, out: Path, width: int, height: int, mobile: bool):
     cdp.call("Page.navigate", url=url)
     cdp.wait_event("Page.loadEventFired")
     time.sleep(0.8)  # let app.js fetch /api/session and fill the page
+    if "scroll=bottom" in url:  # the shell scrolls inside .conversation, so scroll that, not the window
+        cdp.call("Runtime.evaluate", expression=(
+            "(() => { const c = document.querySelector('.conversation'); if (c) c.scrollTop = c.scrollHeight; })()"))
+        time.sleep(0.2)
     metrics = cdp.call("Runtime.evaluate", returnByValue=True, expression=(
         "JSON.stringify({vw: innerWidth, scrollW: document.documentElement.scrollWidth})"))["result"]["value"]
     data = cdp.call("Page.captureScreenshot", format="png")["data"]
@@ -208,7 +216,8 @@ def main(argv=None) -> int:
               f"server: {base} (UI preview mode, throwaway data dir)")
         cdp.call("Page.enable")
         jobs = [(f"{name}-{label}", path, w, h, m) for name, path in PAGES for label, w, h, m in SIZES]
-        jobs += [(f"{name}-desktop-light", path + "?theme=light", 1280, 800, False) for name, path in LIGHT]
+        jobs += [(f"{name}-desktop-light", path + ("&" if "?" in path else "?") + "theme=light", 1280, 800, False)
+                 for name, path in LIGHT]
         jobs += [(f"{name}-mobile-light", path + "?theme=light", 390, 844, True) for name, path in LIGHT[1:2]]
         for shot, path, w, h, mobile in jobs:
             out = OUT / f"{shot}.png"

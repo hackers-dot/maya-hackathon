@@ -214,7 +214,7 @@ SINKS = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|document\.write|\bev
 
 
 EXPECTED_STATIC = {"app.js", "theme.js", "style.css", "signin.html", "onboarding.html", "company.html",
-                   "connect.html", "consent.html", "chat.html"}
+                   "connect.html", "consent.html", "connect-website.html", "chat.html"}
 
 
 def test_static_files_have_no_injection_sinks_or_external_urls():
@@ -275,10 +275,10 @@ def test_company_website_flow_to_consent(web):
     assert post(client, "/api/asset", {"asset": "website"}).json()["next"] == "/connect"
     assert post(client, "/api/connect", {"connect": True}).json()["next"] == "/consent"
     assert post(client, "/api/consent", {"allow": False}).status_code == 400
-    assert post(client, "/api/consent", {"allow": True}).json()["next"] == "/chat"
+    assert post(client, "/api/consent", {"allow": True}).json()["next"] == "/connect-website"  # Web 2
     user = client.get("/api/session").json()["user"]
     assert user == {"email": EMAIL, "account_type": "company", "asset": "website", "connect": True, "consented": True}
-    assert client.get("/signin").headers["location"] == "/chat"  # signed-in users skip sign-in
+    assert client.get("/signin").headers["location"] == "/connect-website"  # signed-in users skip sign-in
 
 
 @pytest.mark.parametrize("steps", [

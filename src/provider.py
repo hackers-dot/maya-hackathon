@@ -37,6 +37,11 @@ def load_config(path: str | Path = "config.yaml") -> dict:
     return cfg
 
 
+def key_configured(api_key_env: str) -> bool:
+    """Whether the key variable is set (checked at call time; the value is never returned or logged)."""
+    return bool(os.environ.get(api_key_env))
+
+
 def split_reasoning(message: dict) -> tuple[str, str | None]:
     """Return (answer, reasoning). Handles a separate reasoning field and inline <think>...</think>."""
     content = message.get("content") or ""

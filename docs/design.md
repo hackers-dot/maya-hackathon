@@ -210,6 +210,25 @@ See `src/models.py`:
   - The script therefore drives Chrome over the DevTools protocol with a minimal stdlib WebSocket client, sets exact viewports with `Emulation.setDeviceMetricsOverride` (1280×800 and 390×844 mobile), records each page's scroll width to catch horizontal overflow, and stops Chrome afterwards.
   - Chrome uses a throwaway profile and a debug port it picks on 127.0.0.1. PNGs go to `data/ui_screens/`.
 
+### Web 2: connect website, scans, live trace
+
+- **Connect website (`src/web/assets.py`, `/connect-website`).** After consent, a company user enters a URL. `parse_target` validates it with the scope guard's rules: http/https only, no userinfo or backslashes, no numeric-IP spellings, no non-loopback IP literals, no single-label names, valid port. A bare domain means `https://`. Only the origin is kept.
+  - **Any loopback URL is MAYA's own demo app.** The typed port is ignored and the server scans the demo app it starts itself, so a loopback URL can never aim MAYA at another local service (a database, an admin panel).
+  - Other sites get a random `maya-verify-…` token. The page shows both methods (homepage meta tag; `/.well-known/maya-verify.txt` with exactly the token).
+  - "Verify ownership" calls `src/ownership.py` (`HttpClient` only, only that host, only the two fixed paths) and records `verified` or `failed` with the reason.
+  - Assets are stored per user in `web.db` and listed in the sidebar. The same origin added twice returns the same asset and token.
+- **Scans (`src/web/runs.py`).** "Run security scan" works only for `verified` or loopback assets (otherwise 409), with one running scan per user (409). The scan runs in a background thread.
+  - **Model mode:** the existing agent loop with the real provider (`reasoning_effort=low`) and the same hard caps (6 steps, 40,000-token `TokenBudget`).
+  - **Deterministic-only mode:** used when the model key is not configured. Checked at scan time; the value is never read into output. Every HTTP check runs in a fixed order, labelled "Deterministic only (no model key configured)".
+  - The demo app starts on demand on a free 127.0.0.1 port and stops when the web server closes.
+  - Scan traffic goes through `HttpClient` with `verified={that host}` (or loopback for the demo).
+- **Live trace.** `run_agent` takes a caller-owned `trace` list and appends steps as they happen. Each step carries tool, args, result summary, tokens (reasoning separate) and model-call latency. Findings land in the registry's dict, which the run shares.
+  - The page polls `GET /api/runs/<id>/trace?after=N` every second. The response has new steps only, `next`, run status (running / forced final / finished / failed) and the current findings, severity-sorted from the code table.
+  - When the run stops, `GET /api/runs/<id>` returns the result: findings, the model's priority order with notes labelled "unverified model text" next to the verified code evidence, dropped claims, token usage, the model that ran, the mode, and a DEMO banner for demo data.
+  - The scan button is disabled while a run is in progress. Everything is rendered with `createElement` / `textContent`.
+- **Authorization.** Asset and run lookups always filter by the signed-in user's id, so another user's asset or run id behaves exactly like a missing one (404). Signed-out requests get 401. Every POST still needs the CSRF token.
+- **Preview data for screenshots.** `/__preview/sample.json` is a fixed sample (not from any run or account), served only in `--ui-preview` mode (404 otherwise). Preview pages render it with the same functions as real data.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>MAYA · Connect website</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
+<script src="/static/app.js" defer></script>
+</head>
+<body class="center-page">
+<div class="corner">
+<span id="who" class="who"></span>
+<button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">&#9680;</button>
+<button id="signout" class="btn btn-quiet" type="button">Sign out</button>
+</div>
+<main class="card card-wide">
+<div class="brand brand-lg"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></div>
+<h1 class="title">Connect your website</h1>
+<p class="sub">Enter the address of a website you own. MAYA will ask you to prove ownership before any check runs.</p>
+<form id="asset-form" class="form">
+<div class="field"><label for="asset-url">Website address</label>
+<input id="asset-url" name="url" type="text" inputmode="url" autocomplete="url" placeholder="your-site.example" required></div>
+<button class="btn btn-primary btn-block" type="submit">Add website</button>
+</form>
+<button id="use-demo" class="btn btn-secondary btn-block demo-btn" type="button">Use MAYA's demo app instead</button>
+<section id="asset-panel" class="verify-panel" hidden>
+<div class="asset-title"><h2 id="ap-label" class="verify-title"></h2><span id="ap-status" class="chip"></span></div>
+<p id="ap-reason" class="hint"></p>
+<div id="ap-methods" hidden>
+<p class="hint">Prove ownership with either method, then press Verify.</p>
+<div class="method"><h3>Option 1: meta tag on your homepage</h3>
+<p class="hint">Inside the &lt;head&gt; of your homepage:</p><code id="ap-meta" class="codebox"></code></div>
+<div class="method"><h3>Option 2: verification file</h3>
+<p class="hint">Create this file:</p><code id="ap-file" class="codebox"></code>
+<p class="hint">containing exactly:</p><code id="ap-token" class="codebox"></code></div>
+<button id="verify-btn" class="btn btn-primary btn-block" type="button">Verify ownership</button>
+</div>
+<a id="ap-continue" class="btn btn-secondary btn-block" href="/chat">Continue to MAYA</a>
+</section>
+<p id="message" class="message" role="status"></p>
+</main>
+<p class="footnote">MAYA runs read-only checks on sites you own. Nothing changes without your approval.</p>
+</body>
+</html>

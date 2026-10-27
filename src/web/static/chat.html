@@ -23,6 +23,7 @@
 <h3 class="side-heading">Connected assets</h3>
 <ul id="assets-list" class="side-list"></ul>
 <p id="assets-empty" class="side-empty">Nothing connected yet</p>
+<a id="add-asset" class="side-link" href="/connect-website" hidden>&#65291; Connect a website</a>
 </nav>
 <div class="side-bottom">
 <div class="user"><span id="avatar" class="avatar" aria-hidden="true"></span><span id="who" class="who"></span></div>
@@ -40,10 +41,15 @@
 </header>
 <section class="conversation" aria-label="Conversation">
 <div class="column">
-<div class="empty-state">
+<div id="home" class="empty-state">
 <span class="mark big" aria-hidden="true"></span>
 <h1 class="greeting">How can MAYA help today?</h1>
 <p class="sub">Security checks and answers for the sites you own.</p>
+<div class="chips home-chips">
+<span class="chip chip-ok">Scope guard on</span>
+<span class="chip chip-ok">Read-only checks</span>
+<span class="chip">Fixes need your approval</span>
+</div>
 <div class="suggestions">
 <button class="suggestion" type="button"><span class="suggestion-title">Check my website's security</span><span class="suggestion-desc">Run read-only checks on a site you own.</span></button>
 <button class="suggestion" type="button"><span class="suggestion-title">Explain a vulnerability simply</span><span class="suggestion-desc">Plain-language answers, no jargon.</span></button>
@@ -51,7 +57,41 @@
 <button class="suggestion" type="button"><span class="suggestion-title">How does MAYA stay safe?</span><span class="suggestion-desc">What it does and never does.</span></button>
 </div>
 </div>
-<div id="messages" class="messages" aria-live="polite"></div>
+<section id="asset-view" class="asset-view" hidden aria-live="polite">
+<p id="demo-banner" class="banner" hidden>DEMO: these results come from MAYA's deliberately vulnerable demo app on loopback, not a real site.</p>
+<div class="asset-head">
+<div class="asset-title"><h1 id="av-label" class="title"></h1><span id="av-status" class="chip"></span></div>
+<div class="asset-actions"><span id="mode-label" class="mode-label"></span>
+<button id="scan-btn" class="btn btn-primary" type="button" disabled>Run security scan</button></div>
+</div>
+<p id="av-hint" class="hint"></p>
+<p id="message" class="message" role="status"></p>
+<section id="run-panel" class="panel" hidden>
+<div class="panel-head"><h2>Live trace</h2><span id="run-status" class="chip"></span><span id="run-model" class="panel-meta"></span></div>
+<ol id="trace-list" class="trace"></ol>
+<p id="trace-empty" class="side-empty">Waiting for the first step...</p>
+</section>
+<section id="findings-panel" class="panel" hidden>
+<div class="panel-head"><h2>Findings</h2><span id="findings-count" class="panel-meta"></span></div>
+<div class="table-wrap"><table class="findings">
+<thead><tr><th scope="col">Severity</th><th scope="col">Finding</th><th scope="col">Where</th><th scope="col">Evidence (from code)</th></tr></thead>
+<tbody id="findings-body"></tbody>
+</table></div>
+</section>
+<section id="result-panel" class="panel" hidden>
+<div class="panel-head"><h2>Result</h2><span id="result-order" class="panel-meta"></span></div>
+<dl class="facts">
+<dt>Model that ran</dt><dd id="result-model"></dd>
+<dt>Mode</dt><dd id="result-mode"></dd>
+<dt>Tokens</dt><dd id="result-tokens"></dd>
+</dl>
+<h3 class="sub-heading">Model priority order</h3>
+<ol id="claims-list" class="claims"></ol>
+<p id="claims-empty" class="side-empty" hidden></p>
+<h3 class="sub-heading">Claims not included</h3>
+<ul id="dropped-list" class="dropped"></ul>
+</section>
+</section>
 </div>
 </section>
 <footer class="composer-wrap">

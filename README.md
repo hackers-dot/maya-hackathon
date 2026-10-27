@@ -36,6 +36,11 @@ All code in this repository was written during the Meta Global AI Developer Hack
   - `scripts/ui_flow_check.py` drives the whole flow over HTTP with a throwaway data dir.
   - `scripts/ui_screens.py` screenshots every page at desktop and mobile size with the installed Chrome over the DevTools protocol, which gives an exact mobile viewport.
   - Fixes found by these checks: sign-out now returns a fresh CSRF token; tall cards no longer slide under the top controls on mobile; dead space under cards removed; the shell's logo mark is centered.
+- **2026-10-27 (Web 2):** Connect a website, run scans, watch them live.
+  - After consent, add a website: the URL is validated with the scope guard's rules, a verification token is issued (meta tag or `/.well-known` file), and "Verify ownership" checks it through the HTTP client. Any loopback URL means MAYA's own demo app, which needs no verification.
+  - "Run security scan" works only for verified or demo assets, one scan per user at a time. It uses the agent with the real model when a key is configured, otherwise a clearly labelled deterministic-only mode, with the same hard caps.
+  - A live trace dashboard polls every second (steps, tokens with reasoning separate, latency, status chips, findings table with severity badges). The result view shows the model's priority order with notes labelled "unverified model text", token usage, the model that ran, and a DEMO banner.
+  - Another user's runs and assets return 404.
 
 ## License
 

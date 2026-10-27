@@ -11,6 +11,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -18,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from src.agent.verifier import SEVERITY_ORDER  # noqa: E402
 from src.web.server import SECURITY_HEADERS, make_server  # noqa: E402
 
 PASSWORD = "ui-flow-check-password"  # throwaway account in a throwaway data dir
@@ -83,7 +85,7 @@ def page_ok(b: Browserless, rep: Report, path: str, marker: str):
               f"GET {path} renders with security headers", f"HTTP {status}")
 
 
-def run_checks(base: str) -> int:
+def run_checks(base: str, scan_allowed: bool = False) -> int:
     rep = Report()
     b = Browserless(base)
     status, headers, _ = b.request("GET", "/health")
@@ -121,8 +123,57 @@ def run_checks(base: str) -> int:
     rep.check(data.get("next") == "/consent", "connect: Yes", f"HTTP {status} next={data.get('next')}")
     page_ok(b, rep, "/consent", 'id="consent-allow"')
     status, _, data = b.post("/api/consent", {"allow": True})
-    rep.check(data.get("next") == "/chat", "consent: Allow", f"HTTP {status} next={data.get('next')}")
+    rep.check(data.get("next") == "/connect-website", "consent: Allow", f"HTTP {status} next={data.get('next')}")
+    page_ok(b, rep, "/connect-website", 'id="asset-form"')
+
+    # --- connect website (Web 2) ---
+    status, _, data = b.post("/api/assets", {"url": "https://user@shop.example"})
+    rep.check(status == 400, "URL with userinfo refused", f"HTTP {status} {data.get('error')}")
+    status, _, data = b.post("/api/assets", {"url": "http://2130706433"})
+    rep.check(status == 400, "numeric-IP URL refused", f"HTTP {status} {data.get('error')}")
+    status, _, data = b.post("/api/assets", {"url": "https://shop.example"})
+    site = data.get("asset") or {}
+    token = (site.get("verification") or {}).get("token", "")
+    rep.check(status == 200 and site.get("status") == "pending" and token.startswith("maya-verify-"),
+              "website added: pending with a verification token", f"HTTP {status} status={site.get('status')}")
+    status, _, data = b.post(f"/api/assets/{site.get('id')}/scan", {})
+    rep.check(status == 409, "scan refused before ownership is verified", f"HTTP {status} {data.get('error')}")
+    status, _, data = b.post("/api/assets", {"url": "http://127.0.0.1:8081"})
+    demo = data.get("asset") or {}
+    rep.check(demo.get("status") == "loopback" and demo.get("label") == "Demo app (loopback, no verification needed)",
+              "loopback URL becomes the demo app", f"HTTP {status} label={demo.get('label')}")
     page_ok(b, rep, "/chat", 'id="composer"')
+    status, _, data = b.request("GET", "/api/assets")
+    labels = [a["label"] for a in json.loads(data)["assets"]] if status == 200 else []
+    rep.check(len(labels) == 2, "sidebar assets list", ", ".join(labels))
+    run_id = None
+    if scan_allowed:
+        status, _, data = b.post(f"/api/assets/{demo.get('id')}/scan", {})
+        run = data.get("run") or {}
+        run_id = run.get("id")
+        rep.check(status == 200 and run.get("mode") == "deterministic", "scan started (deterministic only)",
+                  f"HTTP {status} mode={run.get('mode_label')}")
+        status, _, data = b.post(f"/api/assets/{demo.get('id')}/scan", {})
+        rep.check(status == 409, "second scan refused while one is running", f"HTTP {status}")
+        nexts, final = [], None
+        for _ in range(100):
+            st, hd, raw = b.request("GET", f"/api/runs/{run_id}/trace?after={nexts[-1] if nexts else 0}")
+            body = json.loads(raw)
+            nexts.append(body["next"])
+            if body["run"]["status"] != "running":
+                final = body
+                break
+            time.sleep(0.2)
+        rep.check(final is not None and final["run"]["status"] == "finished" and has_security_headers(hd),
+                  "trace polled until finished", f"polls={len(nexts)} next={nexts[-1] if nexts else None}")
+        rep.check(nexts == sorted(nexts), "trace index only grows (incremental polling)", str(nexts[:8]))
+        st, _, raw = b.request("GET", f"/api/runs/{run_id}")
+        result = json.loads(raw).get("result") or {}
+        sev = [f["severity"] for f in result.get("findings", [])]
+        rep.check(st == 200 and "critical" in sev and sev == sorted(sev, key=SEVERITY_ORDER.index),
+                  "result findings, severity-sorted from the code table", f"{len(sev)} findings")
+    else:
+        print("SKIP  scan steps: --base server may be configured with a live model")
     _, _, s = b.session()
     rep.check(s["user"] == {"email": email, "account_type": "company", "asset": "website", "connect": True,
                             "consented": True}, "server state after the company path", json.dumps(s["user"]))
@@ -139,6 +190,13 @@ def run_checks(base: str) -> int:
     status, _, data = b2.post("/api/profile", {"account_type": "individual"})
     rep.check(data.get("next") == "/chat", "choose Individual -> chat", f"HTTP {status} next={data.get('next')}")
     page_ok(b2, rep, "/chat", "Chat coming next")
+    if run_id:
+        status, _, _ = b2.request("GET", f"/api/runs/{run_id}")
+        rep.check(status == 404, "another user's run is not found", f"HTTP {status}")
+        status, _, _ = b2.request("GET", f"/api/runs/{run_id}/trace?after=0")
+        rep.check(status == 404, "another user's trace is not found", f"HTTP {status}")
+    status, _, _ = b2.post(f"/api/assets/{demo.get('id')}/scan", {})
+    rep.check(status == 404, "another user's asset cannot be scanned", f"HTTP {status}")
 
     print(f"\n{'ALL CHECKS PASSED' if rep.failures == 0 else str(rep.failures) + ' CHECK(S) FAILED'}")
     return 1 if rep.failures else 0
@@ -149,14 +207,15 @@ def main(argv=None) -> int:
     p.add_argument("--base", help="drive an already running server, e.g. http://127.0.0.1:8090")
     args = p.parse_args(argv)
     if args.base:
-        return run_checks(args.base)
+        return run_checks(args.base, scan_allowed=False)
     data_dir = Path(tempfile.mkdtemp(prefix="maya-ui-flow-"))  # throwaway, removed below
-    server = make_server(port=0, data_dir=data_dir)
+    # deterministic-only: this check never makes a live model call, even if a model key is configured
+    server = make_server(port=0, data_dir=data_dir, provider_factory=lambda: (None, "none"))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
     print(f"server: {base}  data dir: {data_dir} (throwaway)")
     try:
-        return run_checks(base)
+        return run_checks(base, scan_allowed=True)
     finally:
         server.shutdown()
         server.server_close()

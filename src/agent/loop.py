@@ -5,6 +5,7 @@ attempted) the loop sends tool_choice="none" plus an instruction to write the fi
 returned on that step are ignored, never executed. The report does not depend on the model finishing.
 """
 import json
+import time
 from dataclasses import dataclass, field
 
 from src.agent.tools import MAX_GET_EVIDENCE, RUNNABLE_CHECKS, TOOL_SPECS, ToolRegistry
@@ -71,22 +72,25 @@ def _parse_claims(answer: str):
 
 
 def run_agent(provider, registry: ToolRegistry, budget: TokenBudget, goal: str,
-              max_steps: int = MAX_STEPS) -> AgentResult:
+              max_steps: int = MAX_STEPS, trace: list | None = None) -> AgentResult:
+    """trace: optional list the caller can read while the loop runs (entries are appended live)."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
-    result = AgentResult(stop_reason="forced_final")
+    result = AgentResult(stop_reason="forced_final", trace=trace if trace is not None else [])
     for step in range(1, max_steps + 1):
         forced = step == max_steps or registry.all_checks_attempted()
+        t0 = time.perf_counter()
         if forced:
             reply = provider.chat(messages + [{"role": "user", "content": FINAL_INSTRUCTION}],
                                   tools=TOOL_SPECS, tool_choice="none")
         else:
             reply = provider.chat(messages, tools=TOOL_SPECS, tool_choice="auto")
+        latency = round(time.perf_counter() - t0, 3)  # model call time for this step, seconds
         tokens = _tokens(reply.usage)
         try:
             budget.add(reply.usage)
         except BudgetExceeded as e:
             result.trace.append({"step": step, "tool": None, "args": None, "result_summary": f"stopped: {e}",
-                                 "tokens": tokens})
+                                 "tokens": tokens, "latency": latency})
             result.stop_reason = "budget_exceeded"
             break
         if forced or not reply.tool_calls:
@@ -95,7 +99,8 @@ def run_agent(provider, registry: ToolRegistry, budget: TokenBudget, goal: str,
             summary = "final answer" if claims is not None else "final answer is not valid claims JSON"
             if forced:
                 summary = "forced final step: " + summary + (" (tool calls ignored)" if reply.tool_calls else "")
-            result.trace.append({"step": step, "tool": None, "args": None, "tokens": tokens, "result_summary": summary})
+            result.trace.append({"step": step, "tool": None, "args": None, "tokens": tokens, "result_summary": summary,
+                                 "latency": latency, "forced": forced})
             result.report = verify(claims or [], registry.findings, registry.store)
             result.stop_reason = "forced_final" if forced else "final"
             break
@@ -107,7 +112,7 @@ def run_agent(provider, registry: ToolRegistry, budget: TokenBudget, goal: str,
             else:  # never executed; still answered so every tool_call_id gets a result
                 out = registry.defer(fn.get("name"), fn.get("arguments"))
             result.trace.append({"step": step, "tool": fn.get("name"), "args": redact_text(str(fn.get("arguments"))),
-                                 "result_summary": out["summary"], "tokens": tokens})
+                                 "result_summary": out["summary"], "tokens": tokens, "latency": latency})
             messages.append({"role": "tool", "tool_call_id": call.get("id", f"call_{step}_{i}"),
                              "content": json.dumps({k: v for k, v in out.items() if k != "summary"})})
     return result

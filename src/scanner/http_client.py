@@ -75,12 +75,12 @@ class HttpClient:
             url = urljoin(url, location)
         raise TooManyRedirects(f"more than {MAX_REDIRECTS} redirects")
 
-    def _throttle(self):
+    def _throttle(self):  # perf_counter: monotonic() ticks in ~15.6 ms steps on Windows
         with self._lock:
-            wait = self._last + self.min_interval - time.monotonic()
+            wait = self._last + self.min_interval - time.perf_counter()
             if wait > 0:
                 time.sleep(wait)
-            self._last = time.monotonic()
+            self._last = time.perf_counter()
 
     def _send(self, method: str, url: str) -> Response:
         self._throttle()
