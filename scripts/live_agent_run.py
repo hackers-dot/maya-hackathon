@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 from demo_app.app import make_server  # noqa: E402
 from src.agent.loop import run_agent  # noqa: E402
 from src.agent.tools import ToolRegistry  # noqa: E402
+from src.agent.verifier import evidence_line  # noqa: E402
 from src.budget import TokenBudget  # noqa: E402
 from src.evidence import EvidenceStore  # noqa: E402
 from src.provider import ChatResult, MockProvider, Provider, ProviderError, load_config  # noqa: E402
@@ -56,12 +57,17 @@ def dry_script() -> list[ChatResult]:
     usage = {"prompt_tokens": 900, "completion_tokens": 120, "total_tokens": 1020,
              "completion_tokens_details": {"reasoning_tokens": 80}}
     claims = [
-        {"finding_id": "missing_csp:/", "claim_type": "header_missing",
-         "quoted_evidence": "content-type, server, set-cookie"},
-        # the failure seen live: a real quote from the homepage body that does not show the missing header
-        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "<h1>Demo Shop</h1>"},
-        {"finding_id": "exposed_env_file:/.env", "claim_type": "file_exposed", "quoted_evidence": "API_KEY=fak...al"},
-        {"finding_id": "exposed_git_dir:/.git/HEAD", "claim_type": "file_exposed", "quoted_evidence": "ref: refs"},
+        {"finding_id": "exposed_env_file:/.env", "claim_type": "file_exposed", "priority": 1,
+         "note": "Anyone can download /.env; block it and rotate the keys it holds."},
+        # invented path: the note is dropped, the claim is kept
+        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "priority": 2,
+         "note": "Add a Content-Security-Policy header, also on /admin."},
+        # unknown finding (legacy quote kept only for --show-dropped)
+        {"finding_id": "exposed_git_dir:/.git/HEAD", "claim_type": "file_exposed", "priority": 3,
+         "quoted_evidence": "ref: refs"},
+        # wrong claim_type for an existing finding
+        {"finding_id": "missing_csp:/", "claim_type": "file_exposed", "priority": 4,
+         "quoted_evidence": "missing_csp:/ | missing_csp | recorded response headers: content-length"},
     ]
     return [
         ChatResult("", True, dict(usage), tool_calls=[
@@ -72,10 +78,29 @@ def dry_script() -> list[ChatResult]:
     ]
 
 
+def diagnose(dropped: dict, findings: dict, store) -> list[str]:
+    """Diagnostic lines for one dropped claim. Only the model's answer text is shown, never reasoning."""
+    quote = dropped.get("quoted_evidence")
+    finding = findings.get(dropped.get("finding_id"))
+    line = evidence_line(finding, store) if finding else None
+    hint = []
+    if quote is not None and line is not None:
+        norm = lambda s: " ".join(s.split())  # noqa: E731
+        hint = [f"len quote={len(quote)} line={len(line)}",
+                f"whitespace-normalized equal={'yes' if norm(quote) == norm(line) else 'no'}",
+                f"quote inside line={'yes' if norm(quote) in norm(line) else 'no'}",
+                f"line inside quote={'yes' if norm(line) in norm(quote) else 'no'}"]
+    return [f"(a) model quote: {quote[:100]!r}" if quote is not None else "(a) model quote: (none)",
+            f"(b) evidence line: {line[:100]!r}" if line is not None else "(b) evidence line: (no such finding)",
+            "(c) diff hint: " + (", ".join(hint) if hint else "n/a")]
+
+
 def main(argv=None, transport=None, data_dir: Path | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--fixed", action="store_true", help="run the demo app in fixed mode")
     p.add_argument("--dry-run", action="store_true", help="scripted fake model; no key, no model network call")
+    p.add_argument("--show-dropped", action="store_true",
+                   help="for each dropped claim: model quote vs the evidence line it should match, plus a diff hint")
     args = p.parse_args(argv)
     data_dir = Path(data_dir or ROOT / "data")
     cfg = load_config(ROOT / "config.yaml")
@@ -115,14 +140,19 @@ def main(argv=None, transport=None, data_dir: Path | None = None) -> int:
               f"model latency={lat:.2f}s")
     print(f"stop_reason={result.stop_reason} | run tokens={budget.run}")
 
-    print("\nVerified claims:")
+    print(f"\nVerified claims ({result.report.get('order_note', '')}):")
     for v in result.report["verified"] or []:
-        print(f"  [{v['severity'].upper()}] {v['text']} evidence={v['evidence_id']} quote={v['quoted_evidence']!r}")
+        note = f"note={v['note']!r}" if v["note"] else f"note dropped: {v['note_dropped']}" if v["note_dropped"] else "no note"
+        print(f"  p={v['priority']} [{v['severity'].upper()}] {v['text']} evidence={v['evidence_id']} "
+              f"line={v['supporting_evidence']!r} | {note}")
     if not result.report["verified"]:
         print("  (none)")
     print("Dropped claims (insufficient evidence):")
     for d in result.report["insufficient"] or []:
         print(f"  {d['finding_id']}: {d['reason']}")
+        if args.show_dropped:
+            for line in diagnose(d, registry.findings, store):
+                print(f"      {line}")
     if not result.report["insufficient"]:
         print("  (none)")
 

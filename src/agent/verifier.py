@@ -1,16 +1,19 @@
 """Verify the model's final claims against code-produced findings and hashed evidence.
 
+Claims are {finding_id, claim_type, priority, note}. The model never writes the evidence quote.
 A claim survives only if:
   1. its finding exists (produced by code in this run),
   2. its claim_type matches the finding's check,
-  3. the evidence record's hash verifies,
-  4. the quote appears verbatim in that record, and
-  5. entailment: code re-checks the record for the issue (e.g. the recorded header list lacks the header,
-     or an exposed file is HTTP 200 with a content signature) and derives the "support lines" that show it;
-     the quote must lie inside one of them. A real quote that does not show the issue (e.g. homepage body
-     text for a missing header) is dropped with "quote does not support claim".
-Report text comes from fixed templates; severity comes from the finding (the fixed table), never the model.
+  3. the evidence record's hash verifies, and
+  4. entailment: code re-checks the record for the issue (e.g. the recorded header list lacks the header,
+     or an exposed file is HTTP 200 with a content signature) and derives the "support lines" that show it.
+Code then attaches the first support line verbatim as the evidence. The model's note is unverified text:
+restricted words are masked, and a note that mentions a host, path or number not present in the finding's
+evidence is dropped (the claim is kept). Priorities order the claims only if they are unique and present;
+otherwise claims are ordered by severity. Report text comes from fixed templates; severity comes from the
+finding (the fixed table), never the model.
 """
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -45,17 +48,30 @@ TEMPLATES = {
     "tls_weakness": "{target} has a TLS or certificate weakness ({check}). Severity: {severity}.",
 }
 
+SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
 HEADER_FOR_CHECK = {check: header for header, check in SECURITY_HEADERS}
 COOKIE_FLAG = {"cookie_missing_secure": "secure", "cookie_missing_httponly": "httponly",
                "cookie_missing_samesite": "samesite"}
 HEADER_LIST_PREFIX = "recorded response headers: "
 
 
+NOTE_MAX = 160
+RESTRICTED = re.compile(r"(?i)\b\w*(?:fake|scam|hack|secure|compliant)\w*\b")
+# things a note may only mention if they appear in the finding's own evidence
+NOTE_REFERENCES = re.compile(
+    r"(?i)\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b"     # host names (also file names such as db.sql)
+    r"|(?<![\w./])/[\w./~-]*"                  # paths
+    r"|\d+(?:\.\d+)*"                          # numbers, versions, IPs
+)
+
+
 class Claim(BaseModel):
     model_config = ConfigDict(extra="forbid")  # e.g. a model-supplied "severity" makes the claim malformed
     finding_id: str = Field(min_length=1)
     claim_type: ClaimType
-    quoted_evidence: str = Field(min_length=4)
+    priority: int | None = Field(default=None, ge=1)
+    note: str = ""
+    quoted_evidence: str | None = None  # legacy: ignored; code attaches the evidence line itself
 
 
 def _headers(record: dict) -> list[tuple[str, str]]:
@@ -132,12 +148,30 @@ def evidence_line(finding: Finding, store: EvidenceStore | None) -> str:
     return finding.evidence[0].data  # e.g. DNS findings, or no store: the redacted excerpt captured by the check
 
 
+def check_note(note: str, evidence_text: str) -> tuple[str | None, str | None]:
+    """Return (masked note, None) or (None, reason). A bad note is dropped; the claim itself is kept."""
+    note = note.strip()
+    if not note:
+        return None, None
+    if len(note) > NOTE_MAX:
+        return None, f"note longer than {NOTE_MAX} characters"
+    haystack = evidence_text.lower()
+    for ref in NOTE_REFERENCES.findall(note):
+        ref = ref.rstrip(".")  # sentence punctuation, not part of the path or number
+        if ref and ref.lower() not in haystack:
+            return None, f"note mentions {ref!r}, which is not in this finding's evidence"
+    return RESTRICTED.sub("[masked]", note), None
+
+
 def verify(claims, findings: dict[str, Finding], store: EvidenceStore) -> dict:
+    """Returns {"verified", "insufficient", "order", "order_note"}; verified is in the final display order."""
     verified, insufficient = [], []
 
     def drop(raw, reason):
-        fid = raw.get("finding_id") if isinstance(raw, dict) else None
-        insufficient.append({"finding_id": fid, "status": "insufficient evidence", "reason": reason})
+        d = raw if isinstance(raw, dict) else {}
+        q = d.get("quoted_evidence")
+        insufficient.append({"finding_id": d.get("finding_id"), "status": "insufficient evidence", "reason": reason,
+                             "quoted_evidence": q if isinstance(q, str) else None})
 
     for raw in claims if isinstance(claims, list) else []:
         try:
@@ -161,22 +195,28 @@ def verify(claims, findings: dict[str, Finding], store: EvidenceStore) -> dict:
         except KeyError:
             drop(raw, "evidence record missing or hash mismatch")
             continue
-        if claim.quoted_evidence not in record_text(record):
-            drop(raw, "quote not found verbatim in evidence")
-            continue
         support = support_lines(finding, record)
         if not support:
-            drop(raw, "quote does not support claim: the evidence record does not show the issue")
+            drop(raw, "the evidence record does not show the issue")
             continue
-        line = next((l for l in support if claim.quoted_evidence in l), None)
-        if line is None:
-            drop(raw, "quote does not support claim")
-            continue
+        note, note_problem = check_note(claim.note, record_text(record))
         verified.append({
             "finding_id": finding.id, "check": finding.check, "severity": finding.severity,
             "location": finding.location, "claim_type": claim.claim_type, "evidence_id": record_id,
-            "quoted_evidence": claim.quoted_evidence, "supporting_evidence": line, "demo": finding.demo,
+            "supporting_evidence": support[0],  # attached by code, verbatim from the hash-verified record
+            "priority": claim.priority, "note": note, "note_dropped": note_problem, "demo": finding.demo,
             "text": TEMPLATES[claim.claim_type].format(location=finding.location, target=finding.target,
                                                        check=finding.check, severity=finding.severity),
         })
-    return {"verified": verified, "insufficient": insufficient}
+
+    priorities = [v["priority"] for v in verified]
+    by_severity = lambda v: (SEVERITY_ORDER.index(v["severity"]), v["check"], v["location"])  # noqa: E731
+    if verified and None not in priorities and len(set(priorities)) == len(priorities):
+        verified.sort(key=lambda v: v["priority"])
+        order, order_note = "model", "ordered by the model's priority"
+    else:
+        verified.sort(key=by_severity)
+        order = "severity"
+        order_note = ("ordered by severity (model priorities were duplicate or missing)" if verified
+                      else "no verified claims")
+    return {"verified": verified, "insufficient": insufficient, "order": order, "order_note": order_note}

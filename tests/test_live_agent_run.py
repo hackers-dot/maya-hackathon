@@ -34,22 +34,49 @@ def test_dry_run_vulnerable(loopback_only, tmp_path, capsys):
     assert "stop_reason=final" in out
     assert "[CRITICAL]" in out and "[MEDIUM]" in out
     assert "exposed_git_dir:/.git/HEAD: unknown finding_id" in out
-    assert "missing_csp:/: quote does not support claim" in out  # homepage-body quote dropped
+    assert "missing_csp:/: claim_type 'file_exposed' does not match check 'missing_csp'" in out
+    assert "(a) model quote" not in out  # diagnostics only with --show-dropped
+    assert "Verified claims (ordered by the model's priority):" in out
+    assert "note dropped: note mentions '/admin'" in out  # invented path: note dropped, claim kept
     reports_md = "".join(p.read_text(encoding="utf-8") for p in (tmp_path / "reports").glob("*.md"))
     assert "recorded response headers: content-length, content-type, server, set-cookie" in reports_md
     assert "Detected by deterministic checks" in reports_md and "model finished with a final answer" in reports_md
-    assert "## Model-verified claims" in reports_md
+    claims = reports_md[reports_md.index("## Model-verified claims"):]
+    assert "Order: ordered by the model's priority." in claims
+    assert ("Model note (unverified model text): ` Anyone can download /.env; block it and rotate the keys it holds. `"
+            in claims)
+    assert "Code evidence (verified): ` APP_ENV=demo `" in claims
+    assert "Model note dropped: note mentions '/admin'" in claims
+    assert claims.index("**CRITICAL**") < claims.index("**MEDIUM**")
     reports = list((tmp_path / "reports").iterdir())
     assert sorted(p.suffix for p in reports) == [".html", ".md"]
     md = next(p for p in reports if p.suffix == ".md").read_text(encoding="utf-8")
     assert "DEMO:" in md and "exposed_env_file" in md
 
 
+def test_show_dropped_diagnostic(loopback_only, tmp_path, capsys):
+    assert live.main(["--dry-run", "--show-dropped"], data_dir=tmp_path) == 0
+    out = capsys.readouterr().out
+    # unknown finding: quote shown, no evidence line to compare against
+    assert "(a) model quote: 'ref: refs'" in out and "(b) evidence line: (no such finding)" in out
+    assert "(c) diff hint: n/a" in out
+    # existing finding: the summary-prefixed quote vs the real evidence line, with a diff hint
+    assert "(a) model quote: 'missing_csp:/ | missing_csp | recorded response headers: content-length'" in out
+    assert "(b) evidence line: 'recorded response headers: content-length, content-type, server, set-cookie'" in out
+    assert "whitespace-normalized equal=no, quote inside line=no, line inside quote=no" in out
+
+
+def test_diagnose_unit():
+    lines = live.diagnose({"finding_id": "x", "quoted_evidence": "q" * 300}, {}, None)
+    assert lines[0] == f"(a) model quote: {'q' * 100!r}"  # truncated to 100 chars
+    assert live.diagnose({"finding_id": "x"}, {}, None)[0] == "(a) model quote: (none)"
+
+
 def test_dry_run_fixed(loopback_only, tmp_path, capsys):
     assert live.main(["--dry-run", "--fixed"], data_dir=tmp_path) == 0
     out = capsys.readouterr().out
     assert "demo app FIXED" in out
-    assert "Verified claims:\n  (none)" in out
+    assert "Verified claims (no verified claims):\n  (none)" in out
     assert out.count("unknown finding_id") == 4
     md = next((tmp_path / "reports").glob("*.md")).read_text(encoding="utf-8")
     assert "No issues detected in the checks run." in md and "secure" not in md.lower()

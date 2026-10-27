@@ -256,78 +256,66 @@ def test_non_json_final_answer(env):
     result = run_agent(MockProvider(script=[ChatResult("All good, trust me!", False, dict(USAGE))]),
                        registry, budget, "go")
     assert result.stop_reason == "final" and not result.final_answer_valid
-    assert result.report == {"verified": [], "insufficient": []}
+    assert result.report["verified"] == [] and result.report["insufficient"] == []
 
 
-# --- verifier ---
+# --- verifier: claims carry no quote; code attaches the evidence line ---
 
-def test_verifier_drops_fake_claims(env):
+def claim(fid="missing_csp:/", ctype="header_missing", **extra):
+    return {"finding_id": fid, "claim_type": ctype, **extra}
+
+
+def test_claim_without_quote_is_kept_with_code_attached_evidence(env):
     registry, _, _ = env
     registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
-    registry.call("run_check", json.dumps({"check_id": "server_version_disclosure", "path": "/"}))
+    report = verify([claim(priority=1, note="Add a CSP header to /.")], registry.findings, registry.store)
+    v = report["verified"][0]
+    f = registry.findings["missing_csp:/"]
+    assert "quoted_evidence" not in v
+    assert v["supporting_evidence"] == "recorded response headers: content-length, content-type, server"
+    assert v["severity"] == severity("missing_csp") and v["evidence_id"] == f.evidence[0].record_id
+    assert v["text"] == TEMPLATES["header_missing"].format(location="/", target=BASE, check="missing_csp",
+                                                           severity="medium")
+    assert v["note"] == "Add a CSP header to /." and v["note_dropped"] is None
+
+
+def test_legacy_quote_is_ignored(env):
+    """A quote the model still sends (even a wrong one) neither helps nor hurts: code attaches its own line."""
+    registry, _, _ = env
+    registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
+    v = verify([claim(quoted_evidence="<p>shop</p>")], registry.findings, registry.store)["verified"][0]
+    assert v["supporting_evidence"].startswith("recorded response headers:")
+
+
+def test_invalid_claims_dropped(env):
+    registry, _, _ = env
+    registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
     claims = [
-        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "content-type, server"},
-        {"finding_id": "exposed_git_dir:/.git/HEAD", "claim_type": "file_exposed", "quoted_evidence": "ref: refs"},
-        {"finding_id": "server_version_disclosure:/:server", "claim_type": "version_disclosed",
-         "quoted_evidence": "server: Shop/9.9-invented"},
-        {"finding_id": "missing_csp:/", "claim_type": "file_exposed", "quoted_evidence": "content-type, server"},
-        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "content-type, server",
-         "severity": "critical"},
-        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "H"},
-        {"finding_id": "missing_csp:/", "claim_type": "made_up", "quoted_evidence": "content-type, server"},
+        claim(),                                              # kept
+        claim("exposed_git_dir:/.git/HEAD", "file_exposed"),  # unknown finding_id
+        claim(ctype="file_exposed"),                          # wrong claim_type
+        claim(severity="critical"),                           # model may not set severity
+        claim(ctype="made_up"),
+        claim(priority=0),
         "not a dict",
     ]
     report = verify(claims, registry.findings, registry.store)
-    assert len(report["verified"]) == 1
-    v = report["verified"][0]
-    f = registry.findings["missing_csp:/"]
-    assert v["severity"] == severity("missing_csp")  # from the table, not the claim
-    assert v["text"] == TEMPLATES["header_missing"].format(location="/", target=BASE, check="missing_csp",
-                                                           severity="medium")
-    assert v["evidence_id"] == f.evidence[0].record_id
-    assert v["supporting_evidence"] == "recorded response headers: content-length, content-type, server"
+    assert [v["finding_id"] for v in report["verified"]] == ["missing_csp:/"]
     reasons = [i["reason"] for i in report["insufficient"]]
     assert all(i["status"] == "insufficient evidence" for i in report["insufficient"])
     assert reasons[0] == "unknown finding_id"
-    assert reasons[1] == "quote not found verbatim in evidence"
-    assert reasons[2].startswith("claim_type 'file_exposed' does not match")
-    assert all(r.startswith("malformed claim") for r in reasons[3:])
-    assert len(reasons) == 7
+    assert reasons[1] == "claim_type 'file_exposed' does not match check 'missing_csp'"
+    assert all(r.startswith("malformed claim") for r in reasons[2:]) and len(reasons) == 6
 
 
-# --- verifier entailment: the quote must show the issue, and code re-checks the record ---
-
-def csp_claim(quote):
-    return [{"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": quote}]
-
-
-def test_homepage_body_quote_for_missing_csp_is_dropped(env):
-    registry, _, _ = env
-    registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
-    for quote in ["<p>shop</p>", "HTTP 200", "server: Shop/2.1"]:  # all real text in the record, none shows the gap
-        report = verify(csp_claim(quote), registry.findings, registry.store)
-        assert report["verified"] == [], quote
-        assert report["insufficient"][0]["reason"] == "quote does not support claim"
-
-
-def test_header_list_quote_is_kept(env):
-    registry, _, _ = env
-    registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
-    line = "recorded response headers: content-length, content-type, server"
-    for quote in [line, "content-type, server"]:
-        report = verify(csp_claim(quote), registry.findings, registry.store)
-        assert [v["supporting_evidence"] for v in report["verified"]] == [line]
-
-
-def test_header_claim_dropped_when_record_shows_the_header(env):
-    """Even a header-list quote fails if the stored record actually contains the header."""
+def test_claim_dropped_when_record_does_not_show_the_issue(env):
     registry, _, _ = env
     from src.scanner.findings import make_finding
     rid = registry.store.add("GET", BASE + "/", [], 200, [("Content-Type", "text/html"),
                                                          ("Content-Security-Policy", "default-src 'self'")], b"x")
     fake = make_finding("missing_csp", BASE, "/", "d", "e", "t", rid)
-    report = verify(csp_claim("recorded response headers"), {fake.id: fake}, registry.store)
-    assert report["insufficient"][0]["reason"].startswith("quote does not support claim")
+    report = verify([claim()], {fake.id: fake}, registry.store)
+    assert report["insufficient"][0]["reason"] == "the evidence record does not show the issue"
 
 
 def env_finding(registry, status, body, ctype="text/plain"):
@@ -337,42 +325,101 @@ def env_finding(registry, status, body, ctype="text/plain"):
     return {f.id: f}
 
 
-def env_claim(quote):
-    return [{"finding_id": "exposed_env_file:/.env", "claim_type": "file_exposed", "quoted_evidence": quote}]
-
-
 def test_exposed_env_kept_only_with_200_and_signature(env):
     registry, _, _ = env
+    env_claim = [claim("exposed_env_file:/.env", "file_exposed")]
     good = env_finding(registry, 200, b"# config\nAPI_KEY=fake-demo-key-not-real\n")
-    kept = verify(env_claim("API_KEY=fak...al"), good, registry.store)  # stored body is redacted
-    assert [v["supporting_evidence"] for v in kept["verified"]] == ["API_KEY=fak...al"]
-    # same record, but the quote is not a KEY=value line
-    assert verify(env_claim("# config"), good, registry.store)["insufficient"][0]["reason"] == \
-        "quote does not support claim"
-    # quote present, but status is not 200
-    not_200 = env_finding(registry, 404, b"API_KEY=fake-demo-key-not-real\n")
-    r = verify(env_claim("API_KEY=fak...al"), not_200, registry.store)
-    assert r["verified"] == [] and r["insufficient"][0]["reason"].startswith("quote does not support claim")
-    # 200 but no KEY=value signature
-    no_sig = env_finding(registry, 200, b"hello world, nothing here\n")
-    r = verify(env_claim("hello world"), no_sig, registry.store)
-    assert r["verified"] == [] and r["insufficient"][0]["reason"].startswith("quote does not support claim")
-    # 200 with the signature but served as HTML (a catch-all page)
-    html = env_finding(registry, 200, b"API_KEY=fake-demo-key-not-real\n", ctype="text/html")
-    assert verify(env_claim("API_KEY=fak...al"), html, registry.store)["verified"] == []
+    assert [v["supporting_evidence"] for v in verify(env_claim, good, registry.store)["verified"]] == [
+        "API_KEY=fak...al"]  # first KEY=value line, redacted at storage
+    for bad in (env_finding(registry, 404, b"API_KEY=fake-demo-key-not-real\n"),            # not 200
+                env_finding(registry, 200, b"hello world, nothing here\n"),                 # no signature
+                env_finding(registry, 200, b"API_KEY=fake-demo-key-not-real\n", "text/html")):  # catch-all page
+        r = verify(env_claim, bad, registry.store)
+        assert r["verified"] == [] and r["insufficient"][0]["reason"] == "the evidence record does not show the issue"
 
 
 def test_verifier_drops_tampered_evidence(env):
     registry, _, _ = env
     registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
     rid = registry.findings["missing_csp:/"].evidence[0].record_id
-    claim = csp_claim("content-type, server")
-    assert len(verify(claim, registry.findings, registry.store)["verified"]) == 1
+    assert len(verify([claim()], registry.findings, registry.store)["verified"]) == 1
     with sqlite3.connect(registry.store.path) as c:
         c.execute("UPDATE evidence SET summary = replace(summary, 'shop', 'SHOP') WHERE id = ?", (rid,))
     c.close()
-    report = verify(claim, registry.findings, registry.store)
+    report = verify([claim()], registry.findings, registry.store)
     assert report["verified"] == [] and report["insufficient"][0]["reason"] == "evidence record missing or hash mismatch"
+
+
+# --- model notes: unverified text, masked and cross-checked against the finding's own evidence ---
+
+def note_for(env, check, note):
+    registry, _, _ = env
+    registry.call("run_check", json.dumps({"check_id": check, "path": "/"}))
+    fid = next(f for f in registry.findings if f.startswith(check))
+    from src.agent.verifier import CLAIM_FOR_CHECK
+    return verify([claim(fid, CLAIM_FOR_CHECK[check], note=note)], registry.findings, registry.store)["verified"][0]
+
+
+def test_note_with_invented_path_is_dropped_claim_kept(env):
+    v = note_for(env, "missing_csp", "Also add CSP on /admin/login.")
+    assert v["note"] is None and v["note_dropped"] == "note mentions '/admin/login', which is not in this finding's evidence"
+    assert v["finding_id"] == "missing_csp:/" and v["supporting_evidence"]  # claim kept
+
+
+@pytest.mark.parametrize("note,ref", [
+    ("Visit evil.example to see the leak.", "evil.example"),
+    ("The 3 cookies are exposed.", "3"),
+    ("Server at 10.0.0.5 is affected.", "10.0.0.5"),
+])
+def test_note_with_invented_host_or_number_is_dropped(env, note, ref):
+    v = note_for(env, "missing_csp", note)
+    assert v["note"] is None and repr(ref) in v["note_dropped"]
+
+
+def test_note_with_numbers_from_evidence_is_kept(env):
+    v = note_for(env, "server_version_disclosure", "The server header shows version 2.1 on /.")
+    assert v["note"] == "The server header shows version 2.1 on /."
+
+
+def test_note_restricted_words_masked(env):
+    v = note_for(env, "missing_csp", "The site is not secure, looks hacked, a scam, fake and non-compliant.")
+    assert v["note"] == "The site is not [masked], looks [masked], a [masked], [masked] and non-[masked]."
+
+
+def test_note_too_long_is_dropped(env):
+    v = note_for(env, "missing_csp", "x " * 100)
+    assert v["note"] is None and v["note_dropped"] == "note longer than 160 characters"
+
+
+# --- priorities ---
+
+def three_findings(env):
+    registry, _, _ = env
+    for c in ("missing_csp", "missing_x_content_type_options", "server_version_disclosure"):
+        registry.call("run_check", json.dumps({"check_id": c, "path": "/"}))
+    return registry
+
+
+def ordered(env, p_csp, p_xcto, p_ver):
+    registry = three_findings(env)
+    claims = [claim("server_version_disclosure:/:server", "version_disclosed", priority=p_ver),
+              claim("missing_x_content_type_options:/", priority=p_xcto),
+              claim("missing_csp:/", priority=p_csp)]
+    report = verify([{k: v for k, v in c.items() if v is not None} for c in claims], registry.findings,
+                    registry.store)
+    return [v["check"] for v in report["verified"]], report["order"], report["order_note"]
+
+
+def test_valid_priorities_set_the_order(env):
+    checks, order, _ = ordered(env, 3, 1, 2)  # model puts a low finding first: allowed
+    assert checks == ["missing_x_content_type_options", "server_version_disclosure", "missing_csp"] and order == "model"
+
+
+@pytest.mark.parametrize("prios", [(1, 1, 2), (1, None, 2), (None, None, None)], ids=["duplicate", "missing", "none"])
+def test_bad_priorities_fall_back_to_severity(env, prios):
+    checks, order, note = ordered(env, *prios)
+    assert order == "severity" and note == "ordered by severity (model priorities were duplicate or missing)"
+    assert checks == ["missing_csp", "missing_x_content_type_options", "server_version_disclosure"]  # medium, low, low
 
 
 # --- end to end against the demo app (scripted model, real HTTP to 127.0.0.1) ---
@@ -383,11 +430,11 @@ def e2e_script():
                    call("run_check", {"check_id": "exposed_env_file", "path": "/.env"}, "b")),
         tool_reply(call("list_findings", {})),
         final_reply([
-            {"finding_id": "missing_csp:/", "claim_type": "header_missing",
-             "quoted_evidence": "content-type, server, set-cookie"},
-            {"finding_id": "exposed_env_file:/.env", "claim_type": "file_exposed",
-             "quoted_evidence": "API_KEY=fak...al"},
-            {"finding_id": "exposed_git_dir:/.git/HEAD", "claim_type": "file_exposed", "quoted_evidence": "ref: refs"},
+            {"finding_id": "missing_csp:/", "claim_type": "header_missing", "priority": 2,
+             "note": "The homepage / sends no Content-Security-Policy header."},
+            {"finding_id": "exposed_env_file:/.env", "claim_type": "file_exposed", "priority": 1,
+             "note": "The /.env file is public; block it and rotate its keys."},
+            {"finding_id": "exposed_git_dir:/.git/HEAD", "claim_type": "file_exposed", "priority": 3},
         ]),
     ]
 
@@ -404,8 +451,11 @@ def test_agent_end_to_end_demo(start_demo, tmp_path, fixed):
         assert verified == {} and registry.findings == {}
         assert [i["reason"] for i in result.report["insufficient"]] == ["unknown finding_id"] * 3
     else:
-        assert set(verified) == {"missing_csp:/", "exposed_env_file:/.env"}
+        assert [v["finding_id"] for v in result.report["verified"]] == ["exposed_env_file:/.env", "missing_csp:/"]
+        assert result.report["order"] == "model"  # priorities 1, 2 are unique among verified claims
         assert verified["exposed_env_file:/.env"]["severity"] == "critical"
+        assert verified["exposed_env_file:/.env"]["supporting_evidence"] == "APP_ENV=demo"
+        assert verified["missing_csp:/"]["note"] == "The homepage / sends no Content-Security-Policy header."
         assert all(v["demo"] for v in verified.values())
         assert [i["finding_id"] for i in result.report["insufficient"]] == ["exposed_git_dir:/.git/HEAD"]
         stored = store.get(verified["exposed_env_file:/.env"]["evidence_id"])["response"]["body"]

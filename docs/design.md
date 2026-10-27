@@ -27,7 +27,7 @@ The model plans, explains and drafts patches. It never touches the network direc
 ## Reports: `src/report.py`
 
 - **The report does not depend on the model finishing.** Its main section, "Detected by deterministic checks", is built from ALL findings code produced in the run. Each item shows its severity, location, evidence id and the code-derived supporting line from the hash-verified record (same rules as the verifier).
-- Typed model claims that pass the verifier appear in a separate "Model-verified claims" section, and dropped claims are listed with reasons.
+- Typed model claims that pass the verifier appear in a separate "Model-verified claims" section, in the model's priority order (or severity order, with a note saying why). Each one shows the verified code evidence line next to the model's plain-language note, which is labelled "unverified model text". Dropped claims are listed with reasons.
 - The header shows whether the model finished. If it did not: "model did not finish; findings are from code checks".
 - A run with no findings says "No issues detected in the checks run." (never "secure").
 - Items are sorted by severity from the fixed table; "Fix first" is the top 3.
@@ -74,7 +74,16 @@ Checks are read-only, non-destructive observations. No exploit code, no attack p
   - Every reply's usage, including `reasoning_tokens`, goes into `TokenBudget`. `BudgetExceeded` stops the loop cleanly before any further tool runs.
   - Every step writes a trace entry: step, tool, args (redacted), result summary, tokens.
   - The final answer must be JSON claims; there is no free-text report.
-- **`verifier.py`: claim verification.** Claims are typed: `{finding_id, claim_type (enum), quoted_evidence}`, with extra keys forbidden, so a model-supplied `severity` makes the claim malformed. A claim is kept only if:
+- **`verifier.py`: claim verification.**
+  - **Day 5.7 change: the model no longer writes quotes.** In the third live run all 11 claims were dropped as "quote not found verbatim". The Day 5.6 final instruction told the model to quote its `evidence_summary` lines, and those start with a `finding id | check |` prefix that is not in the record (`--show-dropped` reproduces this mismatch in the dry run).
+  - Claims are now `{finding_id, claim_type (enum), priority (1..N), note (≤160 chars)}`. Extra keys are forbidden (a model-supplied `severity` makes the claim malformed). A legacy `quoted_evidence` is accepted but ignored, kept only for diagnostics.
+  - Code attaches the evidence line itself: the first support line from the hash-verified record.
+  - A claim is kept if: (1) its finding exists, (2) `claim_type` matches the finding's check, (3) the evidence hash verifies, and (4) the record satisfies the pattern table below.
+  - **The model's note is unverified text.** Restricted words (fake, scam, hack…, secure, compliant) are masked. Every host, path or number in the note must appear in that finding's own evidence, and anything over 160 chars is too long; a note that fails is dropped, and the claim is kept.
+  - **Order:** the model's priorities are used only if they are present and unique among verified claims. Otherwise claims fall back to severity order, and the report says so.
+  - `scripts/live_agent_run.py --show-dropped` prints, for each dropped claim, the model's quote, the evidence line it should have matched, and a diff hint (lengths, whitespace-normalized equality, containment).
+
+  Earlier quote-based rules, kept for reference. Up to Day 5.6 a claim was kept only if:
   1. the finding exists (it was produced by code in this run),
   2. `claim_type` matches the finding's check,
   3. the evidence record's sha256 verifies,

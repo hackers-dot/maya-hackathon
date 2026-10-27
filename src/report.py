@@ -171,8 +171,9 @@ def build_report(findings: dict, store: EvidenceStore | None, model: str, reason
     items.sort(key=lambda i: (SEVERITY_ORDER.index(i["severity"]), i["check"], i["location"]))
     claims = claims or {"verified": [], "insufficient": []}
     model_claims = [{"finding_id": v["finding_id"], "severity": rule(v["check"]).severity, "text": v["text"],
-                     "evidence_line": v.get("supporting_evidence") or v["quoted_evidence"]}
-                    for v in claims["verified"]]
+                     "evidence_line": v["supporting_evidence"], "priority": v.get("priority"),
+                     "note": v.get("note"), "note_dropped": v.get("note_dropped")}
+                    for v in claims["verified"]]  # already in display order (model priority or severity)
     return {
         "model": model, "reasoning_effort": reasoning_effort,
         "usage": {k: usage.get(k, 0) for k in ("prompt_tokens", "completion_tokens", "reasoning_tokens", "total_tokens")},
@@ -182,6 +183,7 @@ def build_report(findings: dict, store: EvidenceStore | None, model: str, reason
         "items": items,
         "fix_first": items[:3],
         "model_claims": model_claims,
+        "order_note": claims.get("order_note", ""),
         "insufficient": list(claims["insufficient"]),
     }
 
@@ -225,8 +227,13 @@ def to_markdown(report: dict) -> str:
                 f"**Suggested fix:** {t.fix}", ""]
     out += ["## Model-verified claims", ""]
     if report["model_claims"]:
-        out += [f"- **{c['severity'].upper()}**: {c['text']} Evidence: {_md_code(c['evidence_line'])}"
-                for c in report["model_claims"]]
+        out += [f"Order: {report['order_note']}.", ""]
+        for n, c in enumerate(report["model_claims"], 1):
+            out += [f"{n}. **{c['severity'].upper()}**: {c['text']}",
+                    f"   - Code evidence (verified): {_md_code(c['evidence_line'])}",
+                    f"   - Model note (unverified model text): {_md_code(c['note'])}" if c["note"] else
+                    f"   - Model note dropped: {c['note_dropped']}" if c["note_dropped"] else
+                    "   - Model note: none"]
     else:
         out += ["None." + ("" if report["model_finished"] else " The model did not finish.")]
     out += [""]
@@ -292,9 +299,14 @@ def to_html(report: dict) -> str:
                  f"<p><strong>Suggested fix:</strong> {_inline(t.fix)}</p></section>")
     b.append("<h2>Model-verified claims</h2>")
     if report["model_claims"]:
-        b.append("<ul>" + "".join(
-            f"<li><span class=\"sev {_e(c['severity'])}\">{_e(c['severity'].upper())}</span> {_e(c['text'])} "
-            f"Evidence: <code>{_e(c['evidence_line'])}</code></li>" for c in report["model_claims"]) + "</ul>")
+        def note_html(c):
+            if c["note"]:
+                return f"Model note (unverified model text): <q>{_e(c['note'])}</q>"
+            return f"Model note dropped: {_e(c['note_dropped'])}" if c["note_dropped"] else "Model note: none"
+        b.append(f"<p>Order: {_e(report['order_note'])}.</p><ol>" + "".join(
+            f"<li><span class=\"sev {_e(c['severity'])}\">{_e(c['severity'].upper())}</span> {_e(c['text'])}"
+            f"<ul><li>Code evidence (verified): <code>{_e(c['evidence_line'])}</code></li>"
+            f"<li>{note_html(c)}</li></ul></li>" for c in report["model_claims"]) + "</ol>")
     else:
         b.append("<p>None." + ("" if report["model_finished"] else " The model did not finish.") + "</p>")
     if report["insufficient"]:

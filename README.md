@@ -16,6 +16,11 @@ All code in this repository was written during the Meta Global AI Developer Hack
   - The last step (or the step after every check type has been tried) forces a final answer with `tool_choice="none"`.
   - `run_check` returns an evidence summary line, and `get_evidence` is capped at 2 calls per run.
   - The three checks that cannot run over HTTP (SPF, DMARC, TLS) are no longer offered to the model.
+- **2026-10-29 (Day 5.7):** Third live run: the model finished, but all 11 of its claims were dropped as "quote not found verbatim". The likely cause was our own instruction to quote the `evidence_summary` lines, which carry an id prefix that is not in the evidence. Now:
+  - The model no longer writes quotes. Claims are `{finding_id, claim_type, priority, note}`, and code attaches the verbatim evidence line.
+  - Notes are labelled "unverified model text", restricted words are masked, and a note that mentions a host, path or number not in the finding's evidence is dropped (the claim is kept).
+  - Bad priorities fall back to severity order.
+  - `--show-dropped` prints a quote-vs-evidence diagnostic for each dropped claim.
 
 ## License
 

@@ -94,15 +94,38 @@ def test_report_with_findings_only_when_model_did_not_finish():
     assert "[CRITICAL] Configuration file appears publicly readable" in md
 
 
+def verified_claim(check, priority, note=None, note_dropped=None):
+    return {"finding_id": f"{check}:/", "check": check, "severity": "info",  # wrong on purpose: table wins
+            "text": f"/ on http://127.0.0.1:8081 ({check}).", "priority": priority,
+            "supporting_evidence": "recorded response headers: content-type", "note": note,
+            "note_dropped": note_dropped}
+
+
 def test_model_verified_claims_section_is_separate():
-    verified = [{"finding_id": "missing_csp:/", "check": "missing_csp", "severity": "info",  # wrong on purpose
-                 "text": "/ on http://127.0.0.1:8081 is missing a security header (missing_csp). Severity: medium.",
-                 "quoted_evidence": "content-type", "supporting_evidence": "recorded response headers: content-type"}]
-    md = to_markdown(report_for(["missing_csp"], verified=verified))
+    verified = [verified_claim("missing_x_content_type_options", 1, note="Send nosniff on /."),
+                verified_claim("missing_csp", 2, note_dropped="note mentions '/admin', which is not in this finding's evidence")]
+    r = report_for(["missing_csp", "missing_x_content_type_options"], verified=verified)
+    r_claims = dict(r)
+    md = to_markdown(r_claims)
+    deterministic = md[:md.index("## Model-verified claims")]
     claims = md[md.index("## Model-verified claims"):]
     assert MODEL_FINISHED in md
-    assert "- **MEDIUM**: / on http://127.0.0.1:8081 is missing" in claims  # severity from the table
-    assert "` recorded response headers: content-type `" in claims
+    # model's priority order kept (low finding first), severity still from the table
+    assert claims.index("1. **LOW**: / on http://127.0.0.1:8081 (missing_x_content_type_options).") < \
+        claims.index("2. **MEDIUM**: / on http://127.0.0.1:8081 (missing_csp).")
+    assert "   - Code evidence (verified): ` recorded response headers: content-type `" in claims
+    assert "   - Model note (unverified model text): ` Send nosniff on /. `" in claims
+    assert "   - Model note dropped: note mentions '/admin'" in claims
+    # the deterministic section is unchanged and still severity-sorted
+    assert deterministic.index("[MEDIUM]") < deterministic.index("[LOW]")
+    page = to_html(r)
+    assert "Model note (unverified model text): <q>Send nosniff on /.</q>" in page
+
+
+def test_model_note_is_escaped_in_html():
+    r = report_for(["missing_csp"], verified=[verified_claim("missing_csp", 1, note="<script>x</script>")])
+    page = to_html(r)
+    assert "<script" not in page.lower() and "&lt;script&gt;" in page
 
 
 def test_write_report(tmp_path):

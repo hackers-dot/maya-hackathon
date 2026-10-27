@@ -8,7 +8,7 @@ import json
 from dataclasses import dataclass, field
 
 from src.agent.tools import MAX_GET_EVIDENCE, RUNNABLE_CHECKS, TOOL_SPECS, ToolRegistry
-from src.agent.verifier import CLAIM_FOR_CHECK, verify
+from src.agent.verifier import CLAIM_FOR_CHECK, NOTE_MAX, verify
 from src.budget import BudgetExceeded, TokenBudget
 from src.evidence import redact_text
 
@@ -31,21 +31,20 @@ SYSTEM_PROMPT = (
     f"Make at most {MAX_CALLS_PER_STEP} run_check calls per step; extra calls are deferred and must be repeated "
     "in a later step. Order: high-impact items first, then cookies, then headers: "
     + "; ".join(f"{c} {p}" for c, p in PRIORITY) + ". "
-    "Each run_check result includes an evidence_summary line per finding; quote from it. You do not need "
+    "Each run_check result includes an evidence_summary per finding. You do not need "
     f"get_evidence (it is capped at {MAX_GET_EVIDENCE} calls per run). When every check above was attempted, "
     "stop calling tools and give the final answer. "
     "Final reply: ONLY a JSON object "
-    '{"claims": [{"finding_id": "...", "claim_type": "...", "quoted_evidence": "..."}]}. '
+    '{"claims": [{"finding_id": "...", "claim_type": "...", "priority": 1, "note": "..."}]}. '
     f"claim_type is one of: {', '.join(sorted(set(CLAIM_FOR_CHECK.values())))}. "
-    "quoted_evidence must be copied exactly from the evidence line AND show the issue itself: for a missing "
-    "header, the 'recorded response headers:' line; for a cookie, its set-cookie line; for a version, the "
-    "server or x-powered-by line; for an exposed file, a KEY=value line, the git ref, or the content-type line; "
-    "for a directory listing, the 'Index of' line. Never quote unrelated page body text. Claims whose quote does "
-    "not support them are dropped."
+    "Do NOT quote evidence: code attaches the evidence line itself. priority is your fix order, 1 = fix first, "
+    f"each number used once. note is one plain-language sentence for the site owner (max {NOTE_MAX} characters); "
+    "mention only paths, hosts or numbers that appear in that finding's evidence."
 )
 FINAL_INSTRUCTION = (
     "Stop calling tools now. Write the final answer: ONLY the JSON object "
-    '{"claims": [...]} for the findings returned so far, quoting their evidence_summary lines.'
+    '{"claims": [{"finding_id", "claim_type", "priority", "note"}]} for the findings returned so far. '
+    "Do not include quotes; code attaches the evidence."
 )
 
 
