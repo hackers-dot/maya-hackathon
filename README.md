@@ -21,6 +21,12 @@ All code in this repository was written during the Meta Global AI Developer Hack
   - Notes are labelled "unverified model text", restricted words are masked, and a note that mentions a host, path or number not in the finding's evidence is dropped (the claim is kept).
   - Bad priorities fall back to severity order.
   - `--show-dropped` prints a quote-vs-evidence diagnostic for each dropped claim.
+- **2026-10-30 (Day 6):** Fix proposals, approval gate and re-test.
+  - Proposals come from fixed templates: nginx and Apache snippets, a Python note, a risk level and a rollback line, each referencing its finding ids and marked "proposed, not applied".
+  - A human-named approval is required. Applying works only on the loopback demo app, through a control file, with a backup, a health check and automatic rollback. Every step is written to a hash-chained audit log.
+  - The re-test reruns the same checks and reports FIXED only when every original finding is gone, with a before/after diff.
+  - `scripts/demo_fix_flow.py` runs the whole flow without a model.
+  - Small fixes: `.env` evidence now shows a masked secret-looking line, backups show a SQL/zip signature line, and notes may name the `Secure` cookie attribute.
 
 ## License
 

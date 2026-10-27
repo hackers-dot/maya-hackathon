@@ -13,13 +13,16 @@ Intentional weaknesses (default mode):
   - directory listing on /backup/
   - a downloadable database dump at /db.sql (FAKE content)
 
---fixed applies FIXED_CONFIG: security headers added, cookie flags set, version hidden,
-/.env, /backup/ and /db.sql return 404. A re-test against --fixed proves the fixes.
+Each weakness has an independent fix keyed by MAYA's check id. --fixed turns on all of them.
+--control FILE turns on the fixes listed in that JSON file ({"fixes": [...]}), re-read on every request;
+this is how MAYA's approval gate applies approved fixes (src/approval.py), and a re-test proves them.
 
 Run:  python demo_app/app.py [--port 8081] [--fixed]
 """
 import argparse
+import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8081
@@ -36,24 +39,43 @@ LISTING_HTML = ("<!doctype html><title>Index of /backup/</title><h1>Index of /ba
                 '<ul><li><a href="shop-db.sql.bak">shop-db.sql.bak</a></li></ul>')
 COOKIE = "session=demo-session-0001; Path=/"
 
-FIXED_CONFIG = {
-    "headers": {
-        "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
-        "Strict-Transport-Security": "max-age=31536000",
-        "X-Frame-Options": "DENY",
-        "X-Content-Type-Options": "nosniff",
-    },
-    "cookie_flags": "; Secure; HttpOnly; SameSite=Lax",
-    "server": "DemoShop",
-    "blocked_paths": {"/.env", "/backup", "/backup/", "/backup/shop-db.sql.bak", "/db.sql"},
+# Each fix is independent, keyed by the MAYA check id it resolves, so fixes can be applied one by one.
+FIX_HEADERS = {
+    "missing_csp": ("Content-Security-Policy", "default-src 'self'"),
+    "missing_hsts": ("Strict-Transport-Security", "max-age=31536000"),
+    "missing_x_frame_options": ("X-Frame-Options", "DENY"),
+    "missing_x_content_type_options": ("X-Content-Type-Options", "nosniff"),
 }
+FIX_COOKIE = {"cookie_missing_secure": "; Secure", "cookie_missing_httponly": "; HttpOnly",
+              "cookie_missing_samesite": "; SameSite=Lax"}
+FIX_BLOCKED = {"exposed_env_file": {"/.env"},
+               "exposed_backup_file": {"/db.sql", "/backup/shop-db.sql.bak"},
+               "directory_listing": {"/backup", "/backup/"}}
+ALL_FIXES = frozenset(FIX_HEADERS) | frozenset(FIX_COOKIE) | frozenset(FIX_BLOCKED) | {"server_version_disclosure"}
+FIXED_CONFIG = {"fixes": sorted(ALL_FIXES)}  # what --fixed turns on
+
+
+def read_control(path) -> frozenset:
+    """Fix ids listed in the control file {"fixes": [...]}; unknown ids and unreadable files are ignored."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return frozenset(data.get("fixes", [])) & ALL_FIXES
+    except (OSError, ValueError, AttributeError, TypeError):
+        return frozenset()
 
 
 class DemoHandler(BaseHTTPRequestHandler):
     fixed = False
+    control_path = None  # read on every request so applied fixes take effect without a restart
+
+    def active_fixes(self) -> frozenset:
+        if self.fixed:
+            return ALL_FIXES
+        return read_control(self.control_path) if self.control_path else frozenset()
 
     def version_string(self):
-        return FIXED_CONFIG["server"] if self.fixed else "DemoShop/1.4.2 Python/3.10"
+        fixes = getattr(self, "_fixes", frozenset())
+        return "DemoShop" if "server_version_disclosure" in fixes else "DemoShop/1.4.2 Python/3.10"
 
     def log_message(self, *args):
         pass  # keep test output clean
@@ -65,11 +87,12 @@ class DemoHandler(BaseHTTPRequestHandler):
         self._route(send_body=False)
 
     def _route(self, send_body: bool):
+        self._fixes = self.active_fixes()
         path = self.path.split("?", 1)[0]
-        if self.fixed and path in FIXED_CONFIG["blocked_paths"]:
+        if any(path in FIX_BLOCKED[f] for f in self._fixes & FIX_BLOCKED.keys()):
             return self._send(404, "text/plain", "Not found", send_body)
         if path == "/":
-            cookie = COOKIE + (FIXED_CONFIG["cookie_flags"] if self.fixed else "")
+            cookie = COOKIE + "".join(FIX_COOKIE[f] for f in sorted(self._fixes & FIX_COOKIE.keys()))
             return self._send(200, "text/html", INDEX_HTML, send_body, cookie)
         if path == "/.env":
             return self._send(200, "text/plain", FAKE_ENV, send_body)
@@ -86,18 +109,18 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         if cookie:
             self.send_header("Set-Cookie", cookie)
-        if self.fixed:
-            for k, v in FIXED_CONFIG["headers"].items():
-                self.send_header(k, v)
+        for fix in sorted(self._fixes & FIX_HEADERS.keys()):
+            self.send_header(*FIX_HEADERS[fix])
         self.end_headers()
         if send_body:
             self.wfile.write(data)
 
 
-def make_server(port: int = DEFAULT_PORT, fixed: bool = False, host: str = HOST) -> ThreadingHTTPServer:
+def make_server(port: int = DEFAULT_PORT, fixed: bool = False, host: str = HOST,
+                control_path=None) -> ThreadingHTTPServer:
     if host != HOST:
         raise ValueError(f"demo app binds to {HOST} only; refused {host!r}")
-    handler = type("Handler", (DemoHandler,), {"fixed": fixed})
+    handler = type("Handler", (DemoHandler,), {"fixed": fixed, "control_path": control_path})
     return ThreadingHTTPServer((HOST, port), handler)
 
 
@@ -105,9 +128,10 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="MAYA deliberately vulnerable demo shop (loopback only)")
     p.add_argument("--port", type=int, default=DEFAULT_PORT)
     p.add_argument("--host", default=HOST, help="must be 127.0.0.1; anything else is refused")
-    p.add_argument("--fixed", action="store_true", help="apply FIXED_CONFIG")
+    p.add_argument("--fixed", action="store_true", help="apply every fix (FIXED_CONFIG)")
+    p.add_argument("--control", help="JSON control file {\"fixes\": [check ids]} read on every request")
     args = p.parse_args(argv)
-    server = make_server(args.port, args.fixed, args.host)
+    server = make_server(args.port, args.fixed, args.host, args.control)
     print(f"Demo shop ({'FIXED' if args.fixed else 'VULNERABLE'}) on http://{HOST}:{server.server_address[1]}/")
     try:
         server.serve_forever()

@@ -79,7 +79,7 @@ Checks are read-only, non-destructive observations. No exploit code, no attack p
   - Claims are now `{finding_id, claim_type (enum), priority (1..N), note (≤160 chars)}`. Extra keys are forbidden (a model-supplied `severity` makes the claim malformed). A legacy `quoted_evidence` is accepted but ignored, kept only for diagnostics.
   - Code attaches the evidence line itself: the first support line from the hash-verified record.
   - A claim is kept if: (1) its finding exists, (2) `claim_type` matches the finding's check, (3) the evidence hash verifies, and (4) the record satisfies the pattern table below.
-  - **The model's note is unverified text.** Restricted words (fake, scam, hack…, secure, compliant) are masked. Every host, path or number in the note must appear in that finding's own evidence, and anything over 160 chars is too long; a note that fails is dropped, and the claim is kept.
+  - **The model's note is unverified text.** Restricted words (fake, scam, hack…, compliant, and "secure"/"insecure" meaning safe) are masked. "Secure" is left alone when it is the cookie attribute name: quoted, followed by "flag"/"attribute", or listed next to HttpOnly / SameSite. Every host, path or number in the note must appear in that finding's own evidence, and anything over 160 chars is too long; a note that fails is dropped, and the claim is kept.
   - **Order:** the model's priorities are used only if they are present and unique among verified claims. Otherwise claims fall back to severity order, and the report says so.
   - `scripts/live_agent_run.py --show-dropped` prints, for each dropped claim, the model's quote, the evidence line it should have matched, and a diff hint (lengths, whitespace-normalized equality, containment).
 
@@ -95,9 +95,9 @@ Checks are read-only, non-destructive observations. No exploit code, no attack p
   | header_missing | header absent from the recorded header list (XCTO: absent or not `nosniff`; XFO: also no CSP `frame-ancestors`) | `recorded response headers: ...` (+ the wrong XCTO line) |
   | cookie_flag_missing | that cookie's `set-cookie` lacks the flag | that `set-cookie: ...` line |
   | version_disclosed | `server` / `x-powered-by` contains a version number | that header line |
-  | file_exposed (`.env`) | HTTP 200, non-HTML, `KEY=value` lines | the `KEY=value` lines |
+  | file_exposed (`.env`) | HTTP 200, non-HTML, `KEY=value` lines | secret-looking keys first (KEY/TOKEN/SECRET/PASSWORD/API), value masked first 3 + `...` + last 2; else the first `KEY=value` line |
   | file_exposed (`.git`) | HTTP 200 and a `ref: refs/...` or 40-hex body | the ref line |
-  | file_exposed (backup) | HTTP 200, non-HTML, non-empty | the `content-type:` line and first body line |
+  | file_exposed (backup) | HTTP 200, non-HTML, non-empty | a SQL/archive signature line first (`CREATE TABLE`, `INSERT INTO`, zip `PK\x03\x04`), else the `content-type:` line |
   | directory_listing | HTTP 200 and an `Index of /` / `Directory listing for /` title | that line |
   | dns / tls | not recorded over HTTP | none (always dropped) |
 
@@ -122,7 +122,7 @@ Checks are read-only, non-destructive observations. No exploit code, no attack p
 
 ## Demo app: `demo_app/app.py`
 
-A deliberately vulnerable stdlib shop that binds to `127.0.0.1` only (any other host raises). All its secrets are fake. `--fixed` applies `FIXED_CONFIG` (security headers, cookie flags, version hidden, `/.env` and `/backup/` return 404), so a re-test can prove a fix.
+A deliberately vulnerable stdlib shop that binds to `127.0.0.1` only (any other host raises). All its secrets are fake. Every weakness has an independent fix keyed by its check id. `--fixed` turns on all of them, and `--control FILE` (or `make_server(control_path=...)`) turns on the fixes listed in a JSON control file that the approval gate writes, so a re-test can prove a fix.
 
 ## Verifier
 
@@ -148,12 +148,25 @@ See `src/models.py`:
 | technical_explanation | for the developer |
 | demo | true if produced by the mock provider or the demo app |
 
-## Approval gate and fix-then-retest
+## Fix proposals, approval gate and fix-then-retest (Day 6)
 
-1. The model drafts a patch (a diff or config change). It is only a proposal.
-2. A human approves or rejects it. Nothing is applied without an explicit approval.
-3. After the patch is applied, the **same** check re-runs against the same location.
-4. The result is recorded as new evidence: "fixed" only if the verifier now passes.
+1. **Proposals (`src/fixes.py`), from fixed templates and never model prose.** One proposal per check, referencing every finding id it addresses. Each has:
+   - a kind (file block rule / header addition / config diff),
+   - exact nginx and Apache snippets and a Python `http.server` note,
+   - a risk level (low / medium: the chance of breaking something legitimate),
+   - a rollback line.
+
+   Covered: `.env`, `.git`, backup files, directory listing, the 3 cookie flags, the 4 headers and the server version. A new proposal is `PROPOSED` and says "proposed, not applied".
+2. **Approval gate (`src/approval.py`):**
+   - `PROPOSED → APPROVED` needs a non-empty approver name and records a UTC timestamp.
+   - `APPROVED → APPLIED` only for the loopback demo app. The target must pass `scope.check_target` with no verified list and be loopback, so any other target is refused even if approved. A proposal must also match the target it was made for.
+   - Applying adds the approved check ids to the demo app's control file (JSON, written atomically, re-read by the demo app on every request), after keeping the previous content as a backup.
+   - A health check (`GET /` through `HttpClient`, expects 200) runs next. If it fails, the backup is restored and the proposals become `ROLLED_BACK`. `rollback()` restores the previous state exactly, deleting the file if it did not exist.
+   - Nothing is applied without `APPROVED`.
+3. **Audit log:** every transition and refusal (`approved`, `approve_refused`, `apply_refused`, `applied`, `health_ok`, `rolled_back`) is appended to `data/audit.jsonl`. Each entry stores `seq`, the previous entry's hash and its own sha256 over the canonical JSON. `verify()` reports the first broken entry, so an edited, deleted or reordered line is detected.
+4. **Re-test (`src/retest.py`):** after `APPLIED`, the same checks re-run on the same paths. The status is `FIXED` only if every originating finding is now absent, otherwise `STILL_PRESENT`. It returns a before/after diff: resolved, still present, and new findings from those checks.
+5. **The demo app's fixes are independent,** keyed by check id (`FIX_HEADERS`, `FIX_COOKIE`, `FIX_BLOCKED`, server version), so a partial apply leaves exactly the unapplied issues. `--fixed` turns on all of them.
+6. `scripts/demo_fix_flow.py` runs the whole flow on loopback with no model: scan → proposals → approve as "demo-user" → apply → health check → re-test → before/after → audit-chain check.
 
 ## Model provider
 

@@ -45,7 +45,7 @@ def test_dry_run_vulnerable(loopback_only, tmp_path, capsys):
     assert "Order: ordered by the model's priority." in claims
     assert ("Model note (unverified model text): ` Anyone can download /.env; block it and rotate the keys it holds. `"
             in claims)
-    assert "Code evidence (verified): ` APP_ENV=demo `" in claims
+    assert "Code evidence (verified): ` API_KEY=fak...al `" in claims  # secret-looking key first, masked
     assert "Model note dropped: note mentions '/admin'" in claims
     assert claims.index("**CRITICAL**") < claims.index("**MEDIUM**")
     reports = list((tmp_path / "reports").iterdir())
@@ -96,7 +96,7 @@ def test_report_built_when_model_never_finishes(loopback_only, monkeypatch, tmp_
     md = next((tmp_path / "reports").glob("*.md")).read_text(encoding="utf-8")
     assert "model did not finish; findings are from code checks" in md
     assert "[CRITICAL] Configuration file appears publicly readable" in md
-    assert "- Supporting evidence: ` APP_ENV=demo `" in md  # first code-derived KEY=value line of the record
+    assert "- Supporting evidence: ` API_KEY=fak...al `" in md  # first secret-looking KEY=value line, masked
     assert "fake-demo-key-not-real" not in md
     assert "None. The model did not finish." in md
 

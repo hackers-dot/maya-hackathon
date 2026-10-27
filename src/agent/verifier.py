@@ -18,7 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from src.evidence import EvidenceStore
+from src.evidence import EvidenceStore, mask
 from src.models import Finding
 from src.scanner.checks_files import ENV_LINE, GIT_HEAD, LISTING
 from src.scanner.checks_headers import SECURITY_HEADERS, VERSION
@@ -49,6 +49,14 @@ TEMPLATES = {
 }
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
+SECRET_KEY = re.compile(r"(?i)KEY|TOKEN|SECRET|PASSWORD|API")
+BACKUP_SIGNATURE = re.compile(r"(?i)\b(?:CREATE TABLE|INSERT INTO)\b|PK\x03\x04")
+
+
+def _mask_env(line: str) -> str:
+    """KEY=value -> KEY=<first 3>...<last 2>. Idempotent on values the store already masked."""
+    key, _, val = line.partition("=")
+    return f"{key}={mask(val.strip())}"
 HEADER_FOR_CHECK = {check: header for header, check in SECURITY_HEADERS}
 COOKIE_FLAG = {"cookie_missing_secure": "secure", "cookie_missing_httponly": "httponly",
                "cookie_missing_samesite": "samesite"}
@@ -56,7 +64,24 @@ HEADER_LIST_PREFIX = "recorded response headers: "
 
 
 NOTE_MAX = 160
-RESTRICTED = re.compile(r"(?i)\b\w*(?:fake|scam|hack|secure|compliant)\w*\b")
+RESTRICTED = re.compile(r"(?i)\b\w*(?:fake|scam|hack|compliant|secure)\w*\b")
+_SEP = r"(?:,|;|/|&|and|or)"
+
+
+def _is_cookie_attribute(note: str, m: re.Match) -> bool:
+    """'Secure' used as the cookie attribute name (not as 'safe'): quoted, followed by flag/attribute,
+    or listed next to HttpOnly / SameSite."""
+    if m.group().lower() != "secure":
+        return False
+    before, after = note[:m.start()], note[m.end():]
+    return bool((before and after and before[-1] in "`'\"" and after[0] in "`'\"")
+                or re.match(r"\s+(?:flag|attribute)s?\b", after, re.I)
+                or re.match(rf"\s*{_SEP}\s*(?:HttpOnly|SameSite)\b", after, re.I)
+                or re.search(rf"\b(?:HttpOnly|SameSite)\s*{_SEP}\s*$", before, re.I))
+
+
+def mask_note(note: str) -> str:
+    return RESTRICTED.sub(lambda m: m.group() if _is_cookie_attribute(note, m) else "[masked]", note)
 # things a note may only mention if they appear in the finding's own evidence
 NOTE_REFERENCES = re.compile(
     r"(?i)\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b"     # host names (also file names such as db.sql)
@@ -122,12 +147,19 @@ def support_lines(finding: Finding, record: dict) -> list[str]:
         v = value(suffix)
         return [f"{suffix}: {v}"] if v and VERSION.search(v) else []
     if check == "exposed_env_file":
-        return [l for l in body_lines if ENV_LINE.search(l.encode())] if ok_200 and not_html else []
+        if not (ok_200 and not_html):
+            return []
+        env = [l for l in body_lines if ENV_LINE.search(l.encode())]
+        secret = [_mask_env(l) for l in env if SECRET_KEY.search(l.split("=", 1)[0])]
+        return secret + [l for l in env if not SECRET_KEY.search(l.split("=", 1)[0])]
     if check == "exposed_git_dir":
         body = resp["body"].strip()
         return [body] if ok_200 and GIT_HEAD.match(body.encode()) else []
     if check == "exposed_backup_file":
-        return ([f"content-type: {value('content-type')}"] + body_lines[:1]) if ok_200 and not_html and body_lines else []
+        if not (ok_200 and not_html and body_lines):
+            return []
+        signature = [l.replace("\x03", "\\x03").replace("\x04", "\\x04") for l in body_lines if BACKUP_SIGNATURE.search(l)]
+        return signature + [f"content-type: {value('content-type')}"]
     if check == "directory_listing":
         return [l for l in body_lines if LISTING.search(l.encode())] if ok_200 else []
     return []  # DNS/TLS evidence is not recorded over HTTP, so nothing here can support those claims
@@ -160,7 +192,7 @@ def check_note(note: str, evidence_text: str) -> tuple[str | None, str | None]:
         ref = ref.rstrip(".")  # sentence punctuation, not part of the path or number
         if ref and ref.lower() not in haystack:
             return None, f"note mentions {ref!r}, which is not in this finding's evidence"
-    return RESTRICTED.sub("[masked]", note), None
+    return mask_note(note), None
 
 
 def verify(claims, findings: dict[str, Finding], store: EvidenceStore) -> dict:

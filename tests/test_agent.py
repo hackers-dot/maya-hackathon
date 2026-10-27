@@ -6,7 +6,7 @@ import pytest
 
 from src.agent.loop import FINAL_INSTRUCTION, MAX_STEPS, SYSTEM_PROMPT, run_agent
 from src.agent.tools import MAX_GET_EVIDENCE, RUNNABLE_CHECKS, TOOL_SPECS, ToolRegistry
-from src.agent.verifier import TEMPLATES, verify
+from src.agent.verifier import TEMPLATES, evidence_line, verify
 from src.budget import TokenBudget
 from src.evidence import EvidenceStore
 from src.provider import ChatResult, MockProvider
@@ -391,6 +391,63 @@ def test_note_too_long_is_dropped(env):
     assert v["note"] is None and v["note_dropped"] == "note longer than 160 characters"
 
 
+@pytest.mark.parametrize("note", [
+    "Add the Secure flag to the session cookie.",
+    "Set Secure; HttpOnly; SameSite=Lax on the cookie.",
+    "The cookie lacks the `Secure` attribute.",
+    "Use HttpOnly and Secure on it.",
+    "Add the secure attribute.",
+])
+def test_cookie_attribute_secure_is_not_masked(env, note):
+    assert note_for(env, "missing_csp", note)["note"] == note
+
+
+@pytest.mark.parametrize("note,masked", [
+    ("The site is secure.", "The site is [masked]."),
+    ("Once fixed the shop is secure now.", "Once fixed the shop is [masked] now."),
+    ("This page is insecure.", "This page is [masked]."),
+    ("A Secure site needs this.", "A [masked] site needs this."),
+    ("Not hacked, not a scam, not fake, not compliant.", "Not [masked], not a [masked], not [masked], not [masked]."),
+])
+def test_restricted_words_still_masked(env, note, masked):
+    assert note_for(env, "missing_csp", note)["note"] == masked
+
+
+# --- evidence line choice (Day 6) ---
+
+def file_finding(registry, check, path, body: bytes, ctype="text/plain"):
+    from src.scanner.findings import make_finding
+    rid = registry.store.add("GET", BASE + path, [], 200, [("Content-Type", ctype)], body)
+    return make_finding(check, BASE, path, "d", "e", "t", rid)
+
+
+@pytest.mark.parametrize("body,line", [
+    (b"APP_ENV=prod\nDEBUG=0\nAPI_KEY=fake-demo-key-not-real\n", "API_KEY=fak...al"),   # masked at storage
+    (b"APP_ENV=prod\nSTRIPE_KEY=livevalue123456\n", "STRIPE_KEY=liv...56"),             # masked by the line chooser
+    (b"APP_ENV=prod\nDB_PASSWORD=x\n", "DB_PASSWORD=***"),                              # short value fully masked
+    (b"# c\nAPP_ENV=prod\nDEBUG=0\n", "APP_ENV=prod"),                                  # no secret-looking key
+])
+def test_env_evidence_line_prefers_masked_secret_key(env, body, line):
+    registry, _, _ = env
+    f = file_finding(registry, "exposed_env_file", "/.env", body)
+    assert evidence_line(f, registry.store) == line
+    assert "livevalue123456" not in evidence_line(f, registry.store)
+
+
+@pytest.mark.parametrize("body,ctype,line", [
+    (b"-- dump\nCREATE TABLE users (id int);\nINSERT INTO users VALUES (1);\n", "application/octet-stream",
+     "CREATE TABLE users (id int);"),
+    (b"-- FAKE demo dump\nINSERT INTO products VALUES (1, 'Demo mug', 9.99);\n", "application/sql",
+     "INSERT INTO products VALUES (1, 'Demo mug', 9.99);"),
+    (b"PK\x03\x04\x14\x00rest-of-zip", "application/zip", "PK\\x03\\x04\x14\x00rest-of-zip"),
+    (b"just some bytes", "application/octet-stream", "content-type: application/octet-stream"),
+])
+def test_backup_evidence_line_prefers_signature(env, body, ctype, line):
+    registry, _, _ = env
+    f = file_finding(registry, "exposed_backup_file", "/db.sql", body, ctype)
+    assert evidence_line(f, registry.store) == line
+
+
 # --- priorities ---
 
 def three_findings(env):
@@ -454,7 +511,7 @@ def test_agent_end_to_end_demo(start_demo, tmp_path, fixed):
         assert [v["finding_id"] for v in result.report["verified"]] == ["exposed_env_file:/.env", "missing_csp:/"]
         assert result.report["order"] == "model"  # priorities 1, 2 are unique among verified claims
         assert verified["exposed_env_file:/.env"]["severity"] == "critical"
-        assert verified["exposed_env_file:/.env"]["supporting_evidence"] == "APP_ENV=demo"
+        assert verified["exposed_env_file:/.env"]["supporting_evidence"] == "API_KEY=fak...al"
         assert verified["missing_csp:/"]["note"] == "The homepage / sends no Content-Security-Policy header."
         assert all(v["demo"] for v in verified.values())
         assert [i["finding_id"] for i in result.report["insufficient"]] == ["exposed_git_dir:/.git/HEAD"]
