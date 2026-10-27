@@ -42,3 +42,6 @@ def check_target(url: str, verified: frozenset[str] | set[str] = frozenset()) ->
     if host in {v.lower() for v in verified}:
         return host
     raise OutOfScope(f"host {host!r} is not loopback and not ownership-verified")
+
+
+check = check_target

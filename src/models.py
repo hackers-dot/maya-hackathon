@@ -16,6 +16,7 @@ class Evidence(BaseModel):
     data: str
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     captured_at: AwareDatetime
+    record_id: str | None = None  # EvidenceStore record holding the full (redacted) request/response
 
     @field_validator("captured_at")
     @classmethod
@@ -31,9 +32,9 @@ class Evidence(BaseModel):
         return self
 
     @classmethod
-    def capture(cls, description: str, data: str) -> "Evidence":
+    def capture(cls, description: str, data: str, record_id: str | None = None) -> "Evidence":
         return cls(description=description, data=data, sha256=sha256(data),
-                   captured_at=datetime.now(timezone.utc))
+                   captured_at=datetime.now(timezone.utc), record_id=record_id)
 
 
 class Finding(BaseModel):
