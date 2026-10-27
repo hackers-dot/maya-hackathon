@@ -14,9 +14,27 @@ The model plans, explains and drafts patches. It never touches the network direc
 
 - `src/scope.py` is the single gate. A target is allowed only if:
   - its host is loopback (`localhost`, `127.0.0.0/8`, `::1`), which is our own demo app, or
-  - its exact hostname is in the verified-targets list (empty by default).
-- The guard refuses ambiguous URLs outright: userinfo (`http://127.0.0.1@evil.com`), backslashes, non-http(s) schemes, and non-canonical IP forms (decimal `2130706433`, hex `0x7f000001`, short `127.1`).
-- Ownership verification (planned): MAYA issues a random token, and the user publishes it at `/.well-known/maya-verify.txt` or in a DNS TXT record. Only after MAYA reads the token back is the host added to the verified list.
+  - its exact hostname is a dotted DNS name on the verified-targets list (empty by default).
+- The guard refuses ambiguous URLs outright: userinfo (`http://127.0.0.1@evil.com`), backslashes, non-http(s) schemes, non-loopback IP literals, and non-canonical numeric host forms (decimal `2130706433`, hex `0x7f000001`, short `127.1`). Numeric forms are refused **even if they are on the verified list**, and so are single-label names like `intranet`.
+- **Ownership verification (`src/ownership.py`):**
+  - `new_token()` returns `maya-verify-` plus a random 192-bit URL-safe value.
+  - The owner proves control in one of two ways: a homepage `<meta name="maya-verify" content="TOKEN">` (found with a real HTML parser, so comments don't count), or `/.well-known/maya-verify.txt` whose whole content is the token. Comparison is constant-time.
+  - The check uses a one-off `HttpClient` whose allow-list holds only the user-submitted host. It fetches exactly those two paths with GET. A redirect to any other host is refused by the scope guard, and the submitted URL must pass the same URL rules as any scan.
+  - On success the host is written to `data/verified_targets.json` with a UTC timestamp and method. `VerifiedTargets.hosts()` feeds `HttpClient(verified=...)`.
+  - Loopback returns "verified (loopback)" without fetching or persisting anything.
+  - Not covered yet: DNS-rebinding defense (a verified name resolving to an internal IP). That needs resolve-then-pin in the HTTP client.
+
+## Reports: `src/report.py`
+
+- Built from verifier output plus findings. Items are sorted by severity from the fixed table (a severity in the claim is ignored); "Fix first" is the top 3.
+- Each item has its location, evidence id, verified quote, and an OWASP Top 10 2021 category taken from a fixed table and worded "mapped to" (SPF/DMARC are labelled as outside the OWASP Top 10). It also has a plain explanation with an analogy, a technical detail line and a fix, all from fixed per-check templates in code.
+- The header shows the model, reasoning effort and token usage (reasoning tokens separate), plus a DEMO banner when any item comes from the demo app.
+- Wording uses "appears" / "detected" / "not detected in the checks run". Tests strip code spans and assert that "secure", "hack" and "compliant" never appear in the prose. The only place the cookie attribute `Secure` appears is inside code formatting.
+- The report is written as markdown plus a self-contained HTML file: inline CSS, no scripts, no external assets, and every dynamic string `html.escape`d.
+
+## Live run: `scripts/live_agent_run.py`
+
+Starts the demo app on a free loopback port (`--fixed` for fixed mode) and runs the agent with the real provider. Hard caps: 6 steps, 40,000 tokens (checked after each call, so the last call can overshoot by up to one reply), and `reasoning_effort=low`. Per step it prints the tool, args, result summary, tokens (reasoning separate) and model latency, then the verified and dropped claims, and writes the report to `data/reports/`. `--dry-run` uses a scripted `MockProvider`, so the only network traffic is to the loopback demo app.
 
 ## Single egress point: `src/scanner/http_client.py`
 

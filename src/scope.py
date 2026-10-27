@@ -1,8 +1,13 @@
 """Target guard: only loopback or explicitly verified hosts may be scanned. Pure logic, no network."""
 import ipaddress
+import re
 from urllib.parse import urlsplit
 
 LOOPBACK_NAMES = {"localhost"}
+# decimal / hex / octal / short IPv4 spellings (2130706433, 0x7f000001, 127.1) that some stacks resolve as IPs
+NUMERIC_HOST = re.compile(r"^(?:0x[0-9a-f]*|\d+)(?:\.(?:0x[0-9a-f]*|\d+))*\.?$")
+# a real dotted DNS name whose last label starts with a letter
+DNS_NAME = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
 class OutOfScope(ValueError):
@@ -37,9 +42,11 @@ def check_target(url: str, verified: frozenset[str] | set[str] = frozenset()) ->
             return host
         raise OutOfScope(f"IP {host} is not loopback")
 
+    if NUMERIC_HOST.match(host):
+        raise OutOfScope(f"non-canonical numeric host {host!r}")  # even if someone put it on the verified list
     if host in LOOPBACK_NAMES:
         return host
-    if host in {v.lower() for v in verified}:
+    if DNS_NAME.match(host) and host in {v.lower() for v in verified}:
         return host
     raise OutOfScope(f"host {host!r} is not loopback and not ownership-verified")
 

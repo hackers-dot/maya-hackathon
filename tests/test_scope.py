@@ -47,3 +47,10 @@ def test_verified_list_empty_by_default_and_exact_match():
     assert check_target("https://myshop.example/", {"MyShop.example"}) == "myshop.example"
     with pytest.raises(OutOfScope):
         check_target("https://sub.myshop.example/", {"myshop.example"})
+
+
+@pytest.mark.parametrize("host", ["2130706433", "0x7f000001", "127.1", "167772161", "0x0a.0.0.1", "intranet"])
+def test_verified_list_cannot_admit_numeric_or_bare_names(host):
+    # numeric spellings may resolve to internal IPs; single-label names are not public DNS names
+    with pytest.raises(OutOfScope):
+        check_target(f"http://{host}/", {host})
