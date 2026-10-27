@@ -56,7 +56,10 @@ def dry_script() -> list[ChatResult]:
     usage = {"prompt_tokens": 900, "completion_tokens": 120, "total_tokens": 1020,
              "completion_tokens_details": {"reasoning_tokens": 80}}
     claims = [
-        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "HTTP 200"},
+        {"finding_id": "missing_csp:/", "claim_type": "header_missing",
+         "quoted_evidence": "content-type, server, set-cookie"},
+        # the failure seen live: a real quote from the homepage body that does not show the missing header
+        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "<h1>Demo Shop</h1>"},
         {"finding_id": "exposed_env_file:/.env", "claim_type": "file_exposed", "quoted_evidence": "API_KEY=fak...al"},
         {"finding_id": "exposed_git_dir:/.git/HEAD", "claim_type": "file_exposed", "quoted_evidence": "ref: refs"},
     ]

@@ -61,7 +61,9 @@ Checks are read-only, non-destructive observations. No exploit code, no attack p
   - Every call is validated before anything runs: the tool name must be on the allowlist, args must be a JSON-object string with exactly the expected keys, `check_id` must be from the table, and `path` must start with a single `/` with no scheme, host, `..`, `@`, backslash or whitespace. Evidence ids must be 32-char hex.
   - Rejected calls are logged and never executed. Accepted calls are executed by code and logged (args redacted).
 - **`loop.py`: bounded loop on native tool calling** (`tools` + `tool_choice="auto"`).
-  - Stops after `MAX_STEPS` (default 8), at most 4 tool calls per step. `reasoning_effort` and `max_tokens` come from `config.yaml` (low, 1500) through the provider.
+  - Stops after `MAX_STEPS` (default 8), and executes at most 4 tool calls per step.
+  - Extra calls in a step are **deferred**, not rejected: they are never executed, they are logged with status `deferred`, and each one still gets a tool result (`"deferred: per-step limit reached, call again next step"`), so every `tool_call_id` is answered and the API conversation stays valid. The model can repeat them in a later step.
+  - The system prompt tells the model: at most 4 `run_check` calls per step; high-impact checks first (`.env`, `.git`, backup files, directory listing), then cookies, then headers; continue until every check type has been tried; quote the line that shows the issue. `reasoning_effort` and `max_tokens` come from `config.yaml` (low, 1500) through the provider.
   - Every reply's usage, including `reasoning_tokens`, goes into `TokenBudget`. `BudgetExceeded` stops the loop cleanly before any further tool runs.
   - Every step writes a trace entry: step, tool, args (redacted), result summary, tokens.
   - The final answer must be JSON claims; there is no free-text report.
@@ -69,8 +71,23 @@ Checks are read-only, non-destructive observations. No exploit code, no attack p
   1. the finding exists (it was produced by code in this run),
   2. `claim_type` matches the finding's check,
   3. the evidence record's sha256 verifies,
-  4. the quote appears verbatim in that record (request line, status, headers, body).
-  Anything else is listed as "insufficient evidence" with a reason. Report text comes from fixed templates; severity comes from the finding, i.e. the table.
+  4. the quote appears verbatim in that record (request line, status, a `recorded response headers: ...` line, headers, body),
+  5. **entailment**: code re-checks the stored record for the issue and derives the "support lines" that show it, and the quote must lie inside one of them:
+
+  | claim_type | record must show | support lines |
+  |---|---|---|
+  | header_missing | header absent from the recorded header list (XCTO: absent or not `nosniff`; XFO: also no CSP `frame-ancestors`) | `recorded response headers: ...` (+ the wrong XCTO line) |
+  | cookie_flag_missing | that cookie's `set-cookie` lacks the flag | that `set-cookie: ...` line |
+  | version_disclosed | `server` / `x-powered-by` contains a version number | that header line |
+  | file_exposed (`.env`) | HTTP 200, non-HTML, `KEY=value` lines | the `KEY=value` lines |
+  | file_exposed (`.git`) | HTTP 200 and a `ref: refs/...` or 40-hex body | the ref line |
+  | file_exposed (backup) | HTTP 200, non-HTML, non-empty | the `content-type:` line and first body line |
+  | directory_listing | HTTP 200 and an `Index of /` / `Directory listing for /` title | that line |
+  | dns / tls | not recorded over HTTP | none (always dropped) |
+
+  A quote that is real but does not support the claim (e.g. homepage body text for a missing header) is dropped with "quote does not support claim". If the record itself does not show the issue, the reason adds "the evidence record does not show the issue".
+
+  Anything else is listed as "insufficient evidence" with a reason. Report text comes from fixed templates; severity comes from the finding, i.e. the table. The report shows the code-derived **supporting line** (e.g. the header list), not the model's quote.
 
 ## Evidence store: `src/evidence.py`
 

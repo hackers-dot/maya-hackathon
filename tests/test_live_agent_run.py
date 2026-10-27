@@ -34,6 +34,9 @@ def test_dry_run_vulnerable(loopback_only, tmp_path, capsys):
     assert "stop_reason=final" in out
     assert "[CRITICAL]" in out and "[MEDIUM]" in out
     assert "exposed_git_dir:/.git/HEAD: unknown finding_id" in out
+    assert "missing_csp:/: quote does not support claim" in out  # homepage-body quote dropped
+    reports_md = "".join(p.read_text(encoding="utf-8") for p in (tmp_path / "reports").glob("*.md"))
+    assert "recorded response headers: content-length, content-type, server, set-cookie" in reports_md
     reports = list((tmp_path / "reports").iterdir())
     assert sorted(p.suffix for p in reports) == [".html", ".md"]
     md = next(p for p in reports if p.suffix == ".md").read_text(encoding="utf-8")
@@ -45,7 +48,7 @@ def test_dry_run_fixed(loopback_only, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "demo app FIXED" in out
     assert "Verified claims:\n  (none)" in out
-    assert out.count("unknown finding_id") == 3
+    assert out.count("unknown finding_id") == 4
 
 
 def model_transport(seen, replies):
@@ -72,7 +75,8 @@ def test_real_provider_path_with_fake_model(loopback_only, monkeypatch, tmp_path
              "function": {"name": "run_check", "arguments": '{"check_id": "missing_csp", "path": "/"}'}}]},
               finish="tool_calls"),
         reply({"content": f"<think>{SECRET_REASONING}</think>" + json.dumps({"claims": [
-            {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "HTTP 200"}]})}),
+            {"finding_id": "missing_csp:/", "claim_type": "header_missing",
+             "quoted_evidence": "recorded response headers: content-length"}]})}),
     ]
     assert live.main([], transport=model_transport(seen, replies), data_dir=tmp_path) == 0
     out = capsys.readouterr().out

@@ -10,15 +10,31 @@ from src.evidence import redact_text
 MAX_STEPS = 8
 MAX_CALLS_PER_STEP = 4
 
+PRIORITY = [
+    ("exposed_env_file", "/.env"), ("exposed_git_dir", "/.git/HEAD"), ("exposed_backup_file", "/db.sql"),
+    ("exposed_backup_file", "/backup.zip"), ("directory_listing", "/backup/"),
+    ("cookie_missing_secure", "/"), ("cookie_missing_httponly", "/"), ("cookie_missing_samesite", "/"),
+    ("missing_csp", "/"), ("missing_hsts", "/"), ("missing_x_frame_options", "/"),
+    ("missing_x_content_type_options", "/"), ("server_version_disclosure", "/"),
+]
+
 SYSTEM_PROMPT = (
     "You are MAYA, a security agent checking a site its owner authorized. Use only the provided tools; "
     "code runs them and returns findings. Severity is decided by code, never by you. "
     f"Check ids: {', '.join(CHECK_IDS)}. Paths must start with '/'. "
-    "When done, reply with ONLY a JSON object: "
+    f"Make at most {MAX_CALLS_PER_STEP} run_check calls per step; extra calls are deferred and must be repeated "
+    "in a later step. Order: high-impact items first, then cookies, then headers: "
+    + "; ".join(f"{c} {p}" for c, p in PRIORITY) + ". "
+    "Continue until every check type above was attempted or steps run out, then use get_evidence on the "
+    "evidence_id of each finding you will claim. "
+    "Final reply: ONLY a JSON object "
     '{"claims": [{"finding_id": "...", "claim_type": "...", "quoted_evidence": "..."}]}. '
     f"claim_type is one of: {', '.join(sorted(set(CLAIM_FOR_CHECK.values())))}. "
-    "quoted_evidence must be text copied exactly from a get_evidence record. Claims that cannot be "
-    "verified against stored evidence are dropped."
+    "quoted_evidence must be copied exactly from the evidence record AND show the issue itself: for a missing "
+    "header, quote the 'recorded response headers:' line; for a cookie, its set-cookie line; for a version, the "
+    "server or x-powered-by line; for an exposed file, a KEY=value line, the git ref, or the content-type line; "
+    "for a directory listing, the 'Index of' line. Never quote unrelated page body text. Claims whose quote does "
+    "not support them are dropped."
 )
 
 
@@ -71,9 +87,8 @@ def run_agent(provider, registry: ToolRegistry, budget: TokenBudget, goal: str,
             fn = call.get("function") or {}
             if i < MAX_CALLS_PER_STEP:
                 out = registry.call(fn.get("name"), fn.get("arguments"))
-            else:
-                out = registry._record(fn.get("name"), fn.get("arguments"), {
-                    "ok": False, "error": "rejected: too many tool calls in one step", "summary": "rejected"})
+            else:  # never executed; still answered so every tool_call_id gets a result
+                out = registry.defer(fn.get("name"), fn.get("arguments"))
             result.trace.append({"step": step, "tool": fn.get("name"), "args": redact_text(str(fn.get("arguments"))),
                                  "result_summary": out["summary"], "tokens": tokens})
             messages.append({"role": "tool", "tool_call_id": call.get("id", f"call_{step}_{i}"),

@@ -43,6 +43,9 @@ TOOL_SPECS = [
 ARG_KEYS = {s["function"]["name"]: set(s["function"]["parameters"]["properties"]) for s in TOOL_SPECS}
 
 
+DEFERRED_MESSAGE = "deferred: per-step limit reached, call again next step"
+
+
 class ToolError(ValueError):
     pass
 
@@ -76,9 +79,16 @@ class ToolRegistry:
             out = {"ok": False, "error": f"request failed: {type(e).__name__}", "summary": "error: request failed"}
         return self._record(name, args, out)
 
+    def defer(self, name, raw_args) -> dict:
+        """Per-step limit hit: not validated, not executed; logged as deferred so the model can retry."""
+        return self._record(name, raw_args, {"ok": False, "status": "deferred", "message": DEFERRED_MESSAGE,
+                                             "summary": "deferred"})
+
     def _record(self, name, args, out) -> dict:
+        status = out.get("status") or ("ok" if out["ok"] else
+                                       "rejected" if out.get("error", "").startswith("rejected") else "error")
         entry = {"tool": name, "args": redact_text(json.dumps(args) if not isinstance(args, str) else args),
-                 "ok": out["ok"], "summary": out["summary"]}
+                 "ok": out["ok"], "status": status, "summary": out["summary"]}
         self.log.append(entry)
         log.info("tool call %s", entry)
         return out

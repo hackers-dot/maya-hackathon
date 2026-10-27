@@ -158,7 +158,9 @@ def build_report(verified: list[dict], findings: dict, model: str, reasoning_eff
         seen.add(f.id)
         items.append({
             "finding_id": f.id, "check": f.check, "severity": rule(f.check).severity, "location": f.location,
-            "target": f.target, "evidence_id": v["evidence_id"], "quoted_evidence": v["quoted_evidence"],
+            "target": f.target, "evidence_id": v["evidence_id"],
+            # the code-derived line that shows the issue (e.g. the header list), not whatever text was quoted
+            "evidence_line": v.get("supporting_evidence") or v["quoted_evidence"],
             "category": owasp_label(f.check), "text": TEXT[f.check], "demo": f.demo,
         })
     items.sort(key=lambda i: (SEVERITY_ORDER.index(i["severity"]), i["check"], i["location"]))
@@ -203,7 +205,7 @@ def to_markdown(report: dict) -> str:
                 f"- Location: {_md_code(i['location'])} on {_md_code(i['target'])}",
                 f"- Check: {_md_code(i['check'])} ({i['category']})",
                 f"- Evidence id: {_md_code(i['evidence_id'])}",
-                f"- Quoted evidence: {_md_code(i['quoted_evidence'])}", "",
+                f"- Supporting evidence: {_md_code(i['evidence_line'])}", "",
                 f"**What this means:** {t.plain} {t.analogy}", "",
                 f"**Technical detail:** {t.technical}", "",
                 f"**Suggested fix:** {t.fix}", ""]
@@ -261,7 +263,7 @@ def to_html(report: dict) -> str:
                  f"<li>Location: <code>{_e(i['location'])}</code> on <code>{_e(i['target'])}</code></li>"
                  f"<li>Check: <code>{_e(i['check'])}</code> ({_e(i['category'])})</li>"
                  f"<li>Evidence id: <code>{_e(i['evidence_id'])}</code></li>"
-                 f"<li>Quoted evidence: <code>{_e(i['quoted_evidence'])}</code></li></ul>"
+                 f"<li>Supporting evidence: <code>{_e(i['evidence_line'])}</code></li></ul>"
                  f"<p><strong>What this means:</strong> {_inline(t.plain)} {_inline(t.analogy)}</p>"
                  f"<p><strong>Technical detail:</strong> {_inline(t.technical)}</p>"
                  f"<p><strong>Suggested fix:</strong> {_inline(t.fix)}</p></section>")

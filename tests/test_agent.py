@@ -64,7 +64,8 @@ def test_unknown_tool_rejected_and_logged(env):
     registry, _, requests = env
     out = registry.call("delete_site", "{}")
     assert not out["ok"] and "unknown tool" in out["error"]
-    assert registry.log == [{"tool": "delete_site", "args": "{}", "ok": False, "summary": out["summary"]}]
+    assert registry.log == [{"tool": "delete_site", "args": "{}", "ok": False, "status": "rejected",
+                             "summary": out["summary"]}]
     assert requests == []
 
 
@@ -116,7 +117,8 @@ def test_loop_runs_tool_then_final(env):
     registry, budget, requests = env
     provider = MockProvider(script=[
         tool_reply(call("run_check", {"check_id": "missing_csp", "path": "/"})),
-        final_reply([{"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "HTTP 200"}]),
+        final_reply([{"finding_id": "missing_csp:/", "claim_type": "header_missing",
+                      "quoted_evidence": "content-type, server"}]),
     ])
     result = run_agent(provider, registry, budget, "Check the shop.")
     assert result.stop_reason == "final" and result.final_answer_valid
@@ -164,12 +166,26 @@ def test_budget_exceeded_stops_cleanly(env, tmp_path):
     assert requests == [] and registry.log == []  # the tool call after the cap was never executed
 
 
-def test_too_many_calls_in_one_step(env):
+def test_calls_over_step_limit_are_deferred_then_run_later(env):
     registry, budget, requests = env
-    calls = [call("run_check", {"check_id": "missing_csp", "path": f"/p{i}"}, cid=f"c{i}") for i in range(6)]
-    result = run_agent(MockProvider(script=[tool_reply(*calls), final_reply([])]), registry, budget, "go")
-    assert [t["result_summary"] for t in result.trace[:6]] == ["1 finding(s)"] * 4 + ["rejected"] * 2
-    assert requests == ["/p0", "/p1", "/p2", "/p3"]
+    calls = [call("run_check", {"check_id": "missing_csp", "path": f"/p{i}"}, cid=f"c{i}") for i in range(15)]
+    retry = calls[4:8]  # the model repeats 4 deferred calls in the next step
+    provider = MockProvider(script=[tool_reply(*calls), tool_reply(*retry), final_reply([])])
+    result = run_agent(provider, registry, budget, "go")
+
+    step1 = [t for t in result.trace if t["step"] == 1]
+    assert [t["result_summary"] for t in step1] == ["1 finding(s)"] * 4 + ["deferred"] * 11
+    assert [e["status"] for e in registry.log[:15]] == ["ok"] * 4 + ["deferred"] * 11  # not "rejected"
+    # every call id answered, so the API conversation stays valid; deferred ones carry the retry message
+    tool_msgs = [m for m in provider.calls[1]["messages"] if m["role"] == "tool"]
+    assert [m["tool_call_id"] for m in tool_msgs] == [f"c{i}" for i in range(15)]
+    deferred = json.loads(tool_msgs[10]["content"])
+    assert deferred["status"] == "deferred"
+    assert deferred["message"] == "deferred: per-step limit reached, call again next step"
+    # deferred calls were never executed in step 1, and ran when repeated in step 2
+    assert requests == [f"/p{i}" for i in range(4)] + [f"/p{i}" for i in range(4, 8)]
+    assert [t["result_summary"] for t in result.trace if t["step"] == 2] == ["1 finding(s)"] * 4
+    assert result.stop_reason == "final"
 
 
 def test_non_json_final_answer(env):
@@ -187,15 +203,15 @@ def test_verifier_drops_fake_claims(env):
     registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
     registry.call("run_check", json.dumps({"check_id": "server_version_disclosure", "path": "/"}))
     claims = [
-        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "HTTP 200"},
+        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "content-type, server"},
         {"finding_id": "exposed_git_dir:/.git/HEAD", "claim_type": "file_exposed", "quoted_evidence": "ref: refs"},
         {"finding_id": "server_version_disclosure:/:server", "claim_type": "version_disclosed",
          "quoted_evidence": "server: Shop/9.9-invented"},
-        {"finding_id": "missing_csp:/", "claim_type": "file_exposed", "quoted_evidence": "HTTP 200"},
-        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "HTTP 200",
+        {"finding_id": "missing_csp:/", "claim_type": "file_exposed", "quoted_evidence": "content-type, server"},
+        {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "content-type, server",
          "severity": "critical"},
         {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "H"},
-        {"finding_id": "missing_csp:/", "claim_type": "made_up", "quoted_evidence": "HTTP 200"},
+        {"finding_id": "missing_csp:/", "claim_type": "made_up", "quoted_evidence": "content-type, server"},
         "not a dict",
     ]
     report = verify(claims, registry.findings, registry.store)
@@ -206,6 +222,7 @@ def test_verifier_drops_fake_claims(env):
     assert v["text"] == TEMPLATES["header_missing"].format(location="/", target=BASE, check="missing_csp",
                                                            severity="medium")
     assert v["evidence_id"] == f.evidence[0].record_id
+    assert v["supporting_evidence"] == "recorded response headers: content-length, content-type, server"
     reasons = [i["reason"] for i in report["insufficient"]]
     assert all(i["status"] == "insufficient evidence" for i in report["insufficient"])
     assert reasons[0] == "unknown finding_id"
@@ -215,11 +232,78 @@ def test_verifier_drops_fake_claims(env):
     assert len(reasons) == 7
 
 
+# --- verifier entailment: the quote must show the issue, and code re-checks the record ---
+
+def csp_claim(quote):
+    return [{"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": quote}]
+
+
+def test_homepage_body_quote_for_missing_csp_is_dropped(env):
+    registry, _, _ = env
+    registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
+    for quote in ["<p>shop</p>", "HTTP 200", "server: Shop/2.1"]:  # all real text in the record, none shows the gap
+        report = verify(csp_claim(quote), registry.findings, registry.store)
+        assert report["verified"] == [], quote
+        assert report["insufficient"][0]["reason"] == "quote does not support claim"
+
+
+def test_header_list_quote_is_kept(env):
+    registry, _, _ = env
+    registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
+    line = "recorded response headers: content-length, content-type, server"
+    for quote in [line, "content-type, server"]:
+        report = verify(csp_claim(quote), registry.findings, registry.store)
+        assert [v["supporting_evidence"] for v in report["verified"]] == [line]
+
+
+def test_header_claim_dropped_when_record_shows_the_header(env):
+    """Even a header-list quote fails if the stored record actually contains the header."""
+    registry, _, _ = env
+    from src.scanner.findings import make_finding
+    rid = registry.store.add("GET", BASE + "/", [], 200, [("Content-Type", "text/html"),
+                                                         ("Content-Security-Policy", "default-src 'self'")], b"x")
+    fake = make_finding("missing_csp", BASE, "/", "d", "e", "t", rid)
+    report = verify(csp_claim("recorded response headers"), {fake.id: fake}, registry.store)
+    assert report["insufficient"][0]["reason"].startswith("quote does not support claim")
+
+
+def env_finding(registry, status, body, ctype="text/plain"):
+    from src.scanner.findings import make_finding
+    rid = registry.store.add("GET", BASE + "/.env", [], status, [("Content-Type", ctype)], body)
+    f = make_finding("exposed_env_file", BASE, "/.env", "d", "e", "t", rid)
+    return {f.id: f}
+
+
+def env_claim(quote):
+    return [{"finding_id": "exposed_env_file:/.env", "claim_type": "file_exposed", "quoted_evidence": quote}]
+
+
+def test_exposed_env_kept_only_with_200_and_signature(env):
+    registry, _, _ = env
+    good = env_finding(registry, 200, b"# config\nAPI_KEY=fake-demo-key-not-real\n")
+    kept = verify(env_claim("API_KEY=fak...al"), good, registry.store)  # stored body is redacted
+    assert [v["supporting_evidence"] for v in kept["verified"]] == ["API_KEY=fak...al"]
+    # same record, but the quote is not a KEY=value line
+    assert verify(env_claim("# config"), good, registry.store)["insufficient"][0]["reason"] == \
+        "quote does not support claim"
+    # quote present, but status is not 200
+    not_200 = env_finding(registry, 404, b"API_KEY=fake-demo-key-not-real\n")
+    r = verify(env_claim("API_KEY=fak...al"), not_200, registry.store)
+    assert r["verified"] == [] and r["insufficient"][0]["reason"].startswith("quote does not support claim")
+    # 200 but no KEY=value signature
+    no_sig = env_finding(registry, 200, b"hello world, nothing here\n")
+    r = verify(env_claim("hello world"), no_sig, registry.store)
+    assert r["verified"] == [] and r["insufficient"][0]["reason"].startswith("quote does not support claim")
+    # 200 with the signature but served as HTML (a catch-all page)
+    html = env_finding(registry, 200, b"API_KEY=fake-demo-key-not-real\n", ctype="text/html")
+    assert verify(env_claim("API_KEY=fak...al"), html, registry.store)["verified"] == []
+
+
 def test_verifier_drops_tampered_evidence(env):
     registry, _, _ = env
     registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
     rid = registry.findings["missing_csp:/"].evidence[0].record_id
-    claim = [{"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "HTTP 200"}]
+    claim = csp_claim("content-type, server")
     assert len(verify(claim, registry.findings, registry.store)["verified"]) == 1
     with sqlite3.connect(registry.store.path) as c:
         c.execute("UPDATE evidence SET summary = replace(summary, 'shop', 'SHOP') WHERE id = ?", (rid,))
@@ -236,7 +320,8 @@ def e2e_script():
                    call("run_check", {"check_id": "exposed_env_file", "path": "/.env"}, "b")),
         tool_reply(call("list_findings", {})),
         final_reply([
-            {"finding_id": "missing_csp:/", "claim_type": "header_missing", "quoted_evidence": "HTTP 200"},
+            {"finding_id": "missing_csp:/", "claim_type": "header_missing",
+             "quoted_evidence": "content-type, server, set-cookie"},
             {"finding_id": "exposed_env_file:/.env", "claim_type": "file_exposed",
              "quoted_evidence": "API_KEY=fak...al"},
             {"finding_id": "exposed_git_dir:/.git/HEAD", "claim_type": "file_exposed", "quoted_evidence": "ref: refs"},
