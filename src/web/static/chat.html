@@ -71,12 +71,38 @@
 <ol id="trace-list" class="trace"></ol>
 <p id="trace-empty" class="side-empty">Waiting for the first step...</p>
 </section>
-<section id="findings-panel" class="panel" hidden>
+<section id="fixfirst-panel" class="panel" hidden>
+<div class="panel-head"><h2>Fix first</h2><span class="panel-meta">top 3 by severity (from the code table)</span></div>
+<ol id="fixfirst-list" class="fixfirst"></ol>
+</section>
+<section id="findings-panel" class="panel" data-role="owner" hidden>
 <div class="panel-head"><h2>Findings</h2><span id="findings-count" class="panel-meta"></span></div>
-<div class="table-wrap"><table class="findings">
-<thead><tr><th scope="col">Severity</th><th scope="col">Finding</th><th scope="col">Where</th><th scope="col">Evidence (from code)</th></tr></thead>
-<tbody id="findings-body"></tbody>
-</table></div>
+<div class="role-toggle" role="group" aria-label="Explain findings for">
+<span class="role-label">Explain for</span>
+<button id="role-owner" class="role-btn" type="button" aria-pressed="true">Owner</button>
+<button id="role-developer" class="role-btn" type="button" aria-pressed="false">Developer</button>
+<button id="role-technical" class="role-btn" type="button" aria-pressed="false">Technical</button>
+</div>
+<div id="findings-list" class="finding-list"></div>
+</section>
+<section id="proposals-panel" class="panel" hidden>
+<div class="panel-head"><h2>Fix proposals</h2><span class="panel-meta">fixed templates; nothing changes without approval</span></div>
+<div class="field approver-field"><label for="approver">Approver name (recorded in the audit log)</label>
+<input id="approver" name="approver" type="text" autocomplete="name" maxlength="80" placeholder="Your name"></div>
+<div id="proposals-list" class="proposal-list"></div>
+<div class="actions">
+<button id="apply-btn" class="btn btn-primary" type="button" disabled>Apply approved fixes</button>
+<button id="retest-btn" class="btn btn-secondary" type="button" disabled>Re-test</button>
+</div>
+<p id="apply-hint" class="hint"></p>
+</section>
+<section id="retest-panel" class="panel" hidden>
+<div class="panel-head"><h2>Re-test: before / after</h2><span id="retest-status" class="chip"></span></div>
+<div class="diff-grid">
+<div class="diff-col"><h3 class="sub-heading">Resolved</h3><ul id="retest-resolved" class="diff-list"></ul></div>
+<div class="diff-col"><h3 class="sub-heading">Still present</h3><ul id="retest-still" class="diff-list"></ul></div>
+<div class="diff-col"><h3 class="sub-heading">New</h3><ul id="retest-new" class="diff-list"></ul></div>
+</div>
 </section>
 <section id="result-panel" class="panel" hidden>
 <div class="panel-head"><h2>Result</h2><span id="result-order" class="panel-meta"></span></div>
@@ -91,6 +117,16 @@
 <h3 class="sub-heading">Claims not included</h3>
 <ul id="dropped-list" class="dropped"></ul>
 </section>
+<div class="panel-row">
+<section id="usage-panel" class="panel" hidden>
+<div class="panel-head"><h2>Token usage</h2><span id="usage-cap" class="panel-meta"></span></div>
+<dl id="usage-facts" class="facts"></dl>
+</section>
+<section id="audit-panel" class="panel" hidden>
+<div class="panel-head"><h2>Audit log</h2><span id="audit-status" class="chip"></span><span id="audit-count" class="panel-meta"></span></div>
+<ol id="audit-list" class="audit"></ol>
+</section>
+</div>
 </section>
 </div>
 </section>

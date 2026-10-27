@@ -14,6 +14,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import shutil
 import socket
 import struct
@@ -43,6 +44,11 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("trace-running", "/__preview/chat.html?view=running"),
     ("result-finished", "/__preview/chat.html?view=finished"),
     ("result-finished-bottom", "/__preview/chat.html?view=finished&scroll=bottom"),
+    ("fixfirst", "/__preview/chat.html?view=finished&scroll=fixfirst-panel"),
+    ("findings-owner", "/__preview/chat.html?view=finished&role=owner&scroll=findings-panel"),
+    ("findings-technical", "/__preview/chat.html?view=finished&role=technical&scroll=findings-panel"),
+    ("proposals", "/__preview/chat.html?view=finished&scroll=proposals-panel"),
+    ("retest-audit", "/__preview/chat.html?view=finished&scroll=retest-panel"),
 ]
 LIGHT = [("signin", "/signin"), ("shell", "/__preview/chat.html"), ("result-finished", "/__preview/chat.html?view=finished")]
 CANDIDATES = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
@@ -185,9 +191,13 @@ def shoot(cdp: CDP, url: str, out: Path, width: int, height: int, mobile: bool):
     cdp.call("Page.navigate", url=url)
     cdp.wait_event("Page.loadEventFired")
     time.sleep(0.8)  # let app.js fetch /api/session and fill the page
-    if "scroll=bottom" in url:  # the shell scrolls inside .conversation, so scroll that, not the window
+    target = re.search(r"[?&]scroll=([a-z-]+)", url)
+    if target:  # the shell scrolls inside .conversation, so scroll that, not the window
+        name = target.group(1)
         cdp.call("Runtime.evaluate", expression=(
-            "(() => { const c = document.querySelector('.conversation'); if (c) c.scrollTop = c.scrollHeight; })()"))
+            "(() => { const c = document.querySelector('.conversation'); if (!c) return;"
+            f" if ('{name}' === 'bottom') {{ c.scrollTop = c.scrollHeight; return; }}"
+            f" const t = document.getElementById('{name}'); if (t) c.scrollTop = t.offsetTop - 12; }})()"))
         time.sleep(0.2)
     metrics = cdp.call("Runtime.evaluate", returnByValue=True, expression=(
         "JSON.stringify({vw: innerWidth, scrollW: document.documentElement.scrollWidth})"))["result"]["value"]

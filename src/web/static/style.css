@@ -350,6 +350,73 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .dropped { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
 .dropped code { font: 12px ui-monospace, Consolas, monospace; color: var(--text); overflow-wrap: anywhere; }
 
+/* ---------- Web 3: grouped trace ---------- */
+.trace-head .trace-tokens { color: var(--faint); font-size: 12px; }
+.trace-calls { list-style: none; margin: 6px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--border); display: grid; gap: 6px; }
+.trace-call { display: grid; gap: 2px; min-width: 0; }
+.call-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.call-head .trace-summary { color: var(--muted); font-size: 13px; }
+
+/* ---------- findings cards + role toggle ---------- */
+.role-toggle { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.role-label { color: var(--faint); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+.role-btn {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; cursor: pointer;
+}
+.role-btn:hover { color: var(--text); }
+.role-btn[aria-pressed="true"] { color: #fff; border-color: transparent; background: linear-gradient(135deg, var(--accent-1), var(--accent-2)); }
+.finding-list { display: grid; gap: 8px; }
+.finding { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; min-width: 0; }
+.finding[open] { border-color: color-mix(in srgb, var(--accent-2) 45%, var(--border)); }
+.finding-sum {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; gap: 10px; align-items: center;
+  padding: 10px 12px; cursor: pointer; list-style: none;
+}
+.finding-sum::-webkit-details-marker { display: none; }
+.finding-sum::after { content: "\25BE"; color: var(--faint); grid-column: 4; }
+.finding[open] .finding-sum::after { content: "\25B4"; }
+.finding-sum .f-title { overflow-wrap: anywhere; }
+.finding-body { padding: 0 12px 12px; display: grid; gap: 8px; font-size: 14px; min-width: 0; }
+.finding-body p { margin: 0; overflow-wrap: anywhere; }
+.finding-body .facts { margin: 0; }  /* no extra gap under Check / Finding id / Severity */
+.finding-body code { font: 12.5px ui-monospace, Consolas, monospace; background: var(--bg); border-radius: 4px; padding: 0 4px; }
+.analogy { color: var(--muted); font-style: italic; }
+.owasp { color: var(--accent-text); font-size: 12.5px; }
+/* role toggle = display only: every role's text is in the page, CSS shows the chosen ones */
+[data-role="owner"] .finding-body .role-developer:not(.role-owner),
+[data-role="owner"] .finding-body .role-technical:not(.role-owner),
+[data-role="developer"] .finding-body .role-owner:not(.role-developer),
+[data-role="developer"] .finding-body .role-technical:not(.role-developer),
+[data-role="technical"] .finding-body .role-owner:not(.role-technical),
+[data-role="technical"] .finding-body .role-developer:not(.role-technical) { display: none; }
+.fixfirst { margin: 0; padding-left: 22px; display: grid; gap: 10px; }
+.fixfirst .hint { margin: 4px 0 0; }
+
+/* ---------- proposals, re-test, audit, usage ---------- */
+.approver-field { margin-bottom: 12px; max-width: 360px; }
+.proposal-list { display: grid; gap: 10px; }
+.proposal { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: grid; gap: 8px; min-width: 0; }
+.proposal-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.proposal-title {  /* a check id: shown as code, upright */
+  font: 600 13.5px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace; font-style: normal;
+  margin-right: auto; overflow-wrap: anywhere;
+}
+.proposal .hint { margin: 0; overflow-wrap: anywhere; }
+.snippet { display: grid; gap: 4px; min-width: 0; }
+.snippet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.copy-btn { padding: 3px 10px; font-size: 12px; }
+.proposal-foot { display: flex; justify-content: flex-end; }
+.diff-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.diff-list { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.panel-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 14px; align-items: start; }
+.audit { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+.audit-entry { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr) max-content; gap: 8px; align-items: baseline; }
+.audit-seq { color: var(--faint); }
+.audit-event { font-weight: 600; }
+.audit-details { color: var(--muted); overflow-wrap: anywhere; }
+.audit-hash { font: 11.5px ui-monospace, Consolas, monospace; color: var(--faint); }
+
 /* ---------- polish ---------- */
 .mark { background: linear-gradient(135deg, #7c3aed 0%, #5b3df5 40%, #1477d4 100%); box-shadow: 0 4px 14px rgba(91, 61, 245, 0.35); }
 .wordmark { background-image: linear-gradient(120deg, #a78bfa 0%, #818cf8 45%, #38bdf8 100%); }
@@ -383,6 +450,13 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .findings tr { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
   .findings td { border: 0; padding: 0; }
   .findings td:nth-child(3), .findings td:nth-child(4) { grid-column: 1 / -1; }
+  .diff-grid, .panel-row { grid-template-columns: minmax(0, 1fr); }
+  .audit-entry { grid-template-columns: max-content minmax(0, 1fr); }
+  .audit-details, .audit-hash { grid-column: 2; }
+  .finding-sum { grid-template-columns: max-content minmax(0, 1fr); row-gap: 2px; }
+  .finding-sum .f-where { grid-column: 2; color: var(--muted); font-size: 12.5px; }
+  .role-label { flex-basis: 100%; }  /* label on its own line, so the three pills stay on one row */
+  .finding-sum::after { display: none; }
   .asset-actions { width: 100%; }
   .asset-actions .btn { flex: 1; }
   .panel-meta { margin-left: 0; width: 100%; }

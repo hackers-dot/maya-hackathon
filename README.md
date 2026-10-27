@@ -41,6 +41,10 @@ All code in this repository was written during the Meta Global AI Developer Hack
   - "Run security scan" works only for verified or demo assets, one scan per user at a time. It uses the agent with the real model when a key is configured, otherwise a clearly labelled deterministic-only mode, with the same hard caps.
   - A live trace dashboard polls every second (steps, tokens with reasoning separate, latency, status chips, findings table with severity badges). The result view shows the model's priority order with notes labelled "unverified model text", token usage, the model that ran, and a DEMO banner.
   - Another user's runs and assets return 404.
+- **2026-10-27 (Web 3):** Report UI, fix flow and re-test in the browser.
+  - The trace is grouped by model step. Each finding opens to explain itself for an Owner, Developer or Technical reader (fixed templates, OWASP "mapped to" label, code evidence), plus a "Fix first" top 3.
+  - Fix proposals show nginx, Apache and Python snippets with copy buttons, risk, rollback and status. Approve needs a name; Apply works only on the loopback demo app and only for approved fixes (checked again by the existing approval gate); Re-test shows resolved / still present / new and FIXED.
+  - An audit panel shows the verified hash chain and the latest entries, plus a token panel. Each user has their own demo app and audit log.
 
 ## License
 

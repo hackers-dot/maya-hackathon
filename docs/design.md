@@ -229,6 +229,26 @@ See `src/models.py`:
 - **Authorization.** Asset and run lookups always filter by the signed-in user's id, so another user's asset or run id behaves exactly like a missing one (404). Signed-out requests get 401. Every POST still needs the CSRF token.
 - **Preview data for screenshots.** `/__preview/sample.json` is a fixed sample (not from any run or account), served only in `--ui-preview` mode (404 otherwise). Preview pages render it with the same functions as real data.
 
+### Web 3: report UI, fix flow, re-test
+
+- **Trace grouped by model step.** One header per step carries the step's shared tokens (reasoning separate) and model latency. That step's tool calls are listed under it, and the forced final step is outlined.
+- **Findings with a role toggle.** Each finding is a collapsible card. Every finding carries all three texts from the fixed templates in `src/report.py` (plain explanation + analogy + fix, technical detail, check / id / severity), plus the OWASP "mapped to" label and the code evidence line.
+  - The Owner / Developer / Technical toggle only sets `data-role` on the panel; CSS shows the matching texts.
+  - It never sends a request and never rewrites text, which a test checks by reading `setRole`.
+  - Cards are appended, not rebuilt, so an open card stays open while the trace polls.
+  - A "Fix first" panel shows the top 3 findings by severity from the code table.
+- **Fix proposals panel.** Proposals come from `src/fixes.py`, built when the scan ends, before the run is marked finished. Each shows kind, risk, status (PROPOSED / APPROVED / APPLIED / ROLLED_BACK), nginx / Apache / Python snippets with Copy buttons, and the rollback line.
+- **Approve / Apply / Re-test** go through the existing `ApprovalGate` and `retest()`; the web layer adds no apply logic of its own.
+  - **Approve** needs an approver name (400 otherwise) and only works on PROPOSED.
+  - **Apply** sends only APPROVED proposals to `gate.apply()`, which itself refuses non-loopback targets and anything not APPROVED, and audits every refusal. The button is enabled only for the demo asset with at least one APPROVED proposal; the server checks again.
+  - **Re-test** re-runs the same checks on the same paths, with the run's own scope, and shows resolved / still present / new and FIXED or STILL_PRESENT. It is audited as `retested`.
+  - Every action needs the CSRF token, and waits until the scan has finished (409 otherwise).
+- **Per-user isolation:**
+  - Each user gets their own demo app instance and control file (`data/demo/control-<user>.json`), so one user's applied fixes never change another user's demo.
+  - Each user has their own hash-chained audit log (`data/audit/user-<id>.jsonl`). The audit panel shows "hash chain verified" (or the first broken entry) and the last 12 entries.
+  - The token panel sums that user's scans (cap 40,000 per scan).
+  - Another user's run, proposal, re-test, audit and usage are never reachable (404, or that user's own empty data).
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

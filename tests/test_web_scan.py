@@ -232,7 +232,7 @@ def test_deterministic_only_mode(web):
     assert trace["steps"][0]["tool"] == "deterministic check" and len(trace["steps"]) == trace["next"]
     sev = [f["severity"] for f in body["result"]["findings"]]
     assert sev[0] == "critical"  # severity-sorted, from the code table
-    assert web["server"].app.demo_port() is not None  # demo app started on demand
+    assert web["server"].app.demo_port(1) is not None  # this user's demo app started on demand (user id 1)
 
 
 def test_model_mode_result(web):
@@ -351,7 +351,7 @@ def test_preview_sample_only_in_preview_mode(tmp_path, web):
     try:
         with httpx.Client(base_url=f"http://127.0.0.1:{server.server_address[1]}", trust_env=False) as c:
             data = c.get("/__preview/sample.json").json()
-            assert set(data) == {"assets", "running", "finished"}
+            assert set(data) == {"assets", "running", "finished", "extras"}
             assert c.get("/__preview/connect-website.html").status_code == 200
             assert c.get("/api/assets").status_code == 401  # preview gives no account data
     finally:

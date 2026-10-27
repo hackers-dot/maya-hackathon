@@ -16,7 +16,8 @@ from src.agent.verifier import SEVERITY_ORDER, evidence_line
 from src.budget import TokenBudget
 from src.evidence import EvidenceStore
 from src.provider import ProviderError
-from src.report import TEXT
+from src.fixes import build_proposals
+from src.report import TEXT, owasp_label
 from src.scanner.http_client import HttpClient
 from src.scanner.runner import FULL_SCAN
 from src.severity import rule
@@ -47,11 +48,25 @@ class Run:
     result: dict | None = None
     error: str | None = None
     finished_at: float | None = None
+    base: str | None = None              # the URL that was scanned (the user's own demo app for loopback)
+    verified: frozenset = frozenset()    # scope allow-list used for this run (empty for the demo app)
+    proposals: dict = field(default_factory=dict)  # fix proposals from fixed templates, built when the scan ends
+    retest: dict | None = None
 
 
 def finding_view(f, store) -> dict:
+    """All three audiences' texts come from the fixed templates in src/report.py, never from a model."""
+    t = TEXT[f.check]
     return {"id": f.id, "check": f.check, "severity": rule(f.check).severity, "location": f.location,
-            "title": TEXT[f.check].title, "evidence_line": evidence_line(f, store)}
+            "title": t.title, "evidence_line": evidence_line(f, store), "plain": t.plain, "analogy": t.analogy,
+            "technical": t.technical, "fix": t.fix, "owasp": owasp_label(f.check)}
+
+
+def proposal_view(p) -> dict:
+    return {"id": p.id, "check_id": p.check_id, "finding_ids": p.finding_ids, "kind": p.plan.kind,
+            "nginx": p.plan.nginx, "apache": p.plan.apache, "python_note": p.plan.python_note,
+            "risk": p.plan.risk, "rollback": p.plan.rollback, "status": p.status, "note": p.note,
+            "approved_by": p.approved_by, "approved_at": p.approved_at, "applied_at": p.applied_at}
 
 
 def findings_view(findings: dict, store) -> list[dict]:
@@ -89,21 +104,39 @@ class RunManager:
         threading.Thread(target=self._work, args=(run, asset, provider), daemon=True, name=f"run-{run.id}").start()
         return run
 
+    def client_for(self, run: Run, store) -> HttpClient:
+        """Same scope as the scan: the demo app on loopback, or only the verified host."""
+        if run.demo:
+            return HttpClient(store=store)
+        return HttpClient(verified=run.verified, store=store, transport=self.app.http_transport)
+
+    def usage_for(self, user_id: int) -> dict:
+        totals = {"prompt_tokens": 0, "completion_tokens": 0, "reasoning_tokens": 0, "total_tokens": 0}
+        mine = [r for r in self.runs.values() if r.user_id == user_id]
+        for r in mine:
+            for k in totals:
+                totals[k] += int(((r.result or {}).get("usage") or {}).get(k) or 0)
+        return {"runs": len(mine), "model_runs": sum(r.mode == "model" for r in mine), "cap_per_run": TOKEN_CAP,
+                **totals}
+
     # --- worker ---
     def _work(self, run: Run, asset: dict, provider):
         store = EvidenceStore(self.app.data_dir / "evidence.db")
         try:
             if run.demo:
-                base, verified = self.app.ensure_demo(), frozenset()
-                client = HttpClient(store=store)
+                base, verified = self.app.ensure_demo(run.user_id), frozenset()
             else:
                 base, verified = asset["origin"], frozenset({asset["host"]})
-                client = HttpClient(verified=verified, store=store, transport=self.app.http_transport)
+            run.base, run.verified = base, verified
+            client = self.client_for(run, store)
             try:
                 if run.mode == "model":
-                    self._model_run(run, provider, client, base, store)
+                    final = self._model_run(run, provider, client, base, store)
                 else:
-                    self._deterministic_run(run, client, base, store)
+                    final = self._deterministic_run(run, client, base, store)
+                run.proposals = {p.id: p for p in build_proposals(dict(run.findings))}
+                run.result["fix_first"] = run.result["findings"][:3]
+                run.status = final  # published last, so a finished run always has its proposals
             finally:
                 client.close()
         except ProviderError as e:  # messages are key-scrubbed by the provider
@@ -128,7 +161,7 @@ class RunManager:
             "dropped": [{"finding_id": d.get("finding_id"), "reason": d["reason"]} for d in claims["insufficient"]],
             "usage": dict(budget.run), "model_finished": result.final_answer_valid, "stop_reason": result.stop_reason,
         }
-        run.status = {"final": "finished", "forced_final": "forced_final"}.get(result.stop_reason, result.stop_reason)
+        return {"final": "finished", "forced_final": "forced_final"}.get(result.stop_reason, result.stop_reason)
 
     def _deterministic_run(self, run: Run, client, base: str, store):
         responses = {}
@@ -147,10 +180,15 @@ class RunManager:
                       "dropped": [], "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
                                                "reasoning_tokens": 0},
                       "model_finished": False, "stop_reason": "deterministic"}
-        run.status = "finished"
+        return "finished"
 
 
 def run_view(run: Run) -> dict:
     return {"id": run.id, "asset_id": run.asset_id, "status": run.status, "mode": run.mode,
             "mode_label": MODE_LABELS[run.mode], "model": run.model, "demo": run.demo, "error": run.error,
-            "started_at": run.started_at, "finished_at": run.finished_at, "steps": len(run.trace)}
+            "started_at": run.started_at, "finished_at": run.finished_at, "steps": len(run.trace),
+            "can_apply": run.demo}  # fixes are applied only to the user's own loopback demo app
+
+
+def retest_view(r: dict) -> dict:
+    return {k: r[k] for k in ("status", "resolved", "still_present", "new", "per_check")}

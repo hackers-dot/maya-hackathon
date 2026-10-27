@@ -215,45 +215,288 @@
     return (t.prompt || 0) + " in / " + (t.completion || 0) + " out (" + (t.reasoning || 0) + " reasoning)";
   }
 
+  // One group per model step: the shared tokens and latency once, then every tool call of that step.
+  const stepGroups = new Map();
   function appendSteps(steps) {
     const list = $("trace-list");
     if (!list) return;
     for (const s of steps) {
-      const li = el("li", "trace-step" + (s.forced ? " is-forced" : ""));
-      const head = el("div", "trace-head");
-      head.appendChild(el("span", "step-no", "Step " + s.step));
-      head.appendChild(el("span", "trace-tool", s.tool || "final answer"));
-      head.appendChild(el("span", "trace-latency", (typeof s.latency === "number" ? s.latency.toFixed(2) : "-") + " s"));
-      li.appendChild(head);
-      if (s.args) li.appendChild(el("code", "trace-args", s.args));
-      li.appendChild(el("div", "trace-summary", s.result_summary));
-      li.appendChild(el("div", "trace-tokens", tokensText(s.tokens)));
-      list.appendChild(li);
+      let g = stepGroups.get(s.step);
+      if (!g) {
+        const li = el("li", "trace-step");
+        const head = el("div", "trace-head");
+        head.appendChild(el("span", "step-no", "Step " + s.step));
+        head.appendChild(el("span", "trace-tokens", tokensText(s.tokens)));
+        head.appendChild(el("span", "trace-latency",
+          (typeof s.latency === "number" ? s.latency.toFixed(2) : "-") + " s"));
+        li.appendChild(head);
+        const calls = el("ul", "trace-calls");
+        li.appendChild(calls);
+        list.appendChild(li);
+        g = { li: li, calls: calls };
+        stepGroups.set(s.step, g);
+      }
+      if (s.forced) g.li.classList.add("is-forced");
+      const call = el("li", "trace-call");
+      const top = el("div", "call-head");
+      top.appendChild(el("span", "trace-tool", s.tool || "final answer"));
+      top.appendChild(el("span", "trace-summary", s.result_summary));
+      call.appendChild(top);
+      if (s.args) call.appendChild(el("code", "trace-args", s.args));
+      g.calls.appendChild(call);
     }
     show("trace-empty", list.children.length === 0);
   }
 
+  // Template text may mark code with `backticks`; render those parts as <code>, all via textContent.
+  function richText(tag, cls, text) {
+    const node = el(tag, cls);
+    String(text || "").split("`").forEach((part, i) => {
+      node.appendChild(i % 2 ? el("code", "", part) : document.createTextNode(part));
+    });
+    return node;
+  }
+
+  function fact(dl, term, value) {
+    dl.appendChild(el("dt", "", term));
+    dl.appendChild(el("dd", "", value));
+  }
+
+  // Every finding carries all three audiences' texts (fixed templates); the role toggle only changes which
+  // ones CSS shows. Cards are appended, never rebuilt, so an open card stays open while the trace polls.
+  const findingCards = new Map();
+  function findingCard(f) {
+    const card = el("details", "finding");
+    const sum = el("summary", "finding-sum");
+    sum.appendChild(el("span", "sev sev-" + f.severity, f.severity));
+    sum.appendChild(el("span", "f-title", f.title));
+    sum.appendChild(el("span", "f-where", f.location));
+    card.appendChild(sum);
+    const body = el("div", "finding-body");
+    body.appendChild(richText("p", "role-owner", f.plain));
+    body.appendChild(richText("p", "role-owner analogy", f.analogy));
+    body.appendChild(richText("p", "role-developer role-technical", f.technical));
+    const fix = el("p", "role-owner role-developer fix");
+    fix.appendChild(el("span", "label", "Suggested fix "));
+    fix.appendChild(richText("span", "", f.fix));
+    body.appendChild(fix);
+    const meta = el("dl", "facts role-technical");
+    fact(meta, "Check", f.check);
+    fact(meta, "Finding id", f.id);
+    fact(meta, "Severity", f.severity + " (fixed table)");
+    body.appendChild(meta);
+    body.appendChild(el("p", "owasp", f.owasp));
+    const ev = el("div", "claim-line");
+    ev.appendChild(el("span", "label", "Evidence (from code)"));
+    ev.appendChild(el("code", "", f.evidence_line));
+    body.appendChild(ev);
+    card.appendChild(body);
+    return card;
+  }
+
   function renderFindings(findings) {
-    const body = $("findings-body");
-    if (!body) return;
-    clear(body);
+    const list = $("findings-list");
+    if (!list) return;
     for (const f of findings) {
-      const tr = el("tr");
-      const sev = el("td");
-      sev.appendChild(el("span", "sev sev-" + f.severity, f.severity));
-      tr.appendChild(sev);
-      const what = el("td");
-      what.appendChild(el("div", "f-title", f.title));
-      what.appendChild(el("div", "f-check", f.check));
-      tr.appendChild(what);
-      tr.appendChild(el("td", "f-where", f.location));
-      const ev = el("td");
-      ev.appendChild(el("code", "f-evidence", f.evidence_line));
-      tr.appendChild(ev);
-      body.appendChild(tr);
+      if (findingCards.has(f.id)) continue;
+      const card = findingCard(f);
+      findingCards.set(f.id, card);
+      list.appendChild(card);
     }
+    // keep severity order: re-append existing nodes in the server's order (moves, never rebuilds)
+    for (const f of findings) list.appendChild(findingCards.get(f.id));
     show("findings-panel", findings.length > 0);
     setText("findings-count", findings.length + " detected by code");
+  }
+
+  function renderFixFirst(items) {
+    const list = $("fixfirst-list");
+    if (!list) return;
+    clear(list);
+    for (const f of items || []) {
+      const li = el("li", "fixfirst-item");
+      const head = el("div", "claim-head");
+      head.appendChild(el("span", "sev sev-" + f.severity, f.severity));
+      head.appendChild(el("span", "f-title", f.title + " at " + f.location));
+      li.appendChild(head);
+      li.appendChild(richText("p", "hint", f.fix));
+      list.appendChild(li);
+    }
+    show("fixfirst-panel", (items || []).length > 0);
+  }
+
+  // ---------- role toggle: display only ----------
+  const ROLES = ["owner", "developer", "technical"];
+  function setRole(role) {
+    const panel = $("findings-panel");
+    if (!panel || ROLES.indexOf(role) < 0) return;
+    panel.setAttribute("data-role", role);
+    for (const r of ROLES) {
+      const b = $("role-" + r);
+      if (b) b.setAttribute("aria-pressed", r === role ? "true" : "false");
+    }
+    try { window.localStorage.setItem("maya-role", role); } catch (e) { /* the choice still applies */ }
+  }
+
+  // ---------- fix proposals, approval, apply, re-test ----------
+  const PROPOSAL_CHIP = {
+    PROPOSED: ["proposed", "pending"], APPROVED: ["approved", "loopback"],
+    APPLIED: ["applied", "ok"], ROLLED_BACK: ["rolled back", "failed"],
+  };
+  let currentRunId = null;
+
+  async function copyText(text, btn) {
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = "Copied";
+    } catch (e) {
+      btn.textContent = "Copy failed: select the text";
+    }
+    setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+  }
+
+  function snippet(label, text) {
+    const box = el("div", "snippet");
+    const head = el("div", "snippet-head");
+    head.appendChild(el("span", "label", label));
+    const btn = el("button", "btn btn-quiet copy-btn", "Copy");
+    btn.type = "button";
+    btn.addEventListener("click", () => copyText(text, btn));
+    head.appendChild(btn);
+    box.appendChild(head);
+    box.appendChild(el("code", "codebox", text));
+    return box;
+  }
+
+  function renderProposals(run, proposals) {
+    const list = $("proposals-list");
+    if (!list) return;
+    clear(list);
+    for (const p of proposals || []) {
+      const card = el("article", "proposal");
+      const head = el("div", "proposal-head");
+      head.appendChild(el("h3", "proposal-title", p.check_id));
+      head.appendChild(el("span", "chip", p.kind));
+      head.appendChild(el("span", "chip " + (p.risk === "low" ? "chip-ok" : "chip-pending"), "risk " + p.risk));
+      const s = PROPOSAL_CHIP[p.status] || [p.status, ""];
+      head.appendChild(el("span", "chip chip-" + s[1], s[0]));
+      card.appendChild(head);
+      card.appendChild(el("p", "hint", "For: " + p.finding_ids.join(", ") + " - " + p.note));
+      card.appendChild(snippet("nginx", p.nginx));
+      card.appendChild(snippet("Apache", p.apache));
+      card.appendChild(snippet("Python http.server", p.python_note));
+      card.appendChild(richText("p", "hint rollback", "Rollback: " + p.rollback));
+      const foot = el("div", "proposal-foot");
+      if (p.status === "PROPOSED") {
+        const btn = el("button", "btn btn-secondary", "Approve");
+        btn.type = "button";
+        btn.addEventListener("click", () => approve(p.id));
+        foot.appendChild(btn);
+      } else {
+        foot.appendChild(el("span", "hint", "Approved by " + (p.approved_by || "-")));
+      }
+      card.appendChild(foot);
+      list.appendChild(card);
+    }
+    const approved = (proposals || []).some((p) => p.status === "APPROVED");
+    const idle = run && run.status !== "running";
+    const apply = $("apply-btn");
+    if (apply) apply.disabled = !(run && run.can_apply && idle && approved);
+    const retestBtn = $("retest-btn");
+    if (retestBtn) retestBtn.disabled = !idle;
+    setText("apply-hint", run && run.can_apply
+      ? "Apply changes only APPROVED fixes on your loopback demo app, runs a health check, and rolls back automatically if it fails."
+      : "Fixes are applied only to the loopback demo app. For your own site, copy a snippet, apply it yourself, then press Re-test.");
+    show("proposals-panel", (proposals || []).length > 0);
+  }
+
+  function diffList(id, ids) {
+    const ul = $(id);
+    if (!ul) return;
+    clear(ul);
+    for (const i of ids || []) ul.appendChild(el("li", "", i));
+    if (!(ids || []).length) ul.appendChild(el("li", "muted", "None"));
+  }
+
+  function renderRetest(r) {
+    show("retest-panel", !!r);
+    if (!r) return;
+    setChip("retest-status", r.status === "FIXED" ? "FIXED" : "STILL PRESENT", r.status === "FIXED" ? "ok" : "failed");
+    diffList("retest-resolved", r.resolved);
+    diffList("retest-still", r.still_present);
+    diffList("retest-new", r.new);
+  }
+
+  function renderAudit(a) {
+    if (!a || !$("audit-list")) return;
+    show("audit-panel", true);
+    setChip("audit-status", a.intact ? "hash chain verified" : "chain broken at entry " + a.first_bad_entry,
+      a.intact ? "ok" : "failed");
+    setText("audit-count", a.count + " entries");
+    const list = $("audit-list");
+    clear(list);
+    for (const e of a.entries || []) {
+      const li = el("li", "audit-entry");
+      li.appendChild(el("span", "audit-seq", "#" + e.seq));
+      li.appendChild(el("span", "audit-event", e.event));
+      const details = Object.keys(e.details || {}).filter((k) => typeof e.details[k] !== "object")
+        .map((k) => k + "=" + e.details[k]).join(" ");
+      li.appendChild(el("span", "audit-details", details));
+      li.appendChild(el("code", "audit-hash", e.hash));
+      list.appendChild(li);
+    }
+    if (!(a.entries || []).length) list.appendChild(el("li", "muted", "No entries yet."));
+  }
+
+  function renderUsage(u) {
+    const dl = $("usage-facts");
+    if (!u || !dl) return;
+    show("usage-panel", true);
+    clear(dl);
+    fact(dl, "Scans", u.runs + " (" + u.model_runs + " with a model)");
+    fact(dl, "Prompt", String(u.prompt_tokens));
+    fact(dl, "Completion", u.completion_tokens + " (" + u.reasoning_tokens + " reasoning)");
+    fact(dl, "Total", String(u.total_tokens));
+    setText("usage-cap", "cap " + u.cap_per_run + " tokens per scan");
+  }
+
+  async function refreshSidePanels() {
+    if (PREVIEW) return;
+    const a = await getJSON("/api/audit");
+    if (a.ok) renderAudit(a.data);
+    const u = await getJSON("/api/usage");
+    if (u.ok) renderUsage(u.data);
+  }
+
+  function renderFull(data) {
+    renderProposals(data.run, data.proposals);
+    renderRetest(data.retest);
+    refreshSidePanels();
+  }
+
+  async function approve(proposalId) {
+    if (!currentRunId) return;
+    const name = $("approver") ? $("approver").value : "";
+    const d = await post("/api/runs/" + currentRunId + "/proposals/" + proposalId + "/approve", { approver: name });
+    if (d) { renderFull(d); say("Approved by " + name.trim() + ". Recorded in the audit log.", false); }
+  }
+
+  async function applyFixes() {
+    if (!currentRunId) return;
+    say("Applying approved fixes and checking the demo app...", false);
+    const d = await post("/api/runs/" + currentRunId + "/apply", {});
+    if (d) {
+      renderFull(d);
+      const rolled = (d.proposals || []).some((p) => p.status === "ROLLED_BACK");
+      say(rolled ? "Health check failed; the change was rolled back." : "Applied. Press Re-test to confirm.", rolled);
+    }
+  }
+
+  async function runRetest() {
+    if (!currentRunId) return;
+    say("Re-running the same checks...", false);
+    const d = await post("/api/runs/" + currentRunId + "/retest", {});
+    if (d) { renderFull(d); say("Re-test finished: " + (d.retest ? d.retest.status : "-"), false); }
   }
 
   function renderRunMeta(run) {
@@ -321,13 +564,13 @@
 
   function resetRunPanels() {
     clear($("trace-list"));
-    clear($("findings-body"));
+    clear($("findings-list"));
+    stepGroups.clear();
+    findingCards.clear();
     traceNext = 0;
-    show("run-panel", false);
-    show("findings-panel", false);
-    show("result-panel", false);
+    for (const id of ["run-panel", "findings-panel", "result-panel", "fixfirst-panel", "proposals-panel",
+      "retest-panel", "demo-banner"]) show(id, false);
     show("trace-empty", true);
-    show("demo-banner", false);
   }
 
   function stopPolling() {
@@ -344,7 +587,11 @@
     if (r.data.run.status !== "running") {
       stopPolling();
       const full = await getJSON("/api/runs/" + runId);
-      if (full.ok) renderResult(full.data.run, full.data.result);
+      if (full.ok) {
+        renderResult(full.data.run, full.data.result);
+        renderFixFirst(full.data.result && full.data.result.fix_first);
+        renderFull(full.data);
+      }
       const btn = $("scan-btn");
       if (btn && currentAsset && currentAsset.scannable) btn.disabled = false;
     }
@@ -352,6 +599,7 @@
 
   function startPolling(runId) {
     stopPolling();
+    currentRunId = runId;
     pollOnce(runId);
     pollTimer = setInterval(() => pollOnce(runId), 1000);
   }
@@ -391,6 +639,12 @@
     const avatar = $("avatar");
     if (avatar) avatar.textContent = user && user.email ? user.email.charAt(0).toUpperCase() : (PREVIEW ? "P" : "?");
     onClick("scan-btn", startScan);
+    onClick("apply-btn", applyFixes);
+    onClick("retest-btn", runRetest);
+    for (const r of ROLES) onClick("role-" + r, () => setRole(r));
+    let saved = null;
+    try { saved = window.localStorage.getItem("maya-role"); } catch (e) { saved = null; }
+    setRole(new URLSearchParams(window.location.search).get("role") || saved || "owner");
     if (PREVIEW) {
       const r = await getJSON("/__preview/sample.json");
       if (!r.ok) return;
@@ -403,10 +657,20 @@
         appendSteps(sample.steps);
         renderFindings(sample.findings);
         renderRunMeta(sample.run);
-        if (view === "finished") renderResult(sample.run, sample.result);
+        if (view === "finished") {
+          renderResult(sample.run, sample.result);
+          renderFixFirst(sample.result.fix_first);
+          renderProposals(sample.run, r.data.extras.proposals);
+          renderRetest(r.data.extras.retest);
+          renderAudit(r.data.extras.audit);
+          renderUsage(r.data.extras.usage);
+          const open = document.querySelector("#findings-list details");
+          if (open) open.open = true;  // show one expanded card in screenshots
+        }
       }
       return;
     }
+    refreshSidePanels();
     show("add-asset", !!(user && user.account_type === "company" && user.consented));
     const r = await getJSON("/api/assets");
     if (r.ok) renderAssetList(r.data.assets);

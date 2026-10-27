@@ -172,6 +172,38 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
         sev = [f["severity"] for f in result.get("findings", [])]
         rep.check(st == 200 and "critical" in sev and sev == sorted(sev, key=SEVERITY_ORDER.index),
                   "result findings, severity-sorted from the code table", f"{len(sev)} findings")
+
+        # --- Web 3: fix proposals, approval gate, apply, re-test, audit ---
+        full = json.loads(raw)
+        props = full.get("proposals") or []
+        f0 = (result.get("findings") or [{}])[0]
+        rep.check(all(f0.get(k) for k in ("plain", "analogy", "technical", "fix")) and
+                  str(f0.get("owasp", "")).startswith("mapped to") and len(result.get("fix_first", [])) == 3,
+                  "finding details (owner/developer/technical texts, OWASP label) and fix-first top 3",
+                  f0.get("owasp", ""))
+        rep.check(props and all(p["status"] == "PROPOSED" and p["note"] == "proposed, not applied" for p in props),
+                  "fix proposals start PROPOSED, 'proposed, not applied'", f"{len(props)} proposals")
+        status, _, data = b.post(f"/api/runs/{run_id}/apply", {})
+        rep.check(status == 409, "apply refused before any approval", f"HTTP {status} {data.get('error')}")
+        status, _, data = b.post(f"/api/runs/{run_id}/proposals/{props[0]['id']}/approve", {"approver": "  "})
+        rep.check(status == 400, "approval without an approver name refused", f"HTTP {status}")
+        codes = [b.post(f"/api/runs/{run_id}/proposals/{p['id']}/approve", {"approver": "flow-check"})[0]
+                 for p in props]
+        rep.check(set(codes) == {200}, "all proposals approved by 'flow-check'", f"{len(codes)} approvals")
+        status, _, data = b.post(f"/api/runs/{run_id}/apply", {})
+        applied = {p["status"] for p in data.get("proposals", [])}
+        rep.check(status == 200 and applied == {"APPLIED"}, "approved fixes applied to the loopback demo app",
+                  f"HTTP {status} statuses={sorted(applied)}")
+        status, _, data = b.post(f"/api/runs/{run_id}/retest", {})
+        rt = data.get("retest") or {}
+        rep.check(status == 200 and rt.get("status") == "FIXED" and not rt.get("still_present"),
+                  "re-test: FIXED", f"resolved={len(rt.get('resolved', []))} still={len(rt.get('still_present', []))}")
+        st, hd, raw = b.request("GET", "/api/audit")
+        audit = json.loads(raw)
+        rep.check(st == 200 and audit.get("intact") is True and audit["entries"][0]["event"] == "retested",
+                  "audit log hash chain verified", f"{audit.get('count')} entries")
+        st, _, raw = b.request("GET", "/api/usage")
+        rep.check(st == 200 and json.loads(raw).get("runs") == 1, "token usage panel data", raw.decode()[:80])
     else:
         print("SKIP  scan steps: --base server may be configured with a live model")
     _, _, s = b.session()
@@ -195,6 +227,11 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
         rep.check(status == 404, "another user's run is not found", f"HTTP {status}")
         status, _, _ = b2.request("GET", f"/api/runs/{run_id}/trace?after=0")
         rep.check(status == 404, "another user's trace is not found", f"HTTP {status}")
+        status, _, _ = b2.post(f"/api/runs/{run_id}/retest", {})
+        rep.check(status == 404, "another user's re-test is not found", f"HTTP {status}")
+        st, _, raw = b2.request("GET", "/api/audit")
+        rep.check(st == 200 and json.loads(raw).get("count") == 0, "another user sees only their own audit log",
+                  f"count={json.loads(raw).get('count')}")
     status, _, _ = b2.post(f"/api/assets/{demo.get('id')}/scan", {})
     rep.check(status == 404, "another user's asset cannot be scanned", f"HTTP {status}")
 

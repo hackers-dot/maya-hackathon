@@ -16,7 +16,7 @@ import threading
 
 from src.web.assets import AssetError, Assets, public_asset
 from src.web.auth import DEFAULT_DB, SESSION_TTL, Accounts, AuthError, RateLimited, Sessions
-from src.web.runs import RunBusy, RunManager, findings_view, run_view
+from src.web.runs import RunBusy, RunManager, findings_view, proposal_view, retest_view, run_view
 
 ROOT = Path(__file__).resolve().parents[2]
 HOST = "127.0.0.1"
@@ -47,6 +47,9 @@ PAGES = {
     "/chat": ("chat.html", True),
 }
 ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|scan)$")
+RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest)$")
+APPROVE = re.compile(r"^/api/runs/([0-9a-f]{24})/proposals/(fix-[a-z_]{3,60})/approve$")
+AUDIT_ENTRIES_SHOWN = 12
 RUN_PATH = re.compile(r"^/api/runs/([0-9a-f]{24})(/trace)?$")
 # what the user has; only Website works now
 ASSETS = {"website": True, "webapp_api": False, "source_code": False, "server_tool": False, "mobile_desktop": False}
@@ -80,6 +83,42 @@ def public_user(user: dict | None) -> dict | None:
 PREVIEW_PREFIX = "/__preview/"  # test-only: exists only when the server is started with ui_preview=True
 
 
+def _preview_extras(findings: list[dict]) -> dict:
+    """Detail texts, proposals, re-test, audit and usage for the preview sample, built from the same fixed
+    templates the real views use (src/report.py, src/fixes.py)."""
+    from src.fixes import PLANS
+    from src.report import TEXT, owasp_label
+    for f in findings:
+        t = TEXT[f["check"]]
+        f.update(plain=t.plain, analogy=t.analogy, technical=t.technical, fix=t.fix, owasp=owasp_label(f["check"]))
+    statuses = ["APPLIED", "APPLIED", "APPROVED", "PROPOSED"]
+    proposals = []
+    for f, status in zip(findings, statuses):
+        p = PLANS[f["check"]]
+        proposals.append({"id": f"fix-{f['check']}", "check_id": f["check"], "finding_ids": [f["id"]], "kind": p.kind,
+                          "nginx": p.nginx, "apache": p.apache, "python_note": p.python_note, "risk": p.risk,
+                          "rollback": p.rollback, "status": status,
+                          "note": "applied to the loopback demo app" if status == "APPLIED" else "proposed, not applied",
+                          "approved_by": None if status == "PROPOSED" else "demo-user",
+                          "approved_at": None, "applied_at": None})
+    retest = {"status": "STILL_PRESENT", "resolved": [findings[0]["id"], findings[1]["id"]],
+              "still_present": [findings[2]["id"], findings[3]["id"]], "new": [],
+              "per_check": {findings[0]["check"]: "FIXED", findings[1]["check"]: "FIXED",
+                            findings[2]["check"]: "STILL_PRESENT", findings[3]["check"]: "STILL_PRESENT"}}
+    audit = {"intact": True, "first_bad_entry": None, "count": 5, "entries": [
+        {"seq": 4, "at": "2026-10-27T10:42:31+00:00", "event": "retested", "details": {"status": "STILL_PRESENT"},
+         "hash": "9f2c1a7d0b44"},
+        {"seq": 3, "at": "2026-10-27T10:42:29+00:00", "event": "health_ok", "details": {}, "hash": "51e0c9a2f8d3"},
+        {"seq": 2, "at": "2026-10-27T10:42:29+00:00", "event": "applied", "details": {}, "hash": "c7a3b5e19d02"},
+        {"seq": 1, "at": "2026-10-27T10:42:20+00:00", "event": "approved", "details": {"approver": "demo-user"},
+         "hash": "0d8e4f6a2b91"},
+        {"seq": 0, "at": "2026-10-27T10:42:18+00:00", "event": "approved", "details": {"approver": "demo-user"},
+         "hash": "7b13ce05a9f4"}]}
+    usage = {"runs": 2, "model_runs": 1, "cap_per_run": 40000, "prompt_tokens": 8852, "completion_tokens": 913,
+             "reasoning_tokens": 675, "total_tokens": 9765}
+    return {"proposals": proposals, "retest": retest, "audit": audit, "usage": usage}
+
+
 def _preview_sample() -> dict:
     """Fixed sample data for UI screenshots (preview mode only). Not from any real run or account."""
     tok = {"prompt": 1840, "completion": 212, "reasoning": 160}
@@ -108,8 +147,11 @@ def _preview_sample() -> dict:
          "evidence_line": "server: DemoShop/1.4.2 Python/3.10"},
     ]
     run = {"id": "0" * 24, "asset_id": "0" * 16, "mode": "model", "mode_label": "Model-guided scan",
-           "model": "meta-models/muse-spark-open-1026", "demo": True, "error": None, "steps": len(steps)}
+           "model": "meta-models/muse-spark-open-1026", "demo": True, "error": None, "steps": len(steps),
+           "can_apply": True}
+    extras = _preview_extras(findings)
     return {
+        "extras": extras,
         "assets": [
             {"id": "0" * 16, "kind": "demo", "label": "Demo app (loopback, no verification needed)", "origin": None,
              "status": "loopback", "reason": None, "scannable": True, "last_run": "0" * 24},
@@ -122,7 +164,8 @@ def _preview_sample() -> dict:
         ],
         "running": {"run": {**run, "status": "running"}, "steps": steps[:3], "next": 3, "findings": findings[:3]},
         "finished": {"run": {**run, "status": "forced_final"}, "steps": steps, "next": 4, "findings": findings,
-                     "result": {"findings": findings, "order_note": "ordered by the model's priority",
+                     "result": {"findings": findings, "fix_first": findings[:3],
+                                "order_note": "ordered by the model's priority",
                                 "claims": [
                                     {"priority": 1, "severity": "critical", "text": "/.env on the demo app serves a "
                                      "file that should not be public (exposed_env_file). Severity: critical.",
@@ -166,27 +209,44 @@ class App:
         self.ui_preview = ui_preview
         self.provider_factory = provider_factory or default_provider_factory
         self.http_transport = http_transport  # tests inject a fake site for ownership checks; None = real HTTP
-        self._demo = None
+        self._demos: dict[int, object] = {}   # user id -> that user's own demo app (fixes never leak between users)
+        self._gates: dict[int, object] = {}   # user id -> ApprovalGate with that user's audit log + control file
         self._demo_lock = threading.Lock()
 
-    def ensure_demo(self) -> str:
-        """Start MAYA's own demo app on a free 127.0.0.1 port the first time a demo scan needs it."""
+    def demo_control(self, user_id: int) -> Path:
+        return self.data_dir / "demo" / f"control-{int(user_id)}.json"
+
+    def ensure_demo(self, user_id: int = 0) -> str:
+        """Start this user's demo app on a free 127.0.0.1 port the first time it is needed.
+        Its fixes are driven by a per-user control file that only the approval gate writes."""
         from demo_app.app import make_server as make_demo
         with self._demo_lock:
-            if self._demo is None:
-                self._demo = make_demo(port=0)  # 127.0.0.1 only, enforced by the demo app
-                threading.Thread(target=self._demo.serve_forever, daemon=True, name="demo-app").start()
-            return f"http://127.0.0.1:{self._demo.server_address[1]}"
+            if user_id not in self._demos:
+                self.demo_control(user_id).parent.mkdir(parents=True, exist_ok=True)
+                demo = make_demo(port=0, control_path=self.demo_control(user_id))  # 127.0.0.1 only (enforced)
+                threading.Thread(target=demo.serve_forever, daemon=True, name=f"demo-app-{user_id}").start()
+                self._demos[user_id] = demo
+            return f"http://127.0.0.1:{self._demos[user_id].server_address[1]}"
 
-    def demo_port(self) -> int | None:
-        return self._demo.server_address[1] if self._demo else None
+    def demo_port(self, user_id: int = 0) -> int | None:
+        demo = self._demos.get(user_id)
+        return demo.server_address[1] if demo else None
+
+    def gate(self, user_id: int):
+        """The existing approval gate + hash-chained audit log, one per user."""
+        from src.approval import ApprovalGate, AuditLog
+        with self._demo_lock:
+            if user_id not in self._gates:
+                audit = AuditLog(self.data_dir / "audit" / f"user-{int(user_id)}.jsonl")
+                self._gates[user_id] = ApprovalGate(audit, self.demo_control(user_id))
+            return self._gates[user_id]
 
     def close(self):
         with self._demo_lock:
-            if self._demo is not None:
-                self._demo.shutdown()
-                self._demo.server_close()
-                self._demo = None
+            for demo in self._demos.values():
+                demo.shutdown()
+                demo.server_close()
+            self._demos.clear()
 
 
 class MayaServer(ThreadingHTTPServer):
@@ -269,10 +329,15 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _get_api(self, path: str, user) -> bool:
         """Signed-in JSON reads. Returns False if the path is not one of them."""
-        if path == "/api/assets":
+        if path in ("/api/assets", "/api/audit", "/api/usage"):
             if user is None:
                 raise Reply(401, "please sign in")
-            self._json(200, {"assets": self._assets_view(user)})
+            if path == "/api/assets":
+                self._json(200, {"assets": self._assets_view(user)})
+            elif path == "/api/audit":
+                self._json(200, self._audit_view(user))
+            else:
+                self._json(200, self.app.runs.usage_for(user["id"]))
             return True
         m = RUN_PATH.match(path)
         if not m:
@@ -293,8 +358,24 @@ class WebHandler(BaseHTTPRequestHandler):
             self._json(200, {"run": run_view(run), "steps": steps, "next": after + len(steps),
                              "findings": findings_view(run.findings, store)})
         else:
-            self._json(200, {"run": run_view(run), "result": run.result})
+            self._json(200, self._run_full(run))
         return True
+
+    def _run_full(self, run) -> dict:
+        return {"run": run_view(run), "result": run.result,
+                "proposals": [proposal_view(p) for p in run.proposals.values()],
+                "retest": retest_view(run.retest) if run.retest else None}
+
+    def _audit_view(self, user) -> dict:
+        audit = self.app.gate(user["id"]).audit
+        intact, bad = audit.verify()
+        try:
+            entries = audit._entries()
+        except ValueError:
+            entries = []
+        last = [{"seq": e.get("seq"), "at": e.get("at"), "event": e.get("event"), "details": e.get("details"),
+                 "hash": (e.get("hash") or "")[:12]} for e in entries[-AUDIT_ENTRIES_SHOWN:]][::-1]
+        return {"intact": intact, "first_bad_entry": bad, "count": len(entries), "entries": last}
 
     def _store(self):
         from src.evidence import EvidenceStore
@@ -362,7 +443,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "invalid Host header"})
         path = urlsplit(self.path).path
         action = ASSET_ACTION.match(path)
-        if path not in self.POSTS and path != "/api/assets" and not action:
+        run_action, approve = RUN_ACTION.match(path), APPROVE.match(path)
+        if path not in self.POSTS and path != "/api/assets" and not (action or run_action or approve):
             return self._json(404, {"error": "not found"})
         try:
             raw = self._read_body()  # always drain first, so an early refusal does not reset the connection
@@ -372,6 +454,11 @@ class WebHandler(BaseHTTPRequestHandler):
             body = self._parse_json(raw)
             if action:
                 status, payload, headers = self._post_asset_action(session, action.group(1), action.group(2))
+            elif run_action or approve:
+                m = run_action or approve
+                status, payload, headers = self._post_run_action(
+                    session, m.group(1), "approve" if approve else m.group(2), body,
+                    m.group(2) if approve else None)
             elif path == "/api/assets":
                 status, payload, headers = self._post_assets(session, body)
             else:
@@ -391,6 +478,50 @@ class WebHandler(BaseHTTPRequestHandler):
         except AssetError as e:
             raise Reply(400, str(e)) from None
         return 200, {"asset": public_asset(asset, self.app.runs.last_for_asset(user["id"], asset["id"]))}, None
+
+    def _post_run_action(self, session, run_id: str, action: str, body: dict, proposal_id: str | None):
+        """approve / apply / retest. All gating is done by the existing ApprovalGate and retest code."""
+        from src.approval import ApplyRefused
+        from src.retest import retest
+        user = self._require_user(session)
+        run = self.app.runs.get(user["id"], run_id)  # another user's run is simply "not found"
+        if run is None:
+            raise Reply(404, "not found")
+        if run.status == "running" or run.base is None:
+            raise Reply(409, "wait for the scan to finish")
+        gate = self.app.gate(user["id"])
+        if action == "approve":
+            proposal = run.proposals.get(proposal_id)
+            if proposal is None:
+                raise Reply(404, "not found")
+            try:
+                gate.approve(proposal, body.get("approver"))
+            except ValueError as e:
+                raise Reply(400 if "approver" in str(e) else 409, str(e)) from None
+        elif action == "apply":
+            ids = body.get("proposal_ids")
+            if ids is None:
+                ids = [p.id for p in run.proposals.values() if p.status == "APPROVED"]
+            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+                raise Reply(400, "proposal_ids must be a list of ids")
+            if not ids:
+                raise Reply(409, "approve at least one fix first")
+            if any(i not in run.proposals for i in ids):
+                raise Reply(404, "not found")
+            try:
+                gate.apply([run.proposals[i] for i in ids], run.base)  # loopback-only and APPROVED-only, audited
+            except ApplyRefused as e:
+                raise Reply(409, str(e) if run.demo else "fixes can be applied only to the loopback demo app") \
+                    from None
+        else:
+            client = self.app.runs.client_for(run, self._store())
+            try:
+                run.retest = retest(client, run.base, dict(run.findings))
+            finally:
+                client.close()
+            gate.audit.append("retested", run=run.id, status=run.retest["status"],
+                              resolved=len(run.retest["resolved"]), still_present=len(run.retest["still_present"]))
+        return 200, self._run_full(run), None
 
     def _post_asset_action(self, session, asset_id: str, action: str):
         user = self._require_user(session)
