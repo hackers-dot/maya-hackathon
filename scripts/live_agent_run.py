@@ -126,8 +126,10 @@ def main(argv=None, transport=None, data_dir: Path | None = None) -> int:
     if not result.report["insufficient"]:
         print("  (none)")
 
-    report = build_report(result.report["verified"], registry.findings, model, REASONING_EFFORT,
-                          budget.run, result.report["insufficient"])
+    print(f"Model finished with valid claims: {'yes' if result.final_answer_valid else 'no'} | "
+          f"findings detected by code: {len(registry.findings)}")
+    report = build_report(registry.findings, store, model, REASONING_EFFORT, budget.run, result.report,
+                          model_finished=result.final_answer_valid)
     md, page = write_report(report, data_dir / "reports", f"report-{run_id}")
     print(f"\nReport written: {md} and {page}")
     return 0

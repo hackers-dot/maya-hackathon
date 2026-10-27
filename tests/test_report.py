@@ -2,7 +2,8 @@ import re
 
 import pytest
 
-from src.report import OWASP, SEVERITY_ORDER, TEXT, build_report, to_html, to_markdown, write_report
+from src.report import (MODEL_FINISHED, MODEL_UNFINISHED, NO_ISSUES, OWASP, SEVERITY_ORDER, TEXT, build_report,
+                        to_html, to_markdown, write_report)
 from src.scanner.findings import make_finding
 from src.severity import TABLE, severity
 
@@ -10,16 +11,12 @@ BANNED = re.compile(r"secure|hack|compliant", re.I)
 USAGE = {"prompt_tokens": 1200, "completion_tokens": 300, "reasoning_tokens": 200, "total_tokens": 1500}
 
 
-def finding(check, location="/", demo=True, target="http://127.0.0.1:8081"):
-    return make_finding(check, target, location, "test", "excerpt", "tech", f"ev-{check}", demo=demo)
-
-
-def report_for(checks, demo=True, quote="HTTP 200", insufficient=()):
-    findings = {f.id: f for f in (finding(c, demo=demo) for c in checks)}
-    verified = [{"finding_id": fid, "evidence_id": f.evidence[0].record_id, "quoted_evidence": quote,
-                 "severity": "info"}  # a wrong severity here must be ignored
-                for fid, f in findings.items()]
-    return build_report(verified, findings, "meta-models/test-model", "low", USAGE, list(insufficient))
+def report_for(checks, demo=True, quote="HTTP 200", insufficient=(), verified=(), finished=True):
+    """No store: each finding's evidence line falls back to the excerpt captured by the check (`quote` here)."""
+    findings = {f.id: f for f in (make_finding(c, "http://127.0.0.1:8081", "/", "test", quote, "tech", f"ev-{c}",
+                                               demo=demo) for c in checks)}
+    claims = {"verified": list(verified), "insufficient": list(insufficient)}
+    return build_report(findings, None, "meta-models/test-model", "low", USAGE, claims, finished)
 
 
 def prose(text: str) -> str:
@@ -39,7 +36,7 @@ def test_sorted_by_table_severity_and_fix_first():
     assert sev[0] == "critical" and all(i["severity"] == severity(i["check"]) for i in r["items"])
     assert [i["check"] for i in r["fix_first"]] == [i["check"] for i in r["items"][:3]]
     md = to_markdown(r)
-    assert md.index("## Fix first") < md.index("## Findings")
+    assert md.index("## Detected by deterministic checks") < md.index("### Fix first") < md.index("[CRITICAL]")
 
 
 def test_all_checks_render_without_banned_words():
@@ -78,11 +75,34 @@ def test_markdown_code_span_survives_backticks():
     assert "`` a `b` c ⏎ d ``" in md
 
 
-def test_empty_report_wording():
-    r = build_report([], {}, "m", "low", USAGE)
+@pytest.mark.parametrize("finished", [True, False])
+def test_zero_findings_wording(finished):
+    r = build_report({}, None, "m", "low", USAGE, model_finished=finished)
     for text in (to_markdown(r), to_html(r)):
-        assert "No issues were detected in the checks run." in text
+        assert "No issues detected in the checks run" in text and NO_ISSUES == "No issues detected in the checks run."
         assert not BANNED.search(prose(text))
+        assert "secure" not in text.lower()  # not even inside code spans
+
+
+def test_report_with_findings_only_when_model_did_not_finish():
+    r = report_for(["exposed_env_file", "missing_csp"], finished=False)  # no claims at all
+    md, page = to_markdown(r), to_html(r)
+    for text in (md, page):
+        assert MODEL_UNFINISHED in text and "model did not finish; findings are from code checks" in text
+        assert "Detected by deterministic checks" in text and "Issues detected: 2" in text
+        assert "None. The model did not finish." in text
+    assert "[CRITICAL] Configuration file appears publicly readable" in md
+
+
+def test_model_verified_claims_section_is_separate():
+    verified = [{"finding_id": "missing_csp:/", "check": "missing_csp", "severity": "info",  # wrong on purpose
+                 "text": "/ on http://127.0.0.1:8081 is missing a security header (missing_csp). Severity: medium.",
+                 "quoted_evidence": "content-type", "supporting_evidence": "recorded response headers: content-type"}]
+    md = to_markdown(report_for(["missing_csp"], verified=verified))
+    claims = md[md.index("## Model-verified claims"):]
+    assert MODEL_FINISHED in md
+    assert "- **MEDIUM**: / on http://127.0.0.1:8081 is missing" in claims  # severity from the table
+    assert "` recorded response headers: content-type `" in claims
 
 
 def test_write_report(tmp_path):

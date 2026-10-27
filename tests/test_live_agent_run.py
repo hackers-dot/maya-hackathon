@@ -37,6 +37,8 @@ def test_dry_run_vulnerable(loopback_only, tmp_path, capsys):
     assert "missing_csp:/: quote does not support claim" in out  # homepage-body quote dropped
     reports_md = "".join(p.read_text(encoding="utf-8") for p in (tmp_path / "reports").glob("*.md"))
     assert "recorded response headers: content-length, content-type, server, set-cookie" in reports_md
+    assert "Detected by deterministic checks" in reports_md and "model finished with a final answer" in reports_md
+    assert "## Model-verified claims" in reports_md
     reports = list((tmp_path / "reports").iterdir())
     assert sorted(p.suffix for p in reports) == [".html", ".md"]
     md = next(p for p in reports if p.suffix == ".md").read_text(encoding="utf-8")
@@ -49,6 +51,27 @@ def test_dry_run_fixed(loopback_only, tmp_path, capsys):
     assert "demo app FIXED" in out
     assert "Verified claims:\n  (none)" in out
     assert out.count("unknown finding_id") == 4
+    md = next((tmp_path / "reports").glob("*.md")).read_text(encoding="utf-8")
+    assert "No issues detected in the checks run." in md and "secure" not in md.lower()
+
+
+def test_report_built_when_model_never_finishes(loopback_only, monkeypatch, tmp_path, capsys):
+    """The live failure: the model keeps calling tools and never answers. The report still lists findings."""
+    monkeypatch.setenv("BASETEN_API_KEY", FAKE_KEY)
+    seen = []
+    tool = {"content": None, "tool_calls": [{"id": "a", "type": "function", "function": {
+        "name": "run_check", "arguments": '{"check_id": "exposed_env_file", "path": "/.env"}'}}]}
+    replies = [reply(tool, finish="tool_calls") for _ in range(live.MAX_STEPS)]
+    assert live.main([], transport=model_transport(seen, replies), data_dir=tmp_path) == 0
+    out = capsys.readouterr().out
+    assert len(seen) == live.MAX_STEPS and seen[-1]["tool_choice"] == "none"
+    assert "stop_reason=forced_final" in out and "Model finished with valid claims: no" in out
+    md = next((tmp_path / "reports").glob("*.md")).read_text(encoding="utf-8")
+    assert "model did not finish; findings are from code checks" in md
+    assert "[CRITICAL] Configuration file appears publicly readable" in md
+    assert "- Supporting evidence: ` APP_ENV=demo `" in md  # first code-derived KEY=value line of the record
+    assert "fake-demo-key-not-real" not in md
+    assert "None. The model did not finish." in md
 
 
 def model_transport(seen, replies):

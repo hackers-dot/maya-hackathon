@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.agent.verifier import evidence_line
+from src.evidence import EvidenceStore
 from src.severity import TABLE, rule
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
@@ -148,29 +150,39 @@ def owasp_label(check: str) -> str:
     return f"mapped to OWASP Top 10 {entry[0]} {entry[1]}"
 
 
-def build_report(verified: list[dict], findings: dict, model: str, reasoning_effort: str, usage: dict,
-                 insufficient: list[dict] = ()) -> dict:
-    items, seen = [], set()
-    for v in verified:
-        f = findings[v["finding_id"]]
-        if f.id in seen:
-            continue
-        seen.add(f.id)
-        items.append({
-            "finding_id": f.id, "check": f.check, "severity": rule(f.check).severity, "location": f.location,
-            "target": f.target, "evidence_id": v["evidence_id"],
-            # the code-derived line that shows the issue (e.g. the header list), not whatever text was quoted
-            "evidence_line": v.get("supporting_evidence") or v["quoted_evidence"],
-            "category": owasp_label(f.check), "text": TEXT[f.check], "demo": f.demo,
-        })
+NO_ISSUES = "No issues detected in the checks run."
+DETERMINISTIC = "Detected by deterministic checks"
+MODEL_UNFINISHED = "model did not finish; findings are from code checks"
+MODEL_FINISHED = "model finished with a final answer"
+
+
+def build_report(findings: dict, store: EvidenceStore | None, model: str, reasoning_effort: str, usage: dict,
+                 claims: dict | None = None, model_finished: bool = False) -> dict:
+    """Report from ALL code-detected findings of the run; it does not depend on the model finishing.
+
+    claims: verifier output {"verified": [...], "insufficient": [...]}, shown in its own section.
+    """
+    items = [{
+        "finding_id": f.id, "check": f.check, "severity": rule(f.check).severity, "location": f.location,
+        "target": f.target, "evidence_id": f.evidence[0].record_id,
+        "evidence_line": evidence_line(f, store),  # code-derived line that shows the issue
+        "category": owasp_label(f.check), "text": TEXT[f.check], "demo": f.demo,
+    } for f in findings.values()]
     items.sort(key=lambda i: (SEVERITY_ORDER.index(i["severity"]), i["check"], i["location"]))
+    claims = claims or {"verified": [], "insufficient": []}
+    model_claims = [{"finding_id": v["finding_id"], "severity": rule(v["check"]).severity, "text": v["text"],
+                     "evidence_line": v.get("supporting_evidence") or v["quoted_evidence"]}
+                    for v in claims["verified"]]
     return {
         "model": model, "reasoning_effort": reasoning_effort,
         "usage": {k: usage.get(k, 0) for k in ("prompt_tokens", "completion_tokens", "reasoning_tokens", "total_tokens")},
+        "model_status": MODEL_FINISHED if model_finished else MODEL_UNFINISHED,
+        "model_finished": model_finished,
         "demo": any(i["demo"] for i in items),
         "items": items,
         "fix_first": items[:3],
-        "insufficient": list(insufficient),
+        "model_claims": model_claims,
+        "insufficient": list(claims["insufficient"]),
     }
 
 
@@ -190,15 +202,17 @@ def to_markdown(report: dict) -> str:
         out += [f"> **{DEMO_BANNER}**", ""]
     out += [f"- Model: {_md_code(report['model'])}", f"- Reasoning effort: {_md_code(report['reasoning_effort'])}",
             f"- Tokens: prompt {u['prompt_tokens']}, completion {u['completion_tokens']} "
-            f"(reasoning {u['reasoning_tokens']}), total {u['total_tokens']}", ""]
+            f"(reasoning {u['reasoning_tokens']}), total {u['total_tokens']}",
+            f"- Model status: {report['model_status']}", ""]
+    out += [f"## {DETERMINISTIC}", ""]
     if not report["items"]:
-        out += ["No issues were detected in the checks run.", "", SCOPE_NOTE]
-        return "\n".join(out) + "\n"
-    out += [f"Issues detected: {len(report['items'])}. Severity comes from MAYA's fixed table, not from the model.", "",
-            "## Fix first", ""]
-    out += [f"{n}. **{i['severity'].upper()}**: {i['text'].title} at {_md_code(i['location'])}"
-            for n, i in enumerate(report["fix_first"], 1)]
-    out += ["", "## Findings", ""]
+        out += [NO_ISSUES, ""]
+    else:
+        out += [f"Issues detected: {len(report['items'])}. Severity comes from MAYA's fixed table, not from the model.",
+                "", "### Fix first", ""]
+        out += [f"{n}. **{i['severity'].upper()}**: {i['text'].title} at {_md_code(i['location'])}"
+                for n, i in enumerate(report["fix_first"], 1)]
+        out += [""]
     for i in report["items"]:
         t = i["text"]
         out += [f"### [{i['severity'].upper()}] {t.title}", "",
@@ -209,6 +223,13 @@ def to_markdown(report: dict) -> str:
                 f"**What this means:** {t.plain} {t.analogy}", "",
                 f"**Technical detail:** {t.technical}", "",
                 f"**Suggested fix:** {t.fix}", ""]
+    out += ["## Model-verified claims", ""]
+    if report["model_claims"]:
+        out += [f"- **{c['severity'].upper()}**: {c['text']} Evidence: {_md_code(c['evidence_line'])}"
+                for c in report["model_claims"]]
+    else:
+        out += ["None." + ("" if report["model_finished"] else " The model did not finish.")]
+    out += [""]
     if report["insufficient"]:
         out += ["## Claims not included (insufficient evidence)", ""]
         out += [f"- {_md_code(c.get('finding_id'))}: {c['reason']}" for c in report["insufficient"]]
@@ -247,15 +268,17 @@ def to_html(report: dict) -> str:
     b.append(f"<ul><li>Model: <code>{_e(report['model'])}</code></li>"
              f"<li>Reasoning effort: <code>{_e(report['reasoning_effort'])}</code></li>"
              f"<li>Tokens: prompt {_e(u['prompt_tokens'])}, completion {_e(u['completion_tokens'])} "
-             f"(reasoning {_e(u['reasoning_tokens'])}), total {_e(u['total_tokens'])}</li></ul>")
+             f"(reasoning {_e(u['reasoning_tokens'])}), total {_e(u['total_tokens'])}</li>"
+             f"<li>Model status: {_e(report['model_status'])}</li></ul>")
+    b.append(f"<h2>{_e(DETERMINISTIC)}</h2>")
     if not report["items"]:
-        b.append(f"<p>No issues were detected in the checks run.</p><p>{_e(SCOPE_NOTE)}</p></body></html>")
-        return "".join(b)
-    b.append(f"<p>Issues detected: {len(report['items'])}. Severity comes from MAYA's fixed table, not from the model.</p>")
-    b.append("<h2>Fix first</h2><ol>")
-    b += [f"<li><span class=\"sev {_e(i['severity'])}\">{_e(i['severity'].upper())}</span> {_inline(i['text'].title)} "
-          f"at <code>{_e(i['location'])}</code></li>" for i in report["fix_first"]]
-    b.append("</ol><h2>Findings</h2>")
+        b.append(f"<p>{_e(NO_ISSUES)}</p>")
+    else:
+        b.append(f"<p>Issues detected: {len(report['items'])}. Severity comes from MAYA's fixed table, "
+                 "not from the model.</p><h3>Fix first</h3><ol>")
+        b += [f"<li><span class=\"sev {_e(i['severity'])}\">{_e(i['severity'].upper())}</span> "
+              f"{_inline(i['text'].title)} at <code>{_e(i['location'])}</code></li>" for i in report["fix_first"]]
+        b.append("</ol>")
     for i in report["items"]:
         t = i["text"]
         b.append(f"<section><h3><span class=\"sev {_e(i['severity'])}\">{_e(i['severity'].upper())}</span> "
@@ -267,6 +290,13 @@ def to_html(report: dict) -> str:
                  f"<p><strong>What this means:</strong> {_inline(t.plain)} {_inline(t.analogy)}</p>"
                  f"<p><strong>Technical detail:</strong> {_inline(t.technical)}</p>"
                  f"<p><strong>Suggested fix:</strong> {_inline(t.fix)}</p></section>")
+    b.append("<h2>Model-verified claims</h2>")
+    if report["model_claims"]:
+        b.append("<ul>" + "".join(
+            f"<li><span class=\"sev {_e(c['severity'])}\">{_e(c['severity'].upper())}</span> {_e(c['text'])} "
+            f"Evidence: <code>{_e(c['evidence_line'])}</code></li>" for c in report["model_claims"]) + "</ul>")
+    else:
+        b.append("<p>None." + ("" if report["model_finished"] else " The model did not finish.") + "</p>")
     if report["insufficient"]:
         b.append("<h2>Claims not included (insufficient evidence)</h2><ul>")
         b += [f"<li><code>{_e(c.get('finding_id'))}</code>: {_e(c['reason'])}</li>" for c in report["insufficient"]]

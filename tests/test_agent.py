@@ -4,14 +4,14 @@ import sqlite3
 import httpx
 import pytest
 
-from src.agent.loop import run_agent
-from src.agent.tools import TOOL_SPECS, ToolRegistry
+from src.agent.loop import FINAL_INSTRUCTION, MAX_STEPS, SYSTEM_PROMPT, run_agent
+from src.agent.tools import MAX_GET_EVIDENCE, RUNNABLE_CHECKS, TOOL_SPECS, ToolRegistry
 from src.agent.verifier import TEMPLATES, verify
 from src.budget import TokenBudget
 from src.evidence import EvidenceStore
 from src.provider import ChatResult, MockProvider
 from src.scanner.http_client import HttpClient
-from src.severity import severity
+from src.severity import TABLE, severity
 
 BASE = "http://127.0.0.1:8081"
 USAGE = {"prompt_tokens": 100, "completion_tokens": 40, "total_tokens": 140,
@@ -101,14 +101,46 @@ def test_non_string_args_rejected(env):
     assert requests == []
 
 
-def test_non_http_check_reports_error(env):
+NOT_RUNNABLE = ["missing_spf", "missing_dmarc", "weak_tls_or_expiring_cert"]
+
+
+@pytest.mark.parametrize("check_id", NOT_RUNNABLE)
+def test_non_http_checks_not_offered_and_rejected(env, check_id):
     registry, _, requests = env
-    out = registry.call("run_check", json.dumps({"check_id": "missing_spf", "path": "/"}))
-    assert not out["ok"] and "cannot run over HTTP" in out["error"] and requests == []
+    enum = TOOL_SPECS[0]["function"]["parameters"]["properties"]["check_id"]["enum"]
+    assert check_id not in enum and check_id not in RUNNABLE_CHECKS
+    assert check_id in TABLE  # still in the severity table
+    out = registry.call("run_check", json.dumps({"check_id": check_id, "path": "/"}))
+    assert out["error"] == f"rejected: check_id not available: {check_id!r}" and requests == []
+
+
+def test_enum_and_prompt_list_exactly_the_runnable_checks():
+    enum = TOOL_SPECS[0]["function"]["parameters"]["properties"]["check_id"]["enum"]
+    assert enum == RUNNABLE_CHECKS and len(enum) == 12 and set(enum) == set(TABLE) - set(NOT_RUNNABLE)
+    listed = SYSTEM_PROMPT.split("The runnable checks are exactly: ")[1].split(". ")[0]
+    assert listed.split(", ") == RUNNABLE_CHECKS
+    assert not any(c in SYSTEM_PROMPT for c in NOT_RUNNABLE)
 
 
 def test_tool_specs_match_allowlist():
     assert [s["function"]["name"] for s in TOOL_SPECS] == ["run_check", "list_findings", "get_evidence"]
+
+
+def test_run_check_returns_evidence_summary(env):
+    registry, _, _ = env
+    out = registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))
+    assert out["result"]["findings"][0]["evidence_summary"] == (
+        "missing_csp:/ | missing_csp | recorded response headers: content-length, content-type, server")
+
+
+def test_get_evidence_capped_at_two(env):
+    registry, _, _ = env
+    rid = registry.call("run_check", json.dumps({"check_id": "missing_csp", "path": "/"}))["result"]["findings"][0][
+        "evidence_id"]
+    outs = [registry.call("get_evidence", json.dumps({"id": rid})) for _ in range(4)]
+    assert [o["ok"] for o in outs] == [True, True, False, False]
+    assert outs[2]["message"].startswith("limit reached") and MAX_GET_EVIDENCE == 2
+    assert [e["status"] for e in registry.log[1:]] == ["ok", "ok", "limited", "limited"]
 
 
 # --- loop ---
@@ -141,19 +173,50 @@ def test_loop_rejects_unknown_tool_and_continues(env):
     assert result.stop_reason == "final" and requests == []
 
 
-def test_loop_stops_at_max_steps(env):
+def test_last_step_forces_final_answer_request(env):
+    """A model that keeps calling tools still gets a final-answer request on the last step."""
     registry, budget, _ = env
     provider = MockProvider(script=[tool_reply(call("list_findings", {})) for _ in range(20)])
     result = run_agent(provider, registry, budget, "go", max_steps=3)
-    assert result.stop_reason == "max_steps"
-    assert len(provider.calls) == 3 and [t["step"] for t in result.trace] == [1, 2, 3]
-    assert result.report == {"verified": [], "insufficient": []}
+    assert len(provider.calls) == 3
+    assert [c["tool_choice"] for c in provider.calls] == ["auto", "auto", "none"]
+    assert provider.calls[-1]["messages"][-1] == {"role": "user", "content": FINAL_INSTRUCTION}
+    assert result.stop_reason == "forced_final" and not result.final_answer_valid
+    assert result.trace[-1]["result_summary"] == (
+        "forced final step: final answer is not valid claims JSON (tool calls ignored)")
+    assert len(registry.log) == 2  # the tool call returned on the forced step was never executed
+
+
+def test_forced_final_with_valid_claims(env):
+    registry, budget, _ = env
+    provider = MockProvider(script=[
+        tool_reply(call("run_check", {"check_id": "missing_csp", "path": "/"})),
+        final_reply([{"finding_id": "missing_csp:/", "claim_type": "header_missing",
+                      "quoted_evidence": "content-type, server"}]),
+    ])
+    result = run_agent(provider, registry, budget, "go", max_steps=2)
+    assert provider.calls[1]["tool_choice"] == "none"
+    assert result.stop_reason == "forced_final" and result.final_answer_valid
+    assert [v["finding_id"] for v in result.report["verified"]] == ["missing_csp:/"]
 
 
 def test_default_max_steps_is_8(env):
     registry, budget, _ = env
     provider = MockProvider(script=[tool_reply(call("list_findings", {})) for _ in range(20)])
-    assert run_agent(provider, registry, budget, "go").stop_reason == "max_steps" and len(provider.calls) == 8
+    assert run_agent(provider, registry, budget, "go").stop_reason == "forced_final" and len(provider.calls) == 8
+    assert provider.calls[7]["tool_choice"] == "none" and MAX_STEPS == 8
+
+
+def test_final_requested_once_all_checks_attempted(env):
+    registry, budget, _ = env
+    batches = [RUNNABLE_CHECKS[i:i + 4] for i in range(0, 12, 4)]
+    provider = MockProvider(script=[
+        tool_reply(*[call("run_check", {"check_id": c, "path": "/"}, cid=c) for c in batch]) for batch in batches
+    ] + [final_reply([])])
+    result = run_agent(provider, registry, budget, "go")  # max_steps 8, but all 12 checks done after step 3
+    assert registry.all_checks_attempted()
+    assert [c["tool_choice"] for c in provider.calls] == ["auto", "auto", "auto", "none"]
+    assert result.stop_reason == "forced_final" and result.final_answer_valid
 
 
 def test_budget_exceeded_stops_cleanly(env, tmp_path):

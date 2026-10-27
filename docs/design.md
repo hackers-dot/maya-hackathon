@@ -26,7 +26,11 @@ The model plans, explains and drafts patches. It never touches the network direc
 
 ## Reports: `src/report.py`
 
-- Built from verifier output plus findings. Items are sorted by severity from the fixed table (a severity in the claim is ignored); "Fix first" is the top 3.
+- **The report does not depend on the model finishing.** Its main section, "Detected by deterministic checks", is built from ALL findings code produced in the run. Each item shows its severity, location, evidence id and the code-derived supporting line from the hash-verified record (same rules as the verifier).
+- Typed model claims that pass the verifier appear in a separate "Model-verified claims" section, and dropped claims are listed with reasons.
+- The header shows whether the model finished. If it did not: "model did not finish; findings are from code checks".
+- A run with no findings says "No issues detected in the checks run." (never "secure").
+- Items are sorted by severity from the fixed table; "Fix first" is the top 3.
 - Each item has its location, evidence id, verified quote, and an OWASP Top 10 2021 category taken from a fixed table and worded "mapped to" (SPF/DMARC are labelled as outside the OWASP Top 10). It also has a plain explanation with an analogy, a technical detail line and a fix, all from fixed per-check templates in code.
 - The header shows the model, reasoning effort and token usage (reasoning tokens separate), plus a DEMO banner when any item comes from the demo app.
 - Wording uses "appears" / "detected" / "not detected in the checks run". Tests strip code spans and assert that "secure", "hack" and "compliant" never appear in the prose. The only place the cookie attribute `Secure` appears is inside code formatting.
@@ -62,6 +66,9 @@ Checks are read-only, non-destructive observations. No exploit code, no attack p
   - Rejected calls are logged and never executed. Accepted calls are executed by code and logged (args redacted).
 - **`loop.py`: bounded loop on native tool calling** (`tools` + `tool_choice="auto"`).
   - Stops after `MAX_STEPS` (default 8), and executes at most 4 tool calls per step.
+  - **The final answer is forced.** The last step is reserved: on it, or as soon as every runnable check type has been attempted, the loop sends `tool_choice="none"` plus an explicit "write the final claims now" instruction. Tool calls returned on that step are ignored, never executed. `stop_reason` is `final` (the model chose to finish), `forced_final` or `budget_exceeded`; `final_answer_valid` says whether parseable claims came back.
+  - **Only runnable checks are offered.** The `run_check` enum and the system prompt list exactly the 12 HTTP-runnable checks. `missing_spf`, `missing_dmarc` and `weak_tls_or_expiring_cert` stay in the severity table but are hidden from the model, and rejected if asked for, until they can run.
+  - **`run_check` returns an `evidence_summary` line** per finding (`finding id | check | supporting line`), so the model can quote without `get_evidence`. `get_evidence` is capped at 2 calls per run; further calls return "limit reached" and are logged as `limited`.
   - Extra calls in a step are **deferred**, not rejected: they are never executed, they are logged with status `deferred`, and each one still gets a tool result (`"deferred: per-step limit reached, call again next step"`), so every `tool_call_id` is answered and the API conversation stays valid. The model can repeat them in a later step.
   - The system prompt tells the model: at most 4 `run_check` calls per step; high-impact checks first (`.env`, `.git`, backup files, directory listing), then cookies, then headers; continue until every check type has been tried; quote the line that shows the issue. `reasoning_effort` and `max_tokens` come from `config.yaml` (low, 1500) through the provider.
   - Every reply's usage, including `reasoning_tokens`, goes into `TokenBudget`. `BudgetExceeded` stops the loop cleanly before any further tool runs.

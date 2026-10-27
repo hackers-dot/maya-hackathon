@@ -117,6 +117,21 @@ def support_lines(finding: Finding, record: dict) -> list[str]:
     return []  # DNS/TLS evidence is not recorded over HTTP, so nothing here can support those claims
 
 
+def evidence_line(finding: Finding, store: EvidenceStore | None) -> str:
+    """The code-derived line that shows a finding's issue, for reports and tool summaries."""
+    rid = finding.evidence[0].record_id
+    try:
+        if store is not None and rid is not None:
+            if not store.verify(rid):
+                return "(evidence record failed hash verification)"
+            lines = support_lines(finding, store.get(rid))
+            if lines:
+                return lines[0]
+    except KeyError:
+        pass
+    return finding.evidence[0].data  # e.g. DNS findings, or no store: the redacted excerpt captured by the check
+
+
 def verify(claims, findings: dict[str, Finding], store: EvidenceStore) -> dict:
     verified, insufficient = [], []
 

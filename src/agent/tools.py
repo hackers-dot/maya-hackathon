@@ -5,26 +5,33 @@ import re
 
 import httpx
 
+from src.agent.verifier import evidence_line
 from src.evidence import EvidenceStore, redact_text
 from src.models import Finding
 from src.scanner.http_client import HttpClient
-from src.scanner.runner import NotRunnable, run_check
+from src.scanner.runner import HTTP_CHECKS, NotRunnable, run_check
 from src.scope import OutOfScope
-from src.severity import TABLE
 
 log = logging.getLogger("maya.agent.tools")
 
-CHECK_IDS = sorted(TABLE)
+# Only checks that can actually run over HTTP are offered. DNS/TLS checks stay in the severity table
+# (src/severity.py) but are hidden from the model until they are runnable.
+RUNNABLE_CHECKS = sorted(HTTP_CHECKS)
+MAX_GET_EVIDENCE = 2
 # must start with a single "/", no scheme/host, no "..", no "@", "\" or "#", no whitespace
 PATH_RE = re.compile(r"^/(?!/)[A-Za-z0-9._~!$&'()*+,;=:%/?-]{0,255}$")
 EVIDENCE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+DEFERRED_MESSAGE = "deferred: per-step limit reached, call again next step"
+EVIDENCE_LIMIT_MESSAGE = (f"limit reached: get_evidence is capped at {MAX_GET_EVIDENCE} calls per run; "
+                          "use the evidence summary returned by run_check")
 
 TOOL_SPECS = [
     {"type": "function", "function": {
         "name": "run_check",
-        "description": "Run one MAYA security check against a path on the target. Returns findings found by code.",
+        "description": "Run one MAYA security check against a path on the target. Returns the findings code "
+                       "detected, each with a one-line evidence summary.",
         "parameters": {"type": "object", "properties": {
-            "check_id": {"type": "string", "enum": CHECK_IDS},
+            "check_id": {"type": "string", "enum": RUNNABLE_CHECKS},
             "path": {"type": "string", "description": "URL path starting with /, e.g. /login"},
         }, "required": ["check_id", "path"], "additionalProperties": False},
     }},
@@ -35,7 +42,8 @@ TOOL_SPECS = [
     }},
     {"type": "function", "function": {
         "name": "get_evidence",
-        "description": "Get a stored, redacted evidence record by its id, with its hash verification result.",
+        "description": f"Get a full stored evidence record by id (at most {MAX_GET_EVIDENCE} calls per run; "
+                       "usually not needed because run_check already returns the evidence line).",
         "parameters": {"type": "object", "properties": {"id": {"type": "string"}},
                        "required": ["id"], "additionalProperties": False},
     }},
@@ -43,33 +51,42 @@ TOOL_SPECS = [
 ARG_KEYS = {s["function"]["name"]: set(s["function"]["parameters"]["properties"]) for s in TOOL_SPECS}
 
 
-DEFERRED_MESSAGE = "deferred: per-step limit reached, call again next step"
-
-
 class ToolError(ValueError):
     pass
-
-
-def finding_summary(f: Finding) -> dict:
-    return {"id": f.id, "check": f.check, "severity": f.severity, "location": f.location,
-            "evidence_id": f.evidence[0].record_id}
 
 
 class ToolRegistry:
     def __init__(self, client: HttpClient, base_url: str, store: EvidenceStore):
         self.client, self.base_url, self.store = client, base_url, store
         self.findings: dict[str, Finding] = {}
+        self.attempted_checks: set[str] = set()
+        self.evidence_calls = 0
         self.log: list[dict] = []
         self._handlers = {"run_check": self._run_check, "list_findings": self._list_findings,
                           "get_evidence": self._get_evidence}
         assert set(self._handlers) == set(ARG_KEYS)  # allowlist and specs stay in sync
 
+    def all_checks_attempted(self) -> bool:
+        return set(RUNNABLE_CHECKS) <= self.attempted_checks
+
+    def summary(self, f: Finding) -> dict:
+        line = evidence_line(f, self.store)
+        return {"id": f.id, "check": f.check, "severity": f.severity, "location": f.location,
+                "evidence_id": f.evidence[0].record_id, "evidence_summary": f"{f.id} | {f.check} | {line}"}
+
     def call(self, name: str, raw_args) -> dict:
-        """Validate then execute. Never raises; returns {"ok", "result"|"error", "summary"}."""
+        """Validate then execute. Never raises; returns {"ok", "result"|"error"|"message", "summary"}."""
         try:
             args = self._validate(name, raw_args)
         except ToolError as e:
             return self._record(name, raw_args, {"ok": False, "error": f"rejected: {e}", "summary": f"rejected: {e}"})
+        if name == "get_evidence":
+            if self.evidence_calls >= MAX_GET_EVIDENCE:
+                return self._record(name, args, {"ok": False, "status": "limited", "message": EVIDENCE_LIMIT_MESSAGE,
+                                                 "summary": "limit reached"})
+            self.evidence_calls += 1
+        if name == "run_check":
+            self.attempted_checks.add(args["check_id"])
         try:
             result, summary = self._handlers[name](**args)
             out = {"ok": True, "result": result, "summary": summary}
@@ -110,8 +127,8 @@ class ToolRegistry:
         if set(args) != ARG_KEYS[name]:
             raise ToolError(f"expected exactly {sorted(ARG_KEYS[name])}, got {sorted(args)}")
         if name == "run_check":
-            if args["check_id"] not in TABLE:
-                raise ToolError(f"check_id not allowed: {args['check_id']!r}")
+            if args["check_id"] not in RUNNABLE_CHECKS:
+                raise ToolError(f"check_id not available: {args['check_id']!r}")
             path = args["path"]
             if not isinstance(path, str) or not PATH_RE.match(path) or "://" in path or ".." in path:
                 raise ToolError("path must start with / and contain no scheme or host")
@@ -123,10 +140,10 @@ class ToolRegistry:
         found = run_check(self.client, self.base_url, check_id, path)
         for f in found:
             self.findings[f.id] = f
-        return {"findings": [finding_summary(f) for f in found]}, f"{len(found)} finding(s)"
+        return {"findings": [self.summary(f) for f in found]}, f"{len(found)} finding(s)"
 
     def _list_findings(self):
-        return {"findings": [finding_summary(f) for f in self.findings.values()]}, f"{len(self.findings)} finding(s)"
+        return {"findings": [self.summary(f) for f in self.findings.values()]}, f"{len(self.findings)} finding(s)"
 
     def _get_evidence(self, id: str):
         record = self.store.get(id)  # KeyError if absent; already redacted at storage time
