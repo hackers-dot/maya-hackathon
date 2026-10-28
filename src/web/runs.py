@@ -127,13 +127,29 @@ class RunManager:
         latest: dict[str, Run] = {}
         for r in self.runs.values():
             if r.user_id == user_id and r.result and r.asset_id in labels:
-                if r.asset_id not in latest or r.started_at > latest[r.asset_id].started_at:
+                if r.asset_id not in latest or r.started_at >= latest[r.asset_id].started_at:  # tie: later start
                     latest[r.asset_id] = r
         items = []
         for asset_id, r in latest.items():
             for f in r.result["findings"]:
                 items.append({**f, "asset": labels[asset_id], "status": finding_status(r, f["id"])})
         return sorted(items, key=lambda i: (SEVERITY_ORDER.index(i["severity"]), i["id"]))
+
+    def history_for_user(self, user_id: int, labels: dict[str, str], limit: int = 3) -> list[dict]:
+        """This user's last `limit` completed scans, newest first: run id, UTC date, findings count, status
+        counts and the ids of findings that were FIXED (re-tested). Only this user's runs."""
+        mine = [(r.started_at, i, r) for i, r in enumerate(self.runs.values())  # dict order = start order (ties)
+                if r.user_id == user_id and r.result and r.asset_id in labels]
+        done = [r for _, _, r in sorted(mine, key=lambda t: t[:2], reverse=True)[:limit]]
+        out = []
+        for r in done:
+            statuses = {f["id"]: finding_status(r, f["id"]) for f in r.result["findings"]}
+            counts = {s: list(statuses.values()).count(s) for s in ("DETECTED", "APPLIED", "FIXED")}
+            out.append({"run": r.id, "asset": labels[r.asset_id], "findings": len(statuses),
+                        "date": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(r.started_at)),
+                        "statuses": {k: v for k, v in counts.items() if v},
+                        "fixed_ids": sorted(i for i, s in statuses.items() if s == "FIXED")})
+        return out
 
     def usage_for(self, user_id: int) -> dict:
         totals = {"prompt_tokens": 0, "completion_tokens": 0, "reasoning_tokens": 0, "total_tokens": 0}

@@ -486,7 +486,8 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .role-label { flex-basis: 100%; }  /* label on its own line, so the three pills stay on one row */
   .finding-sum::after { display: none; }
   .asset-actions { width: 100%; }
-  .asset-actions .btn { flex: 1; }
+  .asset-actions .btn { flex: 1 1 auto; white-space: nowrap; }
+  .asset-actions .mode-label:not(:empty) { flex-basis: 100%; }
   .panel-meta { margin-left: 0; width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {

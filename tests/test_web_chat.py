@@ -343,3 +343,64 @@ def test_context_after_apply_and_fixed_retest(web):
     send(b, new_chat(b), "status?")  # Alice's statuses never reach Bob's prompt: his stay DETECTED
     got_b = statuses_in_context(web)
     assert set(got_b) == {f["id"] for f in b_body["result"]["findings"]} and set(got_b.values()) == {"DETECTED"}
+
+
+# --- Web 5.1: scan history in the chat context ---
+
+def context_of(web):
+    return web["state"]["chat"].calls[-1]["messages"][0]["content"][len(SYSTEM_PROMPT):]
+
+
+def test_system_prompt_never_says_no_scan_when_history_exists():
+    assert "never say that no scan was done" in SYSTEM_PROMPT
+    assert "no issues detected in the checks run" in SYSTEM_PROMPT
+
+
+def test_latest_scan_with_no_issues_keeps_history_and_fixed_ids(web):
+    c = user(web["new_client"](), "history@shop.example", company=True)
+    run1, body = scan_demo(c)
+    ids = sorted(f["id"] for f in body["result"]["findings"])
+    assert post(c, f"/api/runs/{run1}/approve-all", {"approver": "demo-user"}).status_code == 200
+    assert post(c, f"/api/runs/{run1}/apply").status_code == 200
+    assert post(c, f"/api/runs/{run1}/retest").json()["retest"]["status"] == "FIXED"
+    run2, body2 = scan_demo(c)  # same demo app, fixes on: 0 findings
+    assert body2["result"]["findings"] == []
+    chat_id = new_chat(c)
+    send(c, chat_id, "Is my site ok now?")
+    ctx = context_of(web)
+    assert "SCAN HISTORY (newest first; MAYA has scanned this user's site):" in ctx
+    lines = ctx.strip().splitlines()
+    assert lines[1].startswith(f"- run {run2} ") and "0 finding(s) (no findings)" in lines[1]
+    assert lines[2].startswith(f"- run {run1} ") and "11 finding(s) (FIXED 11)" in lines[2]
+    assert f"latest scan: no issues detected in the checks run (run {run2}" in ctx
+    assert all(f"[{i}] (run {run1})" in ctx for i in ids)
+    assert "MAYA has not scanned" not in ctx and "VERIFIED FINDINGS: none open in the latest scan" in ctx
+    # citing an earlier FIXED id is a known id, not an invented one
+    web["state"]["chat"] = RecordingModel(answer="The exposed .env was fixed and re-tested [exposed_env_file:/.env].")
+    meta = send(c, chat_id, "and .env?").json()["reply"]["meta"]
+    assert meta["cited"] == ["exposed_env_file:/.env"] and meta["cited_unknown"] == []
+
+
+def test_history_is_capped_at_three_runs_and_per_user(web):
+    c = user(web["new_client"](), "many@shop.example", company=True)
+    b = user(web["new_client"](), "nosy@shop.example", company=True)
+    runs = [scan_demo(c)[0] for _ in range(4)]
+    send(c, new_chat(c), "history?")
+    run_lines = [l for l in context_of(web).splitlines() if l.startswith("- run ")]
+    assert [l.split()[2] for l in run_lines] == runs[::-1][:3]  # newest first, last 3 only
+    send(b, new_chat(b), "history?")
+    b_ctx = context_of(web)
+    assert b_ctx.strip().startswith("VERIFIED FINDINGS: none. MAYA has not scanned")
+    assert not any(r in b_ctx for r in runs)
+
+
+def test_demo_prepare_prints_the_click_order(capsys):
+    from scripts import demo_prepare
+    assert demo_prepare.main(["--reset"]) == 0
+    out = capsys.readouterr().out
+    order = ['"Reset demo app"', '"Run security scan"', '"Approve all"', '"Apply approved fixes"', '"Re-test"',
+             '"Download evidence pack"', "New chat"]
+    positions = [out.index(o) for o in order]
+    assert positions == sorted(positions)
+    demo_prepare.main([])
+    assert '"Reset demo app"' not in capsys.readouterr().out

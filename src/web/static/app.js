@@ -565,6 +565,7 @@
     // one scan at a time: the button follows the run, not just the asset
     const btn = $("scan-btn");
     if (btn) btn.disabled = run.status === "running" || !(currentAsset && currentAsset.scannable);
+    setResetEnabled(run.status !== "running");
   }
 
   function renderResult(run, result) {
@@ -672,8 +673,28 @@
     setText("mode-label", "");
     const btn = $("scan-btn");
     if (btn) btn.disabled = !asset.scannable;
+    show("reset-demo-btn", asset.kind === "demo");
+    setResetEnabled(true);
     say("", false);
     if (asset.last_run && !PREVIEW) startPolling(asset.last_run);
+  }
+
+  function setResetEnabled(on) {
+    const b = $("reset-demo-btn");
+    if (b) b.disabled = !(on && currentAsset && currentAsset.kind === "demo");
+  }
+
+  // back to the vulnerable demo app (this user's own copy); the server refuses while a scan runs
+  async function resetDemo() {
+    if (!currentAsset || currentAsset.kind !== "demo") return;
+    setResetEnabled(false);
+    const d = await post("/api/assets/" + currentAsset.id + "/reset-demo", {});
+    setResetEnabled(true);
+    if (d) {
+      say("Demo app reset to its vulnerable state (" + (d.previous_fixes || []).length +
+        " fixes removed). Recorded in the audit log. Run a new scan to see the issues again.", false);
+      refreshSidePanels();
+    }
   }
 
   async function startScan() {
@@ -693,6 +714,7 @@
     const avatar = $("avatar");
     if (avatar) avatar.textContent = user && user.email ? user.email.charAt(0).toUpperCase() : (PREVIEW ? "P" : "?");
     onClick("scan-btn", startScan);
+    onClick("reset-demo-btn", resetDemo);
     onClick("apply-btn", applyFixes);
     onClick("approve-all-btn", approveAll);
     onClick("retest-btn", runRetest);

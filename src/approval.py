@@ -145,6 +145,21 @@ class ApprovalGate:
         self.audit.append("health_ok", proposals=[p.id for p in proposals], target=target_url, **ctx)
         return True
 
+    def reset_demo(self) -> list[str]:
+        """Back to the vulnerable demo app: back up the control file (so rollback() can restore it), then
+        clear its fixes. Returns the fix ids that were on. Audited as "demo_reset"."""
+        self._backup = self.control_path.read_text(encoding="utf-8") if self.control_path.exists() else None
+        self._has_backup = True
+        previous = []
+        if self._backup:
+            try:
+                previous = sorted(json.loads(self._backup).get("fixes", []))
+            except (ValueError, AttributeError):
+                previous = []
+        self._write({"fixes": []})
+        self.audit.append("demo_reset", control_file=self.control_path.name, previous_fixes=previous)
+        return previous
+
     def rollback(self, reason: str = "manual", run: str | None = None) -> None:
         if not self._has_backup:
             raise RuntimeError("nothing to roll back")

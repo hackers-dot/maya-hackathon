@@ -270,3 +270,65 @@ def test_result_texts_do_not_depend_on_role(web):
     for role in ("owner", "developer", "technical"):  # the server ignores any role hint
         again = c.get(f"/api/runs/{run_id}?role={role}").json()
         assert again["result"]["findings"] == body["result"]["findings"]
+
+
+# --- Web 5.1: reset the demo app ---
+
+def demo_asset(c):
+    return post(c, "/api/assets", {"demo": True}).json()["asset"]
+
+
+def test_reset_demo_restores_the_vulnerable_app(web):
+    c = company_user(web["new_client"](), "reset@shop.example")
+    asset = demo_asset(c)
+    run_id, body = finished_run(c, asset["id"])
+    original = {f["id"] for f in body["result"]["findings"]}
+    assert len(original) == 11
+    approve_all(c, run_id, body["proposals"])
+    assert post(c, f"/api/runs/{run_id}/apply").status_code == 200
+    assert post(c, f"/api/runs/{run_id}/retest").json()["retest"]["status"] == "FIXED"
+    _, fixed = finished_run(c, asset["id"])
+    assert fixed["result"]["findings"] == []  # fixes are on
+    r = post(c, f"/api/assets/{asset['id']}/reset-demo")
+    assert r.status_code == 200 and r.json()["reset"] is True and len(r.json()["previous_fixes"]) == 11
+    audit = c.get("/api/audit").json()
+    assert audit["intact"] and audit["entries"][0]["event"] == "demo_reset"
+    assert len(audit["entries"][0]["details"]["previous_fixes"]) == 11
+    _, again = finished_run(c, asset["id"])
+    assert {f["id"] for f in again["result"]["findings"]} == original  # the original 11 issues are back
+
+
+def test_reset_demo_touches_only_this_users_demo_app(web):
+    a = company_user(web["new_client"](), "reset-a@shop.example")
+    b = company_user(web["new_client"](), "reset-b@shop.example")
+    a_asset = demo_asset(a)
+    run_b, body_b = demo_run(b)
+    approve_all(b, run_b, body_b["proposals"])
+    assert post(b, f"/api/runs/{run_b}/apply").status_code == 200
+    b_control = web["server"].app.demo_control(2)
+    before = b_control.read_text(encoding="utf-8")
+    assert post(a, f"/api/assets/{a_asset['id']}/reset-demo").status_code == 200
+    assert b_control.read_text(encoding="utf-8") == before  # Bob's fixes stay on
+    b_asset_id = b.get("/api/assets").json()["assets"][0]["id"]
+    _, b_again = finished_run(b, b_asset_id)
+    assert b_again["result"]["findings"] == []
+    assert post(a, f"/api/assets/{b_asset_id}/reset-demo").status_code == 404  # not Alice's asset
+    assert [e["event"] for e in b.get("/api/audit").json()["entries"]].count("demo_reset") == 0
+
+
+def test_reset_demo_refusals(web):
+    c = company_user(web["new_client"](), "reset-no@shop.example")
+    web["token"][0] = "tok"
+    site = post(c, "/api/assets", {"url": "https://shop.example"}).json()["asset"]
+    assert post(c, f"/api/assets/{site['id']}/reset-demo").json()["error"] == "only MAYA's demo app can be reset"
+    asset = demo_asset(c)
+    assert c.post(f"/api/assets/{asset['id']}/reset-demo", json={},
+                  headers={"X-CSRF-Token": "forged"}).status_code == 403
+    assert web["new_client"]().post(f"/api/assets/{asset['id']}/reset-demo", json={}).status_code in (401, 403)
+    from src.web.runs import Run
+    app = web["server"].app
+    app.runs.runs["c" * 24] = Run(id="c" * 24, user_id=1, asset_id=asset["id"], demo=True, mode="deterministic",
+                                  model="none", started_at=0.0)  # a scan still in progress
+    r = post(c, f"/api/assets/{asset['id']}/reset-demo")
+    assert r.status_code == 409 and r.json()["error"] == "wait for the running scan to finish"
+    assert c.get("/api/audit").json()["count"] == 0  # nothing reset, nothing audited

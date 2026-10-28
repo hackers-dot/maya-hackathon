@@ -29,6 +29,7 @@ DEMO_MARKER = ("DEMO: this evidence comes from MAYA's deliberately vulnerable de
                "not from a real site.")
 CAPTURE_TOOL = "maya HttpClient (GET/HEAD, scope-checked)"
 PACK_TOOL = "maya evidence_pack"
+NO_ISSUES = "No issues detected in the checks run."
 SEALED_FILES = {"manifest.json", "custody_log.jsonl"}  # not listed in the manifest (the log seals the manifest)
 
 
@@ -45,13 +46,16 @@ def _now() -> str:
 
 
 def build_pack(dest, run_id: str, findings: dict, store, audit_entries=(), model: str | None = None,
-               who: str = "maya", statuses: dict | None = None, created_at: str | None = None) -> Path:
+               who: str = "maya", statuses: dict | None = None, created_at: str | None = None,
+               demo: bool = False) -> Path:
     """Write the pack into the empty directory `dest`. findings: id -> Finding. audit_entries: this run's
-    entries from the hash-chained audit log, in order. Refuses to pack a record whose stored hash fails."""
+    entries from the hash-chained audit log, in order. demo: the scanned asset is MAYA's loopback demo app
+    (also inferred from any demo finding, so a run with 0 findings is still marked). Refuses to pack a record
+    whose stored hash fails."""
     dest = Path(dest)
     (dest / "artifacts").mkdir(parents=True, exist_ok=True)
     created_at = created_at or _now()
-    demo = any(f.demo for f in findings.values())
+    demo = bool(demo) or any(f.demo for f in findings.values())
     files, log = [], []
 
     def entry(event, at, actor, **details):
@@ -100,6 +104,8 @@ def build_pack(dest, run_id: str, findings: dict, store, audit_entries=(), model
     readme = [f"MAYA evidence pack for run {run_id}", ""]
     if demo:
         readme += [DEMO_MARKER, ""]
+    if not items:
+        readme += [NO_ISSUES, ""]
     readme += [DISCLAIMER, "",
                "artifacts/          stored evidence records (secrets were masked before storing)",
                "findings.json       findings detected by MAYA's code checks; severity from a fixed table",

@@ -41,7 +41,10 @@ SYSTEM_PROMPT = (
     "4. MAYA only runs read-only checks on sites the user has verified they own; fixes need the user's approval.\n"
     "5. Each finding has a status. FIXED means the fix was applied and a re-test showed the issue is gone: never "
     "describe a FIXED finding as still present; say it was fixed and re-tested, and cite its id. APPLIED means "
-    "the fix was applied but not yet confirmed by a re-test. DETECTED means no fix has been applied yet."
+    "the fix was applied but not yet confirmed by a re-test. DETECTED means no fix has been applied yet.\n"
+    "6. If a SCAN HISTORY is listed, MAYA has scanned the user's site: never say that no scan was done. If the "
+    "latest scan found no issues, say \"no issues detected in the checks run\" (never that the site is secure or "
+    "safe), and mention earlier findings that were fixed and re-tested, citing their ids."
 )
 
 
@@ -51,12 +54,41 @@ class ChatError(ValueError):
         self.status = status
 
 
-def findings_context(items: list[dict]) -> str:
+NO_SCANS = "VERIFIED FINDINGS: none. MAYA has not scanned any site this user owns, so make no claims about it."
+NO_ISSUES = "latest scan: no issues detected in the checks run"
+
+
+def history_context(history: list[dict]) -> list[str]:
+    """history: newest first, from RunManager.history_for_user."""
+    lines = ["SCAN HISTORY (newest first; MAYA has scanned this user's site):"]
+    for h in history:
+        counts = ", ".join(f"{k} {v}" for k, v in h["statuses"].items()) or "no findings"
+        lines.append(f"- run {h['run']} on {h['asset']}, {h['date']}: {h['findings']} finding(s) ({counts})")
+    latest = history[0]
+    if latest["findings"] == 0:
+        lines.append(f"{NO_ISSUES} (run {latest['run']} on {latest['asset']}).")
+        fixed = [(h["run"], i) for h in history[1:] for i in h["fixed_ids"]]
+        if fixed:
+            lines.append("Earlier findings that were FIXED and re-tested: "
+                         + ", ".join(f"[{i}] (run {run})" for run, i in fixed))
+    return lines
+
+
+def known_ids(items: list[dict], history: list[dict] | None = None) -> set[str]:
+    """Finding ids the model may cite: current findings plus earlier FIXED ones listed in the history."""
+    return {f["id"] for f in items} | {i for h in history or [] for i in h["fixed_ids"]}
+
+
+def findings_context(items: list[dict], history: list[dict] | None = None) -> str:
     """Compact block of the user's own verified findings. items: dicts with asset/id/severity/check/location/
-    evidence_line and status (DETECTED / APPLIED / FIXED, from the latest run's fix flow)."""
+    evidence_line and status (DETECTED / APPLIED / FIXED, from the latest run's fix flow). history: the user's
+    last scans (newest first), so an empty latest scan is never mistaken for "no scan"."""
+    if not items and not history:
+        return NO_SCANS
+    lines = history_context(history) if history else []
     if not items:
-        return "VERIFIED FINDINGS: none. MAYA has not scanned any site this user owns, so make no claims about it."
-    lines = ["VERIFIED FINDINGS (the only facts you may state about the user's systems):"]
+        return "\n".join(lines + ["VERIFIED FINDINGS: none open in the latest scan of each site."])
+    lines.append("VERIFIED FINDINGS (the only facts you may state about the user's systems):")
     for f in items[:CONTEXT_FINDINGS_CAP]:
         ev = str(f.get("evidence_line") or "")[:120]
         lines.append(f"- [{f['id']}] status {f.get('status', 'DETECTED')}: {f['severity']} {f['check']} at "

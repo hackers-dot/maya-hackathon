@@ -16,7 +16,7 @@ import threading
 
 from src.web.assets import AssetError, Assets, public_asset
 from src.web.chat import (CHAT_TOKEN_CAP, LABEL_UNVERIFIED, MAX_CHARS, MAX_TOKENS, ChatError, ChatStore,
-                          build_messages, clean_user_text, findings_context, label_reply)
+                          build_messages, clean_user_text, findings_context, known_ids, label_reply)
 from src.web.auth import DEFAULT_DB, SESSION_TTL, Accounts, AuthError, RateLimited, Sessions
 from src.web.runs import (RunBusy, RunManager, finding_status, findings_view, proposal_view, retest_view,
                           run_view)
@@ -50,7 +50,7 @@ PAGES = {
     "/connect-website": ("connect-website.html", True),
     "/chat": ("chat.html", True),
 }
-ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|scan)$")
+ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|scan|reset-demo)$")
 RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest|approve-all)$")
 CHAT_PATH = re.compile(r"^/api/chats/([0-9a-f]{16})$")
 CHAT_SEND = re.compile(r"^/api/chats/([0-9a-f]{16})/messages$")
@@ -456,7 +456,8 @@ class WebHandler(BaseHTTPRequestHandler):
                     build_pack(Path(tmp) / "pack", run.id, dict(run.findings), store,
                                [e for e in entries if (e.get("details") or {}).get("run") == run.id],
                                model=run.model if run.mode == "model" else None, who=f"user-{int(user['id'])}",
-                               statuses={fid: finding_status(run, fid) for fid in run.findings})
+                               statuses={fid: finding_status(run, fid) for fid in run.findings},
+                               demo=run.demo)  # from the asset (loopback demo app), not only the findings
                 except PackError:
                     raise Reply(500, "evidence pack failed verification") from None
                 zip_path = export_zip(Path(tmp) / "pack", Path(tmp) / "pack.zip")
@@ -602,10 +603,11 @@ class WebHandler(BaseHTTPRequestHandler):
         return {"model_configured": provider is not None, "model": model if provider else None,
                 "max_chars": MAX_CHARS}
 
-    def _user_findings(self, user) -> list[dict]:
+    def _user_findings(self, user) -> tuple[list[dict], list[dict]]:
+        """(open findings from the latest scan of each asset, last 3 scans) - this user's own only."""
         labels = {a["id"]: ("MAYA demo app (loopback)" if a["kind"] == "demo" else a["host"])
                   for a in self.app.assets.list(user["id"])}
-        return self.app.runs.findings_for_user(user["id"], labels)
+        return self.app.runs.findings_for_user(user["id"], labels), self.app.runs.history_for_user(user["id"], labels)
 
     def _post_new_chat(self, session, body):
         user = self._require_user(session)
@@ -634,8 +636,8 @@ class WebHandler(BaseHTTPRequestHandler):
             raise Reply(429, "chat token budget reached for today")
         title = text[:60] if not chat["messages"] else None
         user_msg = self.app.chats.add(user["id"], chat_id, "user", text, title=title)
-        findings = self._user_findings(user)
-        messages = build_messages(findings_context(findings), chat["messages"] + [user_msg])
+        findings, history = self._user_findings(user)
+        messages = build_messages(findings_context(findings, history), chat["messages"] + [user_msg])
         try:
             reply = provider.chat(messages, max_tokens=MAX_TOKENS, reasoning_effort="low")
         except ProviderError as e:  # already key-scrubbed by the provider
@@ -651,7 +653,7 @@ class WebHandler(BaseHTTPRequestHandler):
         tokens = {"prompt": usage.get("prompt_tokens", 0), "completion": usage.get("completion_tokens", 0),
                   "reasoning": (usage.get("completion_tokens_details") or {}).get("reasoning_tokens", 0),
                   "total": usage.get("total_tokens", 0)}
-        meta = {"model": model, "tokens": tokens, **label_reply(answer, {f["id"] for f in findings})}
+        meta = {"model": model, "tokens": tokens, **label_reply(answer, known_ids(findings, history))}
         if not reply.answer:
             meta["label"] = LABEL_UNVERIFIED
         assistant = self.app.chats.add(user["id"], chat_id, "assistant", answer, meta=meta,
@@ -721,6 +723,14 @@ class WebHandler(BaseHTTPRequestHandler):
             asset = self.app.assets.verify(user["id"], asset_id, store=self._store(),
                                            transport=self.app.http_transport)
             return 200, {"asset": public_asset(asset, self.app.runs.last_for_asset(user["id"], asset_id))}, None
+        if action == "reset-demo":
+            if asset["kind"] != "demo":
+                raise Reply(409, "only MAYA's demo app can be reset")
+            if self.app.runs.active_for(user["id"]):
+                raise Reply(409, "wait for the running scan to finish")
+            previous = self.app.gate(user["id"]).reset_demo()  # this user's own control file only
+            return 200, {"reset": True, "previous_fixes": previous,
+                         "asset": public_asset(asset, self.app.runs.last_for_asset(user["id"], asset_id))}, None
         if asset["status"] not in ("verified", "loopback"):
             raise Reply(409, "verify ownership before scanning")
         try:

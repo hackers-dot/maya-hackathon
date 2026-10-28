@@ -234,6 +234,13 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
         q = json.loads(raw) if st == 200 else {}
         rep.check(st == 200 and "available" in q, "Quality panel data (from docs/eval_results.json, or 'run the eval')",
                   f"available={q.get('available')} fake_claims_in_report={(q.get('totals') or {}).get('fake_claims_in_report')}")
+        # --- Web 5.1: reset the demo app back to vulnerable ---
+        status, _, data = b.post(f"/api/assets/{demo.get('id')}/reset-demo", {})
+        st, _, raw = b.request("GET", "/api/audit")
+        audit = json.loads(raw)
+        rep.check(status == 200 and len(data.get("previous_fixes", [])) == 11 and audit.get("intact") and
+                  audit["entries"][0]["event"] == "demo_reset", "reset demo app (audited as demo_reset)",
+                  f"HTTP {status} previous_fixes={len(data.get('previous_fixes', []))}")
     else:
         print("SKIP  scan steps: --base server may be configured with a live model")
     _, _, s = b.session()
@@ -285,6 +292,8 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
                   f"count={json.loads(raw).get('count')}")
     status, _, _ = b2.post(f"/api/assets/{demo.get('id')}/scan", {})
     rep.check(status == 404, "another user's asset cannot be scanned", f"HTTP {status}")
+    status, _, _ = b2.post(f"/api/assets/{demo.get('id')}/reset-demo", {})
+    rep.check(status == 404, "another user's demo app cannot be reset", f"HTTP {status}")
 
     print(f"\n{'ALL CHECKS PASSED' if rep.failures == 0 else str(rep.failures) + ' CHECK(S) FAILED'}")
     return 1 if rep.failures else 0

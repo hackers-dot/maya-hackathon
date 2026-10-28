@@ -262,3 +262,33 @@ def test_pack_for_unfixed_run_has_no_audit_entries_and_detected_status(web, tmp_
     assert not any(e.startswith("audit:") for e in events)
     statuses = {f["status"] for f in json.loads((tmp_path / "p" / "findings.json").read_text())["findings"]}
     assert statuses == {"DETECTED"}
+
+
+# --- Web 5.1: demo marker from the asset; 0-finding runs ---
+
+def test_zero_finding_demo_run_still_marked_demo(web, fixed_run, tmp_path):
+    c = fixed_run["client"]  # this user's demo app has every fix on, so a new scan finds nothing
+    run_id, body = demo_run(c)
+    assert body["result"]["findings"] == []
+    r = c.get(f"/api/runs/{run_id}/evidence.zip")
+    assert r.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        z.extractall(tmp_path / "p")
+    assert verify_pack(tmp_path / "p")["ok"]
+    manifest = json.loads((tmp_path / "p" / "manifest.json").read_text(encoding="utf-8"))
+    readme = (tmp_path / "p" / "README.txt").read_text(encoding="utf-8")
+    assert manifest["demo"] is True and manifest["demo_marker"] == DEMO_MARKER and DEMO_MARKER in readme
+    assert "No issues detected in the checks run." in readme and "secure" not in readme.lower()
+
+
+def test_build_pack_demo_flag_and_no_issues_unit(tmp_path):
+    from src.evidence import EvidenceStore
+    from src.evidence_pack import build_pack
+    store = EvidenceStore(tmp_path / "e.db")
+    plain = build_pack(tmp_path / "plain", "r1", {}, store)
+    demo = build_pack(tmp_path / "demo", "r2", {}, store, demo=True)
+    for d, flag in ((plain, False), (demo, True)):
+        assert verify_pack(d)["ok"]
+        readme = (d / "README.txt").read_text(encoding="utf-8")
+        assert json.loads((d / "manifest.json").read_text(encoding="utf-8"))["demo"] is flag
+        assert (DEMO_MARKER in readme) is flag and "No issues detected in the checks run." in readme
