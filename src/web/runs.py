@@ -80,7 +80,7 @@ def finding_status(run: Run, finding_id: str) -> str:
 def finding_view(f, store) -> dict:
     """All three audiences' texts come from the fixed templates in src/report.py, never from a model."""
     t = TEXT[f.check]
-    return {"id": f.id, "check": f.check, "severity": rule(f.check).severity, "location": f.location,
+    return {"id": f.id, "check": f.check, "severity": f.severity, "context": f.context, "location": f.location,
             "title": t.title, "evidence_line": evidence_line(f, store), "plain": t.plain, "analogy": t.analogy,
             "technical": t.technical, "fix": t.fix, "owasp": owasp_label(f.check)}
 
@@ -145,7 +145,8 @@ class RunManager:
         lookups = Lookups(transport=self.app.http_transport, sleep=self.app.lookalike_sleep)
 
         def progress(i, item):
-            run.trace.append({"step": i, "tool": "lookup", "args": item["domain"], "result_summary": item["status"],
+            run.trace.append({"step": i, "tool": "lookup", "args": item["domain"],
+                              "result_summary": f"candidate {i} of {LOOKUP_TOP}: {item['status']}",
                               "tokens": {"prompt": 0, "completion": 0, "reasoning": 0}, "latency": 0.0})
         try:
             findings, items, groups = watch(official, lookups, store, progress=progress)

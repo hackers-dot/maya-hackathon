@@ -118,6 +118,11 @@ Demo flow:
   - Findings: recent certificate (high), DNS records (medium), no records (info). Failed lookups stay "unknown", and shared IPs or nameservers are grouped without claiming who runs them. Registrar and hosting note drafts need a named approval, and an optional model summary is verified like scans.
   - `scripts/compare_models.py` compares a second model provider, once one is configured in `config.yaml`. It makes real model calls and has not been run live.
   - Offline eval not regenerated: finding and claim counts are unchanged (checked row by row).
+- **2026-10-28 (Web 10.1):** Fewer scanner false positives, crt.sh time budget.
+  - The code connector no longer flags numbers (`TOKEN_CAP = 40000`), environment-variable names, identifiers, or eval/exec/pickle/shell/MD5/debug text inside strings and comments. Python files are read with the standard `tokenize` module; JavaScript strings and comments are stripped first.
+  - Findings in tests, fixtures, demo and docs folders are labelled "test or demo code", one severity level lower, in their own report section.
+  - On this repository's own files: 75 findings before, 11 now. Real cases are still detected (tested).
+  - The lookalike watch gives crt.sh a 5 s timeout, 1 retry and a 90 s total budget (then "certificate lookup skipped (time budget)"; DNS lookups always finish), and shows progress per candidate.
 
 ## License
 

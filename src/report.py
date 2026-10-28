@@ -329,6 +329,9 @@ def owasp_label(check: str) -> str:
 
 
 NO_ISSUES = "No issues detected in the checks run."
+TEST_SECTION = "Detected in test or demo code"
+TEST_NOTE = ("These were found under tests/, fixtures/, demo_app/, examples/ or docs/. They are listed apart and one "
+             "severity level lower, because such files usually hold sample values on purpose.")
 DETERMINISTIC = "Detected by deterministic checks"
 MODEL_UNFINISHED = "model did not finish; findings are from code checks"
 MODEL_FINISHED = "model finished with a final answer"
@@ -341,12 +344,14 @@ def build_report(findings: dict, store: EvidenceStore | None, model: str, reason
     claims: verifier output {"verified": [...], "insufficient": [...]}, shown in its own section.
     """
     items = [{
-        "finding_id": f.id, "check": f.check, "severity": rule(f.check).severity, "location": f.location,
+        "finding_id": f.id, "check": f.check, "severity": f.severity, "context": f.context, "location": f.location,
         "target": f.target, "evidence_id": f.evidence[0].record_id,
         "evidence_line": evidence_line(f, store),  # code-derived line that shows the issue
         "category": owasp_label(f.check), "text": TEXT[f.check], "demo": f.demo,
     } for f in findings.values()]
     items.sort(key=lambda i: (SEVERITY_ORDER.index(i["severity"]), i["check"], i["location"]))
+    test_items = [i for i in items if i["context"]]  # grouped separately: test or demo code
+    items = [i for i in items if not i["context"]]
     claims = claims or {"verified": [], "insufficient": []}
     model_claims = [{"finding_id": v["finding_id"], "severity": rule(v["check"]).severity, "text": v["text"],
                      "evidence_line": v["supporting_evidence"], "priority": v.get("priority"),
@@ -357,8 +362,9 @@ def build_report(findings: dict, store: EvidenceStore | None, model: str, reason
         "usage": {k: usage.get(k, 0) for k in ("prompt_tokens", "completion_tokens", "reasoning_tokens", "total_tokens")},
         "model_status": MODEL_FINISHED if model_finished else MODEL_UNFINISHED,
         "model_finished": model_finished,
-        "demo": any(i["demo"] for i in items),
+        "demo": any(i["demo"] for i in items + test_items),
         "items": items,
+        "test_items": test_items,
         "fix_first": items[:3],
         "model_claims": model_claims,
         "order_note": claims.get("order_note", ""),
@@ -403,6 +409,11 @@ def to_markdown(report: dict) -> str:
                 f"**What this means:** {t.plain} {t.analogy}", "",
                 f"**Technical detail:** {t.technical}", "",
                 f"**Suggested fix:** {t.fix}", ""]
+    if report.get("test_items"):
+        out += [f"## {TEST_SECTION}", "", TEST_NOTE, ""]
+        out += [f"- **{i['severity'].upper()}**: {i['text'].title} at {_md_code(i['location'])} "
+                f"({_md_code(i['evidence_line'])})" for i in report["test_items"]]
+        out += [""]
     out += ["## Model-verified claims", ""]
     if report["model_claims"]:
         out += [f"Order: {report['order_note']}.", ""]
@@ -482,6 +493,12 @@ def to_html(report: dict, printable: bool = False) -> str:
                  f"<p><strong>What this means:</strong> {_inline(t.plain)} {_inline(t.analogy)}</p>"
                  f"<p><strong>Technical detail:</strong> {_inline(t.technical)}</p>"
                  f"<p><strong>Suggested fix:</strong> {_inline(t.fix)}</p></section>")
+    if report.get("test_items"):
+        b.append(f"<h2>{_e(TEST_SECTION)}</h2><p>{_e(TEST_NOTE)}</p><ul>")
+        b += [f"<li><span class=\"sev {_e(i['severity'])}\">{_e(i['severity'].upper())}</span> "
+              f"{_inline(i['text'].title)} at <code>{_e(i['location'])}</code> "
+              f"(<code>{_e(i['evidence_line'])}</code>)</li>" for i in report["test_items"]]
+        b.append("</ul>")
     b.append("<h2>Model-verified claims</h2>")
     if report["model_claims"]:
         def note_html(c):

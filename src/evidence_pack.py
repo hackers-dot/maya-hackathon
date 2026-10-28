@@ -103,7 +103,7 @@ def build_pack(dest, run_id: str, findings: dict, store, audit_entries=(), model
         meta = add_file(rel, data, created_at, [], [], "maya suspicious-message check (image included by the user)", None)
         entry("attachment_included", created_at, who, file=rel, sha256=meta["sha256"], size=meta["size"])
 
-    items = [{"id": f.id, "check": f.check, "severity": rule(f.check).severity, "location": f.location,
+    items = [{"id": f.id, "check": f.check, "severity": f.severity, "context": f.context, "location": f.location,
               "target": f.target, "status": (statuses or {}).get(f.id, "DETECTED"), "demo": f.demo,
               "evidence_files": [f"artifacts/{e.record_id}.json" for e in f.evidence if e.record_id]}
              for f in sorted(findings.values(), key=lambda f: f.id)]

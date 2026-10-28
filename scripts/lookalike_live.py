@@ -64,10 +64,14 @@ def main(argv=None) -> int:
     finally:
         lookups.close()
     for it in items:
-        print(f"  {it['domain']:40} {it['kind']:16} {it['status']}")
-    print("\ngroups:")
+        print(f"  {it['domain']:40} {it['kind']:21} {it['status']}")
+        if it.get("a") or it.get("ns"):
+            print(f"  {'':40} A: {', '.join(it.get('a') or []) or '-'} | NS: {', '.join(it.get('ns') or []) or '-'}")
+    print("\nshared-infrastructure groups (2+ candidates with the same IP or nameserver):")
     for g in groups:
         print(f"  {g['source']}: {', '.join(g['findings'])} -- {g['label']}")
+    if not groups:
+        print("  (none: no IP or nameserver is shared by two or more candidates with records)")
     print("\nfindings:")
     for f in sorted(findings, key=lambda f: ("high", "medium", "low", "info").index(f.severity)):
         print(f"  [{f.severity.upper()}] {f.id}")

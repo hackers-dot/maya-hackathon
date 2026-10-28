@@ -302,6 +302,7 @@
     sum.appendChild(el("span", "sev sev-" + f.severity, f.severity));
     sum.appendChild(el("span", "f-title", f.title));
     sum.appendChild(el("span", "f-where", f.location));
+    if (f.context) sum.appendChild(el("span", "chip", f.context));  // e.g. "test or demo code" (one level lower)
     card.appendChild(sum);
     const body = el("div", "finding-body");
     body.appendChild(richText("p", "role-owner", f.plain));

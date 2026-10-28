@@ -8,6 +8,7 @@ a secret's full value is never put into a finding, the evidence store or a log. 
 import io
 import re
 import stat
+import tokenize
 import zipfile
 
 from src.evidence import mask, redact_text
@@ -112,6 +113,85 @@ CODE_SUFFIXES = (".py", ".js", ".mjs", ".cjs", ".ts", ".jsx", ".tsx", ".php", ".
                  ".sh", ".env", ".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf", ".txt", ".html",
                  ".pem", ".key")
 
+# --- fewer false positives (Web 10.1) ---
+TEST_DIRS = {"tests", "test", "fixtures", "demo_app", "examples", "docs"}
+TEST_LABEL = "test or demo code"
+ONE_LOWER = {"critical": "high", "high": "medium", "medium": "low", "low": "info", "info": "info"}
+NUMERIC = re.compile(r"^[\d_.,]+$")                                   # 40000, 40_000, 1.5
+ENV_NAME = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")              # BASETEN_API_KEY (a variable NAME)
+IDENTIFIER = re.compile(r"^[a-z]+(?:[_-][a-z]+)*[_-]?$")    # code_pattern, maya-verify-, forged (letters only)
+SAMPLE_WORDS = re.compile(r"(?i)preview|sample|example|dummy|placeholder|changeme|your[_-]")
+JS_SUFFIXES = (".js", ".mjs", ".cjs", ".ts", ".jsx", ".tsx")
+
+
+def is_test_path(path: str) -> bool:
+    return any(part.lower() in TEST_DIRS for part in path.split("/")[:-1])
+
+
+def looks_like_secret(value: str) -> bool:
+    """A literal that is shaped like a key, token or password, not a number, a variable name or an identifier.
+    (Known token prefixes and PEM headers are detected separately and always count.)"""
+    value = re.sub(r"(?:\\+[nrt])+$", "", value)  # "1500\n" written inside a string literal is still the number 1500
+    if NUMERIC.match(value) or ENV_NAME.match(value) or IDENTIFIER.match(value) or SAMPLE_WORDS.search(value):
+        return False
+    return bool(re.search(r"\d", value)) or (value.lower() != value and value.upper() != value)
+
+
+def code_only_lines(path: str, text: str) -> tuple[list[str], str | None]:
+    """Each line with string literals and comments blanked out, for the code-pattern rules.
+    .py: the standard tokenize module; .js and friends: a small string/comment stripper. Other files:
+    unchanged. Returns (lines, note); note says when tokenizing failed and the raw lines were used."""
+    lines = text.splitlines()
+    name = path.rsplit("/", 1)[-1].lower()
+    if name.endswith(".py"):
+        out = [list(l) for l in lines]
+        try:
+            for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+                if tok.type in (tokenize.STRING, tokenize.COMMENT):
+                    (r1, c1), (r2, c2) = tok.start, tok.end
+                    for r in range(r1, r2 + 1):
+                        if r - 1 >= len(out):
+                            break
+                        start = c1 if r == r1 else 0
+                        end = c2 if r == r2 else len(out[r - 1])
+                        for c in range(start, min(end, len(out[r - 1]))):
+                            out[r - 1][c] = " "
+        except (tokenize.TokenError, IndentationError, SyntaxError):
+            return lines, "matched without tokenizing: the file could not be tokenized"
+        return ["".join(l) for l in out], None
+    if name.endswith(JS_SUFFIXES):
+        return strip_js(text).splitlines(), None
+    return lines, None
+
+
+def strip_js(text: str) -> str:
+    """Blank out '...', "...", `...` strings and // and /* */ comments; newlines are kept."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch in "'\"`":
+            j = i + 1
+            while j < n and text[j] != ch and not (ch != "`" and text[j] == "\n"):
+                j += 2 if text[j] == "\\" else 1
+            seg = text[i:j + 1]
+            out.append("".join(c if c == "\n" else " " for c in seg))
+            i = j + 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append("".join(c if c == "\n" else " " for c in text[i:j]))
+            i = j
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 # A SHORT EXAMPLE LIST, not a complete advisory database: package -> first release this table treats as
 # current enough. Older pinned versions "appear outdated".
 PY_OLD_BEFORE = {"django": (4, 2, 0), "flask": (2, 3, 0), "requests": (2, 31, 0), "pyyaml": (5, 4, 0),
@@ -133,8 +213,12 @@ def _finding(check, upload, path, lineno, excerpt, technical, store) -> Finding:
     location = f"{path}:{lineno}"
     evidence_id = store.add("FILE", f"zip://{upload}/{path}#L{lineno}", [], 0, [], excerpt.encode()) \
         if store is not None else None
-    return make_finding(check, f"zip:{upload}", location, f"{path} line {lineno}", f"{location}: {excerpt}",
-                        technical, evidence_id)
+    test = is_test_path(path)
+    f = make_finding(check, f"zip:{upload}", location, f"{path} line {lineno}", f"{location}: {excerpt}",
+                     (f"In {TEST_LABEL}: " if test else "") + technical, evidence_id)
+    if test:  # fixed rule: one severity level lower than the table, labelled (info stays info)
+        f.severity, f.context = ONE_LOWER[f.severity], TEST_LABEL
+    return f
 
 
 def _version(text: str):
@@ -172,7 +256,9 @@ def scan_file(path: str, text: str, upload: str, store=None) -> list[Finding]:
     if not base.endswith(CODE_SUFFIXES) and not base.startswith(".env"):
         return out
     is_python = base.endswith(".py")
+    code_lines, token_note = code_only_lines(path, text)
     for n, line in enumerate(text.splitlines(), 1):
+        code = code_lines[n - 1] if n - 1 < len(code_lines) else line
         if len(out) >= MAX_FINDINGS:
             break
         if PRIVATE_KEY.search(line):
@@ -182,21 +268,23 @@ def scan_file(path: str, text: str, upload: str, store=None) -> list[Finding]:
         m = SECRET_ASSIGN.search(line)
         # an unquoted value must look like a literal (code like request.form["x"] or get_pw() is a reference)
         literal = bool(m) and (m["q"] or (not re.search(r"[\[(.]", m["value"]) and re.search(r"\d", m["value"])))
-        if m and literal and not PLACEHOLDER.match(m["value"]) and not base.endswith(ENV_TEMPLATES):
+        if (m and literal and not PLACEHOLDER.match(m["value"]) and looks_like_secret(m["value"])
+                and not base.endswith(ENV_TEMPLATES)):
             out.append(_finding("code_hardcoded_secret", upload, path, n, masked_line(line, m["value"]),
                                 f"A value assigned to {m['name']!r} appears to be a hard-coded secret.", store))
         elif (t := TOKEN_PREFIX.search(line)):
             out.append(_finding("code_hardcoded_secret", upload, path, n, masked_line(line, t[0]),
                                 "A string with a well-known API token prefix appears in the source.", store))
-        for check, (rx, what) in PATTERNS.items():
-            if rx.search(line) and (check != "code_dangerous_eval" or base.endswith((".py", ".js", ".mjs", ".cjs",
+        note = f" ({token_note})" if token_note else ""
+        for check, (rx, what) in PATTERNS.items():  # code patterns: matched on the code, not inside strings/comments
+            if rx.search(code) and (check != "code_dangerous_eval" or base.endswith((".py", ".js", ".mjs", ".cjs",
                                                                                       ".ts", ".jsx", ".tsx", ".php"))):
                 if check == "code_unsafe_deserialization" and not is_python:
                     continue
-                out.append(_finding(check, upload, path, n, masked_line(line), f"{what}.", store))
-        if WEAK_HASH.search(line) and PASSWORD_WORD.search(line):
+                out.append(_finding(check, upload, path, n, masked_line(line), f"{what}{note}.", store))
+        if WEAK_HASH.search(code) and PASSWORD_WORD.search(line):
             out.append(_finding("code_weak_password_hash", upload, path, n, masked_line(line),
-                                "MD5 or SHA-1 appears to be used near password handling.", store))
+                                f"MD5 or SHA-1 appears to be used near password handling{note}.", store))
     for n, pkg, version, current in dependency_hits(path, text):
         out.append(_finding("code_outdated_dependency", upload, path, n, masked_line(f"{pkg} {version}"),
                             f"{pkg} {version} appears outdated (MAYA's short example table treats releases "

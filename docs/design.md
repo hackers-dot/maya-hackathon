@@ -391,6 +391,17 @@ See `src/models.py`:
   - It refuses before any network use if the second provider is not configured or a key variable is unset, and never prints a key.
   - Tests use faked transports only; it has not been run live.
 
+### Web 10.1: fewer scanner false positives, crt.sh time budget
+
+- **Secret rule.** A value counts only if it looks like a key, token or password. It is ignored when it is a number (`40000`, `40_000`, also with a trailing `\n` escape), an environment-variable NAME (`BASETEN_API_KEY`), a letters-only identifier or check id (`code_pattern`, `maya-verify-`), or obviously a sample (preview, sample, example, placeholder, your_). Otherwise it needs a digit or mixed case. Known token prefixes (`sk-`, `ghp_`, `AKIA`...) and PEM headers are always detected.
+- **Code-pattern rules** (eval/exec, pickle.load(s), shell=True, MD5/SHA-1 near passwords, debug=True) look only at code:
+  - `.py` files go through the standard `tokenize` module with string literals and comments blanked out. If tokenizing fails, the old line match is used and the finding says "matched without tokenizing".
+  - `.js`/`.ts`/`.jsx`/`.tsx`/`.mjs`/`.cjs` get a small stripper for quoted strings, template strings and comments that keeps line numbers.
+  - Secrets are still matched on the raw line, because they live in strings.
+- **Test or demo code.** Findings under `tests/`, `test/`, `fixtures/`, `demo_app/`, `examples/` or `docs/` carry `context: "test or demo code"`, are one severity level lower by a fixed rule (info stays info), and appear in their own report section ("Detected in test or demo code"). `Finding.severity` is now what views, the report and the pack show (still set only by code: the table, then this fixed downgrade).
+- **Measured on this repository** (tracked files, scanned in memory, no network): the live GitHub run found 75; now 11, all `code_hardcoded_secret`. 10 are in test files; 1 is a fake secret in a fixture string in `scripts/ui_flow_check.py`. Code-pattern fixtures inside test string literals are no longer matched in the test files themselves; they are still detected when the tests put them into real files in a ZIP (tested).
+- **crt.sh budget.** crt.sh lookups use a 5 s timeout and 1 retry; DNS-over-HTTPS keeps 10 s and 2 retries. After 90 s of watch time, the remaining crt.sh lookups are skipped as "certificate lookup skipped (time budget)", while every DNS lookup still completes (tested with a fake clock: 3 slow crt.sh answers spend the budget, all 50 DNS lookups finish). The live trace shows "candidate i of 25" per lookup. `scripts/lookalike_live.py` prints each candidate's A and NS values and the shared-infrastructure groups.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

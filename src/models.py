@@ -47,3 +47,4 @@ class Finding(BaseModel):
     plain_explanation: str = Field(min_length=1)
     technical_explanation: str = Field(min_length=1)
     demo: bool = False
+    context: str | None = None  # e.g. "test or demo code": found in tests/, fixtures/, demo_app/, examples/, docs/

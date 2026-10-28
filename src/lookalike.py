@@ -28,8 +28,12 @@ CRTSH_URL = "https://crt.sh/"
 ALLOWED_HOSTS = {"cloudflare-dns.com", "crt.sh"}
 MAX_CANDIDATES = 40
 LOOKUP_TOP = 25
-TIMEOUT_S = 10.0
+TIMEOUT_S = 10.0         # DNS-over-HTTPS
 RETRIES = 2
+CRT_TIMEOUT_S = 5.0      # crt.sh is often slow: shorter timeout, one retry, and a time budget for the whole watch
+CRT_RETRIES = 1
+BUDGET_S = 90.0          # after this many seconds of watch time, remaining crt.sh lookups are skipped
+SKIPPED = "certificate lookup skipped (time budget)"
 MIN_INTERVAL_S = 1.0
 RECENT_DAYS = 90
 KEYWORDS = ("support", "care", "refund", "pay", "login", "offer")
@@ -124,11 +128,12 @@ class Lookups:
     def close(self):
         self.client.close()
 
-    def _get(self, url: str, params: dict, accept: str) -> tuple[object | None, str]:
+    def _get(self, url: str, params: dict, accept: str, timeout: float = TIMEOUT_S,
+             retries: int = RETRIES) -> tuple[object | None, str]:
         host = httpx.URL(url).host
         if host not in ALLOWED_HOSTS:  # never a candidate domain, never anything else
             raise ValueError(f"lookup host not allowed: {host}")
-        for attempt in range(RETRIES + 1):
+        for attempt in range(retries + 1):
             if self._last is not None:
                 wait = self._last + MIN_INTERVAL_S - self.clock()
                 if wait > 0:
@@ -136,7 +141,7 @@ class Lookups:
             self._last = self.clock()
             self.requests += 1
             try:
-                r = self.client.get(url, params=params, headers={"accept": accept})
+                r = self.client.get(url, params=params, headers={"accept": accept}, timeout=timeout)
             except httpx.HTTPError as e:
                 err = type(e).__name__
                 continue
@@ -159,7 +164,8 @@ class Lookups:
         return sorted(a.get("data", "").rstrip(".") for a in data.get("Answer") or [] if a.get("type") == code), raw
 
     def certs(self, name: str) -> tuple[list[dict] | None, str]:
-        data, raw = self._get(CRTSH_URL, {"q": name, "output": "json"}, "application/json")
+        data, raw = self._get(CRTSH_URL, {"q": name, "output": "json"}, "application/json",
+                              timeout=CRT_TIMEOUT_S, retries=CRT_RETRIES)
         if not isinstance(data, list):
             return None, raw
         return [{"id": c.get("id"), "not_before": c.get("not_before"), "issuer_name": c.get("issuer_name")}
@@ -178,7 +184,7 @@ def _recent(certs: list[dict], now: datetime) -> list[dict]:
     return out
 
 
-def check(candidate: str, lookups: Lookups, now: datetime) -> dict:
+def check(candidate: str, lookups: Lookups, now: datetime, certs_allowed: bool = True) -> dict:
     a, raw_a = lookups.dns(candidate, "A")
     ns, raw_ns = lookups.dns(candidate, "NS")
     result = {"a": a, "ns": ns, "certs": None, "recent_certs": None,
@@ -188,6 +194,9 @@ def check(candidate: str, lookups: Lookups, now: datetime) -> dict:
         return result
     if not (a or ns):
         result["status"] = STATUS["lookalike_no_dns"]
+        return result
+    if not certs_allowed:  # the time budget is spent: DNS results stand, the certificate check is skipped
+        result["status"] = STATUS["lookalike_has_dns"] + "; " + SKIPPED
         return result
     certs, raw_c = lookups.certs(candidate)  # only for names that have records: a certificate is a second signal
     result["raw"]["crtsh"] = raw_c
@@ -204,6 +213,7 @@ def watch(official: str, lookups: Lookups, store=None, now: datetime | None = No
           progress=None) -> tuple[list[Finding], list[dict], list[dict]]:
     """(findings, items, groups). progress(i, item) is called after each lookup (live trace)."""
     now = now or datetime.now(timezone.utc)
+    started = lookups.clock()
     official = normalise_domain(official)
     candidates = generate(official)
     items = []
@@ -214,7 +224,7 @@ def watch(official: str, lookups: Lookups, store=None, now: datetime | None = No
             item["status"] = "not looked up (beyond the top 25)"
             items.append(item)
             continue
-        r = check(c["domain"], lookups, now)
+        r = check(c["domain"], lookups, now, certs_allowed=lookups.clock() - started < BUDGET_S)
         item.update(status=r["status"], a=r["a"], ns=r["ns"], certs=r["certs"], recent_certs=r["recent_certs"])
         if r["status"] != UNKNOWN:
             # parsed answers first (what claims are checked against), short raw snippets as evidence; the
