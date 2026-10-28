@@ -1,0 +1,18 @@
+{
+  "name": "vulnerable",
+  "description": "Demo app with no fixes applied: every planted weakness is present.",
+  "fixes": [],
+  "expected": [
+    "cookie_missing_httponly:/:session",
+    "cookie_missing_samesite:/:session",
+    "cookie_missing_secure:/:session",
+    "directory_listing:/backup/",
+    "exposed_backup_file:/db.sql",
+    "exposed_env_file:/.env",
+    "missing_csp:/",
+    "missing_hsts:/",
+    "missing_x_content_type_options:/",
+    "missing_x_frame_options:/",
+    "server_version_disclosure:/:server"
+  ]
+}

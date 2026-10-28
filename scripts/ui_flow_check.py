@@ -14,12 +14,14 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.agent.verifier import SEVERITY_ORDER  # noqa: E402
+from src.evidence_pack import verify_zip  # noqa: E402
 from src.web.server import SECURITY_HEADERS, make_server  # noqa: E402
 
 PASSWORD = "ui-flow-check-password"  # throwaway account in a throwaway data dir
@@ -210,6 +212,28 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
                   f"{audit.get('count')} entries")
         st, _, raw = b.request("GET", "/api/usage")
         rep.check(st == 200 and json.loads(raw).get("runs") == 1, "token usage panel data", raw.decode()[:80])
+        # --- Web 5: downloads and the Quality panel ---
+        st, hd, raw = b.request("GET", f"/api/runs/{run_id}/evidence.zip")
+        with tempfile.TemporaryDirectory(prefix="maya-flow-pack-") as tmp:
+            zpath = Path(tmp) / "pack.zip"
+            zpath.write_bytes(raw)
+            verdict = verify_zip(zpath) if st == 200 else {"ok": False, "problems": [f"HTTP {st}"]}
+            names = []
+            if st == 200:
+                with zipfile.ZipFile(zpath) as z:
+                    names = z.namelist()
+        rep.check(st == 200 and verdict["ok"] and "custody_log.jsonl" in names,
+                  "evidence pack downloads and verifies (hashes + custody chain)",
+                  f"HTTP {st} {len(raw)} bytes, {len(names)} files, problems={verdict['problems']}")
+        for name, ctype in (("report.html", "text/html"), ("report.md", "text/markdown")):
+            st, hd, raw = b.request("GET", f"/api/runs/{run_id}/{name}")
+            rep.check(st == 200 and hd.get("Content-Type", "").startswith(ctype) and
+                      hd.get("Content-Disposition", "").startswith("attachment"), f"download {name}",
+                      f"HTTP {st} {hd.get('Content-Type')}")
+        st, _, raw = b.request("GET", "/api/eval")
+        q = json.loads(raw) if st == 200 else {}
+        rep.check(st == 200 and "available" in q, "Quality panel data (from docs/eval_results.json, or 'run the eval')",
+                  f"available={q.get('available')} fake_claims_in_report={(q.get('totals') or {}).get('fake_claims_in_report')}")
     else:
         print("SKIP  scan steps: --base server may be configured with a live model")
     _, _, s = b.session()
@@ -254,6 +278,8 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
         rep.check(status == 404, "another user's trace is not found", f"HTTP {status}")
         status, _, _ = b2.post(f"/api/runs/{run_id}/retest", {})
         rep.check(status == 404, "another user's re-test is not found", f"HTTP {status}")
+        status, _, _ = b2.request("GET", f"/api/runs/{run_id}/evidence.zip")
+        rep.check(status == 404, "another user's evidence pack is not found", f"HTTP {status}")
         st, _, raw = b2.request("GET", "/api/audit")
         rep.check(st == 200 and json.loads(raw).get("count") == 0, "another user sees only their own audit log",
                   f"count={json.loads(raw).get('count')}")

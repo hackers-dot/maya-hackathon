@@ -113,6 +113,15 @@
 <div class="diff-col"><h3 class="sub-heading">New</h3><ul id="retest-new" class="diff-list"></ul></div>
 </div>
 </section>
+<section id="downloads-panel" class="panel" hidden>
+<div class="panel-head"><h2>Downloads</h2><span class="panel-meta">evidence pack is re-verified on every download</span></div>
+<div class="actions downloads">
+<a id="dl-pack" class="btn btn-primary" href="#" download>Download evidence pack</a>
+<a id="dl-report" class="btn btn-secondary" href="#" download>Download report</a>
+<a id="dl-report-md" class="btn btn-quiet" href="#" download>Report as Markdown</a>
+</div>
+<p class="hint">The pack holds the stored (redacted) evidence, a manifest of sha256 hashes and a hash-chained custody log. Tamper-evident, not tamper-proof (unsigned). Provenance is self-reported. Designed to support review; not legally validated.</p>
+</section>
 <section id="result-panel" class="panel" hidden>
 <div class="panel-head"><h2>Result</h2><span id="result-order" class="panel-meta"></span></div>
 <dl class="facts">
@@ -136,6 +145,12 @@
 <ol id="audit-list" class="audit"></ol>
 </section>
 </div>
+<section id="quality-panel" class="panel" hidden>
+<div class="panel-head"><h2>Quality</h2><span id="quality-meta" class="panel-meta"></span></div>
+<p id="quality-summary" class="quality-summary"></p>
+<ul id="quality-cases" class="quality-cases"></ul>
+<p id="quality-live" class="hint"></p>
+</section>
 </section>
 </div>
 </section>

@@ -462,15 +462,68 @@
     setText("usage-cap", "cap " + u.cap_per_run + " tokens per scan");
   }
 
+  function pct(x) {
+    return x === null || x === undefined ? "n/a" : Math.round(x * 100) + "%";
+  }
+
+  // numbers come only from docs/eval_results.json (written by the eval harness); none are made up here
+  function renderQuality(q) {
+    if (!q || !$("quality-panel")) return;
+    show("quality-panel", true);
+    const cases = $("quality-cases");
+    clear(cases);
+    if (!q.available) {
+      setText("quality-meta", "");
+      setText("quality-summary", "No eval results yet: run the eval (python -m src.eval.harness --write).");
+      setText("quality-live", "");
+      return;
+    }
+    const t = q.totals;
+    setText("quality-meta", q.kind + ", " + String(q.generated_at).slice(0, 10));
+    setText("quality-summary", "Fake claims that reached a report: " + t.fake_claims_in_report + " in " + t.runs +
+      " runs. Reports produced: " + t.reports_produced + "/" + t.runs + ". Claims kept " + t.claims_kept +
+      ", dropped " + t.claims_dropped + ".");
+    const byCase = {};
+    for (const r of q.rows || []) (byCase[r.case] = byCase[r.case] || []).push(r);
+    for (const name of Object.keys(byCase)) {
+      const rs = byCase[name];
+      const li = el("li");
+      li.appendChild(el("strong", "", name));
+      li.appendChild(el("span", "", ": code precision " + pct(rs[0].precision) + ", recall " + pct(rs[0].recall) +
+        ", false positives " + rs[0].false_positives + "; fake claims in report " +
+        rs.reduce((n, r) => n + r.fake_claims_in_report, 0) + " across " + rs.length + " model levels"));
+      cases.appendChild(li);
+    }
+    const live = q.live_latest;
+    setText("quality-live", live
+      ? "Live model (" + live.model + ", " + live.date + "): " + live.rows.length + " runs, fake claims in report " +
+        live.rows.reduce((n, r) => n + r.fake_claims_in_report, 0) + "."
+      : "Live model quality: not yet measured.");
+  }
+
+  function renderDownloads(run) {
+    const done = !!(run && run.status !== "running");
+    show("downloads-panel", done);
+    if (!done) return;
+    const base = "/api/runs/" + encodeURIComponent(run.id) + "/";
+    for (const [id, name] of [["dl-pack", "evidence.zip"], ["dl-report", "report.html"], ["dl-report-md", "report.md"]]) {
+      const a = $(id);
+      if (a) a.setAttribute("href", base + name);
+    }
+  }
+
   async function refreshSidePanels() {
     if (PREVIEW) return;
     const a = await getJSON("/api/audit");
     if (a.ok) renderAudit(a.data);
     const u = await getJSON("/api/usage");
     if (u.ok) renderUsage(u.data);
+    const q = await getJSON("/api/eval");
+    if (q.ok) renderQuality(q.data);
   }
 
   function renderFull(data) {
+    renderDownloads(data.run);
     renderProposals(data.run, data.proposals);
     renderRetest(data.retest);
     refreshSidePanels();
@@ -571,7 +624,7 @@
     findingCards.clear();
     traceNext = 0;
     for (const id of ["run-panel", "findings-panel", "result-panel", "fixfirst-panel", "proposals-panel",
-      "retest-panel", "demo-banner"]) show(id, false);
+      "retest-panel", "downloads-panel", "demo-banner"]) show(id, false);
     show("trace-empty", true);
   }
 
@@ -672,6 +725,8 @@
           renderRetest(r.data.extras.retest);
           renderAudit(r.data.extras.audit);
           renderUsage(r.data.extras.usage);
+          renderDownloads(sample.run);
+          renderQuality(r.data.eval);
           const open = document.querySelector("#findings-list details");
           if (open) open.open = true;  // show one expanded card in screenshots
         }

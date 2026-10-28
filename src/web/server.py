@@ -18,13 +18,15 @@ from src.web.assets import AssetError, Assets, public_asset
 from src.web.chat import (CHAT_TOKEN_CAP, LABEL_UNVERIFIED, MAX_CHARS, MAX_TOKENS, ChatError, ChatStore,
                           build_messages, clean_user_text, findings_context, label_reply)
 from src.web.auth import DEFAULT_DB, SESSION_TTL, Accounts, AuthError, RateLimited, Sessions
-from src.web.runs import RunBusy, RunManager, findings_view, proposal_view, retest_view, run_view
+from src.web.runs import (RunBusy, RunManager, finding_status, findings_view, proposal_view, retest_view,
+                          run_view)
 
 ROOT = Path(__file__).resolve().parents[2]
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8090
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+EVAL_SUMMARY = Path(__file__).resolve().parent.parent.parent / "docs" / "eval_results.json"
 STATIC_NAME = re.compile(r"^[a-z0-9_-]+\.(html|js|css)$")
 CONTENT_TYPES = {"html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8",
                  "css": "text/css; charset=utf-8"}
@@ -55,6 +57,7 @@ CHAT_SEND = re.compile(r"^/api/chats/([0-9a-f]{16})/messages$")
 APPROVE = re.compile(r"^/api/runs/([0-9a-f]{24})/proposals/(fix-[a-z_]{3,60})/approve$")
 AUDIT_ENTRIES_SHOWN = 12
 RUN_PATH = re.compile(r"^/api/runs/([0-9a-f]{24})(/trace)?$")
+RUN_FILE = re.compile(r"^/api/runs/([0-9a-f]{24})/(evidence\.zip|report\.html|report\.md)$")
 # what the user has; only Website works now
 ASSETS = {"website": True, "webapp_api": False, "source_code": False, "server_tool": False, "mobile_desktop": False}
 
@@ -219,11 +222,30 @@ def default_provider_factory():
     return Provider.from_config(ROOT / "config.yaml", reasoning_effort="low"), cfg["model"]
 
 
+def eval_view(path: Path) -> dict:
+    """The measured eval summary, compacted for the Quality panel. Never invents numbers: no file, no data."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        rows = [{"case": r["case"], "level": r["level"], "precision": r["code"]["precision"],
+                 "recall": r["code"]["recall"], "false_positives": len(r["code"]["false_positives"]),
+                 "kept": r["claims"]["kept"], "dropped": r["claims"]["dropped"],
+                 "fake_claims_in_report": r["fake_claims_in_report"], "report_produced": r["report_produced"]}
+                for r in data["rows"]]
+        live = data.get("live") or {}
+        measured = live.get("measured") or []
+        return {"available": True, "generated_at": data["generated_at"], "kind": data["kind"],
+                "totals": data["totals"], "rows": rows, "live_status": live.get("status", "not yet measured"),
+                "live_latest": measured[-1] if measured else None}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {"available": False}
+
+
 class App:
     def __init__(self, data_dir: Path | None, session_ttl: float, clock, ui_preview: bool = False,
                  provider_factory=None, http_transport=None, chat_provider_factory=None,
-                 chat_token_cap: int | None = None):
+                 chat_token_cap: int | None = None, eval_path=None):
         self.data_dir = Path(data_dir) if data_dir else DEFAULT_DB.parent
+        self.eval_path = Path(eval_path) if eval_path else EVAL_SUMMARY  # written by src/eval/harness.py
         self.data_dir.mkdir(parents=True, exist_ok=True)
         db = self.data_dir / "web.db"
         self.accounts = Accounts(db, clock=clock)
@@ -357,13 +379,15 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _get_api(self, path: str, user) -> bool:
         """Signed-in JSON reads. Returns False if the path is not one of them."""
-        if path in ("/api/assets", "/api/audit", "/api/usage", "/api/chats"):
+        if path in ("/api/assets", "/api/audit", "/api/usage", "/api/chats", "/api/eval"):
             if user is None:
                 raise Reply(401, "please sign in")
             if path == "/api/assets":
                 self._json(200, {"assets": self._assets_view(user)})
             elif path == "/api/audit":
                 self._json(200, self._audit_view(user))
+            elif path == "/api/eval":
+                self._json(200, eval_view(self.app.eval_path))
             elif path == "/api/chats":
                 self._json(200, {"chats": self.app.chats.list(user["id"]), **self._chat_status(user)})
             else:
@@ -377,6 +401,17 @@ class WebHandler(BaseHTTPRequestHandler):
             if chat is None:
                 raise Reply(404, "not found")
             self._json(200, {"chat": chat, **self._chat_status(user)})
+            return True
+        file_m = RUN_FILE.match(path)
+        if file_m:
+            if user is None:
+                raise Reply(401, "please sign in")
+            run = self.app.runs.get(user["id"], file_m.group(1))  # another user's run is simply "not found"
+            if run is None:
+                raise Reply(404, "not found")
+            if run.status == "running" or run.result is None:
+                raise Reply(409, "wait for the scan to finish")
+            self._download(user, run, file_m.group(2))
             return True
         m = RUN_PATH.match(path)
         if not m:
@@ -404,6 +439,40 @@ class WebHandler(BaseHTTPRequestHandler):
         return {"run": run_view(run), "result": run.result,
                 "proposals": [proposal_view(p) for p in run.proposals.values()],
                 "retest": retest_view(run.retest) if run.retest else None}
+
+    def _download(self, user, run, name: str):
+        """Evidence pack zip (rebuilt and re-verified on every download) or the report from src/report.py."""
+        import tempfile
+        from src.evidence_pack import PackError, build_pack, export_zip, verify_zip
+        from src.report import build_report, to_html, to_markdown
+        store = self._store()
+        if name == "evidence.zip":
+            try:
+                entries = self.app.gate(user["id"]).audit._entries()
+            except ValueError:
+                raise Reply(500, "audit log unreadable; evidence pack not built") from None
+            with tempfile.TemporaryDirectory(prefix="maya-pack-") as tmp:
+                try:
+                    build_pack(Path(tmp) / "pack", run.id, dict(run.findings), store,
+                               [e for e in entries if (e.get("details") or {}).get("run") == run.id],
+                               model=run.model if run.mode == "model" else None, who=f"user-{int(user['id'])}",
+                               statuses={fid: finding_status(run, fid) for fid in run.findings})
+                except PackError:
+                    raise Reply(500, "evidence pack failed verification") from None
+                zip_path = export_zip(Path(tmp) / "pack", Path(tmp) / "pack.zip")
+                if not verify_zip(zip_path)["ok"]:
+                    raise Reply(500, "evidence pack failed verification")
+                body = zip_path.read_bytes()
+            ctype = "application/zip"
+        else:
+            report = build_report(dict(run.findings), store, run.model, "low", run.result.get("usage") or {},
+                                  run.claims, model_finished=bool(run.result.get("model_finished")))
+            if name == "report.html":
+                body, ctype = to_html(report).encode("utf-8"), "text/html; charset=utf-8"
+            else:
+                body, ctype = to_markdown(report).encode("utf-8"), "text/markdown; charset=utf-8"
+        filename = f"maya-{run.id[:8]}-{name}"
+        self._send(200, body, ctype, {"Content-Disposition": f'attachment; filename="{filename}"'})
 
     def _audit_view(self, user) -> dict:
         audit = self.app.gate(user["id"]).audit
@@ -439,7 +508,7 @@ class WebHandler(BaseHTTPRequestHandler):
         if path == PREVIEW_PREFIX + "sample.json":
             if not self.app.ui_preview:
                 return self._json(404, {"error": "not found"})
-            return self._json(200, PREVIEW_SAMPLE)
+            return self._json(200, {**PREVIEW_SAMPLE, "eval": eval_view(self.app.eval_path)})  # real numbers
         if path == "/api/session":
             headers = {}
             if session is None:
@@ -607,7 +676,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 raise Reply(409, "nothing left to approve")
             for p in pending:  # each approval goes through the gate and is audited on its own
                 try:
-                    gate.approve(p, body.get("approver"))
+                    gate.approve(p, body.get("approver"), run=run.id)
                 except ValueError as e:
                     raise Reply(400 if "approver" in str(e) else 409, str(e)) from None
         elif action == "approve":
@@ -615,7 +684,7 @@ class WebHandler(BaseHTTPRequestHandler):
             if proposal is None:
                 raise Reply(404, "not found")
             try:
-                gate.approve(proposal, body.get("approver"))
+                gate.approve(proposal, body.get("approver"), run=run.id)
             except ValueError as e:
                 raise Reply(400 if "approver" in str(e) else 409, str(e)) from None
         elif action == "apply":
@@ -629,7 +698,7 @@ class WebHandler(BaseHTTPRequestHandler):
             if any(i not in run.proposals for i in ids):
                 raise Reply(404, "not found")
             try:
-                gate.apply([run.proposals[i] for i in ids], run.base)  # loopback-only and APPROVED-only, audited
+                gate.apply([run.proposals[i] for i in ids], run.base, run=run.id)  # loopback-only and APPROVED-only, audited
             except ApplyRefused as e:
                 raise Reply(409, str(e) if run.demo else "fixes can be applied only to the loopback demo app") \
                     from None
@@ -766,12 +835,12 @@ class WebHandler(BaseHTTPRequestHandler):
 
 def make_server(port: int = DEFAULT_PORT, host: str = HOST, data_dir=None, session_ttl: float = SESSION_TTL,
                 clock=None, ui_preview: bool = False, provider_factory=None, http_transport=None,
-                chat_provider_factory=None, chat_token_cap: int | None = None) -> MayaServer:
+                chat_provider_factory=None, chat_token_cap: int | None = None, eval_path=None) -> MayaServer:
     if host != HOST:
         raise ValueError(f"MAYA web binds to {HOST} only; refused {host!r}")
     app = App(data_dir, session_ttl, clock or time.time, ui_preview=ui_preview is True,
               provider_factory=provider_factory, http_transport=http_transport,
-              chat_provider_factory=chat_provider_factory, chat_token_cap=chat_token_cap)
+              chat_provider_factory=chat_provider_factory, chat_token_cap=chat_token_cap, eval_path=eval_path)
     handler = type("Handler", (WebHandler,), {"app": app})
     server = MayaServer((HOST, port), handler)
     server.app = app

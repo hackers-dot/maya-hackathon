@@ -1,0 +1,6 @@
+{
+  "name": "partial_env_left",
+  "description": "Demo app with every fix except the .env block: only the exposed .env is expected.",
+  "fixes": "all_except:exposed_env_file",
+  "expected": ["exposed_env_file:/.env"]
+}

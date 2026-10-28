@@ -1,0 +1,6 @@
+{
+  "name": "fixed",
+  "description": "Demo app with every fix applied: no finding is expected.",
+  "fixes": "all",
+  "expected": []
+}

@@ -72,8 +72,9 @@ def _parse_claims(answer: str):
 
 
 def run_agent(provider, registry: ToolRegistry, budget: TokenBudget, goal: str,
-              max_steps: int = MAX_STEPS, trace: list | None = None) -> AgentResult:
-    """trace: optional list the caller can read while the loop runs (entries are appended live)."""
+              max_steps: int = MAX_STEPS, trace: list | None = None, verifier=verify) -> AgentResult:
+    """trace: optional list the caller can read while the loop runs (entries are appended live).
+    verifier: always src.agent.verifier.verify, except in the eval harness's own tests (a leaky fake)."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
     result = AgentResult(stop_reason="forced_final", trace=trace if trace is not None else [])
     for step in range(1, max_steps + 1):
@@ -101,7 +102,7 @@ def run_agent(provider, registry: ToolRegistry, budget: TokenBudget, goal: str,
                 summary = "forced final step: " + summary + (" (tool calls ignored)" if reply.tool_calls else "")
             result.trace.append({"step": step, "tool": None, "args": None, "tokens": tokens, "result_summary": summary,
                                  "latency": latency, "forced": forced})
-            result.report = verify(claims or [], registry.findings, registry.store)
+            result.report = verifier(claims or [], registry.findings, registry.store)
             result.stop_reason = "forced_final" if forced else "final"
             break
         messages.append({"role": "assistant", "content": reply.answer or None, "tool_calls": reply.tool_calls})

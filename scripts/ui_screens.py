@@ -49,6 +49,8 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("findings-technical", "/__preview/chat.html?view=finished&role=technical&scroll=findings-panel"),
     ("proposals", "/__preview/chat.html?view=finished&scroll=proposals-panel"),
     ("retest-audit", "/__preview/chat.html?view=finished&scroll=retest-panel"),
+    ("downloads", "/__preview/chat.html?view=finished&scroll=downloads-panel"),
+    ("quality", "/__preview/chat.html?view=finished&scroll=quality-panel"),
     ("chat", "/__preview/chat.html?view=chat"),
     ("chat-nokey", "/__preview/chat.html?view=chat-nokey"),
 ]
@@ -199,7 +201,7 @@ def shoot(cdp: CDP, url: str, out: Path, width: int, height: int, mobile: bool):
         cdp.call("Runtime.evaluate", expression=(
             "(() => { const c = document.querySelector('.conversation'); if (!c) return;"
             f" if ('{name}' === 'bottom') {{ c.scrollTop = c.scrollHeight; return; }}"
-            f" const t = document.getElementById('{name}'); if (t) c.scrollTop = t.offsetTop - 12; }})()"))
+            f" const t = document.getElementById('{name}'); if (t) c.scrollTop += t.getBoundingClientRect().top - c.getBoundingClientRect().top - 12; }})()"))
         time.sleep(0.2)
     metrics = cdp.call("Runtime.evaluate", returnByValue=True, expression=(
         "JSON.stringify({vw: innerWidth, scrollW: document.documentElement.scrollWidth})"))["result"]["value"]

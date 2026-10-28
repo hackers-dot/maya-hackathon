@@ -52,6 +52,17 @@ class Run:
     verified: frozenset = frozenset()    # scope allow-list used for this run (empty for the demo app)
     proposals: dict = field(default_factory=dict)  # fix proposals from fixed templates, built when the scan ends
     retest: dict | None = None
+    claims: dict | None = None           # raw verifier output (model runs only), for the downloadable report
+
+
+def finding_status(run: Run, finding_id: str) -> str:
+    """FIXED only when a re-test showed the finding gone; APPLIED when its fix was applied but not yet
+    re-tested (or the re-test still saw it); otherwise DETECTED."""
+    if run.retest and finding_id in run.retest["resolved"]:
+        return "FIXED"
+    if any(p.status == "APPLIED" and finding_id in p.finding_ids for p in run.proposals.values()):
+        return "APPLIED"
+    return "DETECTED"
 
 
 def finding_view(f, store) -> dict:
@@ -121,7 +132,7 @@ class RunManager:
         items = []
         for asset_id, r in latest.items():
             for f in r.result["findings"]:
-                items.append({**f, "asset": labels[asset_id]})
+                items.append({**f, "asset": labels[asset_id], "status": finding_status(r, f["id"])})
         return sorted(items, key=lambda i: (SEVERITY_ORDER.index(i["severity"]), i["id"]))
 
     def usage_for(self, user_id: int) -> dict:
@@ -168,6 +179,7 @@ class RunManager:
         budget = TokenBudget(run.id, cap=TOKEN_CAP, path=self.app.data_dir / "usage.jsonl")
         result = run_agent(provider, registry, budget, GOAL, max_steps=MAX_STEPS, trace=run.trace)
         claims = result.report
+        run.claims = claims
         run.result = {
             "findings": findings_view(registry.findings, store),
             "claims": [{"priority": v.get("priority"), "severity": v["severity"], "text": v["text"],

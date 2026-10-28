@@ -38,7 +38,10 @@ SYSTEM_PROMPT = (
     "3. Do not make claims about the user's own systems unless they come from MAYA's verified findings listed "
     "below. When you mention the user's site, cite finding ids in square brackets, for example "
     "[missing_csp:/]. If something is not in the findings, say MAYA has not checked it.\n"
-    "4. MAYA only runs read-only checks on sites the user has verified they own; fixes need the user's approval."
+    "4. MAYA only runs read-only checks on sites the user has verified they own; fixes need the user's approval.\n"
+    "5. Each finding has a status. FIXED means the fix was applied and a re-test showed the issue is gone: never "
+    "describe a FIXED finding as still present; say it was fixed and re-tested, and cite its id. APPLIED means "
+    "the fix was applied but not yet confirmed by a re-test. DETECTED means no fix has been applied yet."
 )
 
 
@@ -49,14 +52,15 @@ class ChatError(ValueError):
 
 
 def findings_context(items: list[dict]) -> str:
-    """Compact block of the user's own verified findings. items: dicts with asset/id/severity/check/location/evidence."""
+    """Compact block of the user's own verified findings. items: dicts with asset/id/severity/check/location/
+    evidence_line and status (DETECTED / APPLIED / FIXED, from the latest run's fix flow)."""
     if not items:
         return "VERIFIED FINDINGS: none. MAYA has not scanned any site this user owns, so make no claims about it."
     lines = ["VERIFIED FINDINGS (the only facts you may state about the user's systems):"]
     for f in items[:CONTEXT_FINDINGS_CAP]:
         ev = str(f.get("evidence_line") or "")[:120]
-        lines.append(f"- [{f['id']}] {f['severity']} {f['check']} at {f['location']} on {f['asset']}; "
-                     f"evidence: {ev}")
+        lines.append(f"- [{f['id']}] status {f.get('status', 'DETECTED')}: {f['severity']} {f['check']} at "
+                     f"{f['location']} on {f['asset']}; evidence: {ev}")
     return "\n".join(lines)
 
 

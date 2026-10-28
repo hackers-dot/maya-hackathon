@@ -409,6 +409,11 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .proposal-foot { display: flex; justify-content: flex-end; }
 .diff-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .diff-list { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.downloads { margin-top: 4px; }
+.downloads .btn { text-align: center; }
+.quality-summary { margin: 0 0 10px; font-size: 14px; }
+.quality-cases { margin: 0 0 10px; padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; overflow-wrap: anywhere; }
+.quality-cases strong { font-weight: 600; }
 .panel-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 14px; align-items: start; }
 .audit { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
 .audit-entry { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr) max-content; gap: 8px; align-items: baseline; }
@@ -461,6 +466,7 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .column { padding-top: 32px; }
 }
 @media (max-width: 560px) {
+  .downloads .btn { flex-basis: 100%; }
   .suggestions { grid-template-columns: minmax(0, 1fr); }
   .consent-grid { grid-template-columns: minmax(0, 1fr); }
   .card { padding: 22px 18px; }

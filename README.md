@@ -50,6 +50,11 @@ All code in this repository was written during the Meta Global AI Developer Hack
   - For companies, the model gets only that user's own verified findings and must cite their ids. Replies are labelled "unverified model text" unless they only restate findings, and show the model and token counts.
   - Limits: 2,000 characters per message, 20 messages a minute, a daily chat token budget, and only the last 10 messages sent. Pasted secrets are masked. Without a model key the composer says "Model not configured" and never fakes a reply.
   - Fix proposals are sorted critical first, and "Approve all" still audits each approval separately.
+- **2026-10-28 (Web 5):** Chat fix status, evidence pack, downloads and an eval harness.
+  - The chat knows each finding's status (detected, applied, or fixed and re-tested) and is told never to call a fixed finding still present.
+  - "Download evidence pack": a zip with the stored (redacted) evidence, a sha256 manifest and a hash-chained custody log that includes the run's approve / apply / re-test entries. It is re-verified before every download, and `verify_pack` names exactly which file or log line fails. Tamper-evident, not tamper-proof (unsigned); provenance is self-reported.
+  - "Download report" in HTML or Markdown.
+  - An offline eval: 3 demo-app states x 5 scripted model behaviours (perfect, sloppy, adversarial, truncated, no answer). Measured: 0 fake claims reached a report in 15 runs ([results](docs/eval_results.md)). Live-model quality: not yet measured (`scripts/eval_live.py`). A "Quality" panel shows these numbers from the generated file.
 
 ## License
 

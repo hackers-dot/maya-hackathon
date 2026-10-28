@@ -300,3 +300,46 @@ def test_approve_all_audits_each_approval(web):
     assert post(c, f"/api/runs/{run_id}/approve-all", {"approver": "demo-user"}).status_code == 409
     other = user(web["new_client"](), "x@shop.example", company=True)
     assert post(other, f"/api/runs/{run_id}/approve-all", {"approver": "mallory"}).status_code == 404
+
+
+# --- Web 5: the chat knows each finding's fix status ---
+
+def statuses_in_context(web):
+    system = web["state"]["chat"].calls[-1]["messages"][0]["content"]
+    context = system[len(SYSTEM_PROMPT):]
+    return {line.split("]")[0][3:]: line.split("status ")[1].split(":")[0]
+            for line in context.splitlines() if line.startswith("- [")}
+
+
+def test_system_prompt_forbids_calling_fixed_findings_present():
+    assert "never describe a FIXED finding as still present" in SYSTEM_PROMPT
+    assert "fixed and re-tested" in SYSTEM_PROMPT and "cite its id" in SYSTEM_PROMPT
+
+
+def test_context_without_retest_lists_detected_only(web):
+    c = user(web["new_client"](), "detected@shop.example", company=True)
+    _, body = scan_demo(c)
+    send(c, new_chat(c), "status?")
+    got = statuses_in_context(web)
+    assert set(got) == {f["id"] for f in body["result"]["findings"]} and set(got.values()) == {"DETECTED"}
+
+
+def test_context_after_apply_and_fixed_retest(web):
+    c = user(web["new_client"](), "fixed@shop.example", company=True)
+    b = user(web["new_client"](), "other@shop.example", company=True)
+    _, b_body = scan_demo(b)  # Bob scans but never fixes anything
+    run_id, body = scan_demo(c)
+    ids = {f["id"] for f in body["result"]["findings"]}
+    assert post(c, f"/api/runs/{run_id}/approve-all", {"approver": "demo-user"}).status_code == 200
+    assert post(c, f"/api/runs/{run_id}/apply").status_code == 200
+    chat_id = new_chat(c)
+    send(c, chat_id, "status?")
+    assert set(statuses_in_context(web).values()) == {"APPLIED"}  # applied, not yet re-tested
+    assert post(c, f"/api/runs/{run_id}/retest").json()["retest"]["status"] == "FIXED"
+    send(c, chat_id, "and now?")
+    got = statuses_in_context(web)
+    assert set(got) == ids and set(got.values()) == {"FIXED"}
+
+    send(b, new_chat(b), "status?")  # Alice's statuses never reach Bob's prompt: his stay DETECTED
+    got_b = statuses_in_context(web)
+    assert set(got_b) == {f["id"] for f in b_body["result"]["findings"]} and set(got_b.values()) == {"DETECTED"}

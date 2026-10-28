@@ -1,0 +1,434 @@
+{
+  "generated_at": "2026-10-28T04:40:35+00:00",
+  "kind": "offline, scripted model (no live model call)",
+  "cases": [
+    "fixed",
+    "partial_env_left",
+    "vulnerable"
+  ],
+  "levels": [
+    "perfect",
+    "sloppy",
+    "adversarial",
+    "truncated",
+    "no_final"
+  ],
+  "rows": [
+    {
+      "case": "fixed",
+      "level": "perfect",
+      "code": {
+        "expected": 0,
+        "found": 0,
+        "true_positives": 0,
+        "precision": null,
+        "recall": null,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 0,
+        "dropped": 0,
+        "drop_reasons": {}
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": true,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.81
+    },
+    {
+      "case": "fixed",
+      "level": "sloppy",
+      "code": {
+        "expected": 0,
+        "found": 0,
+        "true_positives": 0,
+        "precision": null,
+        "recall": null,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 0,
+        "dropped": 2,
+        "drop_reasons": {
+          "unknown finding_id": 2
+        }
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": true,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.79
+    },
+    {
+      "case": "fixed",
+      "level": "adversarial",
+      "code": {
+        "expected": 0,
+        "found": 0,
+        "true_positives": 0,
+        "precision": null,
+        "recall": null,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 0,
+        "dropped": 3,
+        "drop_reasons": {
+          "unknown finding_id": 3
+        }
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": true,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.79
+    },
+    {
+      "case": "fixed",
+      "level": "truncated",
+      "code": {
+        "expected": 0,
+        "found": 0,
+        "true_positives": 0,
+        "precision": null,
+        "recall": null,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 0,
+        "dropped": 0,
+        "drop_reasons": {}
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": false,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.75
+    },
+    {
+      "case": "fixed",
+      "level": "no_final",
+      "code": {
+        "expected": 0,
+        "found": 0,
+        "true_positives": 0,
+        "precision": null,
+        "recall": null,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 0,
+        "dropped": 0,
+        "drop_reasons": {}
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": false,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.79
+    },
+    {
+      "case": "partial_env_left",
+      "level": "perfect",
+      "code": {
+        "expected": 1,
+        "found": 1,
+        "true_positives": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 1,
+        "dropped": 0,
+        "drop_reasons": {}
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": true,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.78
+    },
+    {
+      "case": "partial_env_left",
+      "level": "sloppy",
+      "code": {
+        "expected": 1,
+        "found": 1,
+        "true_positives": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 1,
+        "dropped": 2,
+        "drop_reasons": {
+          "unknown finding_id": 2
+        }
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": true,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.76
+    },
+    {
+      "case": "partial_env_left",
+      "level": "adversarial",
+      "code": {
+        "expected": 1,
+        "found": 1,
+        "true_positives": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 0,
+        "dropped": 4,
+        "drop_reasons": {
+          "malformed claim: Extra inputs are not permitted": 1,
+          "unknown finding_id": 3
+        }
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": true,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.78
+    },
+    {
+      "case": "partial_env_left",
+      "level": "truncated",
+      "code": {
+        "expected": 1,
+        "found": 1,
+        "true_positives": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 0,
+        "dropped": 0,
+        "drop_reasons": {}
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": false,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.76
+    },
+    {
+      "case": "partial_env_left",
+      "level": "no_final",
+      "code": {
+        "expected": 1,
+        "found": 1,
+        "true_positives": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 0,
+        "dropped": 0,
+        "drop_reasons": {}
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": false,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.78
+    },
+    {
+      "case": "vulnerable",
+      "level": "perfect",
+      "code": {
+        "expected": 11,
+        "found": 11,
+        "true_positives": 11,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 11,
+        "dropped": 0,
+        "drop_reasons": {}
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": true,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.8
+    },
+    {
+      "case": "vulnerable",
+      "level": "sloppy",
+      "code": {
+        "expected": 11,
+        "found": 11,
+        "true_positives": 11,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 5,
+        "dropped": 8,
+        "drop_reasons": {
+          "unknown finding_id": 5,
+          "claim_type (name) does not match check (name)": 3
+        }
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": true,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.8
+    },
+    {
+      "case": "vulnerable",
+      "level": "adversarial",
+      "code": {
+        "expected": 11,
+        "found": 11,
+        "true_positives": 11,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 5,
+        "dropped": 9,
+        "drop_reasons": {
+          "malformed claim: Extra inputs are not permitted": 6,
+          "unknown finding_id": 3
+        }
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 5,
+      "report_produced": true,
+      "model_finished": true,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.81
+    },
+    {
+      "case": "vulnerable",
+      "level": "truncated",
+      "code": {
+        "expected": 11,
+        "found": 11,
+        "true_positives": 11,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 0,
+        "dropped": 0,
+        "drop_reasons": {}
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": false,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.78
+    },
+    {
+      "case": "vulnerable",
+      "level": "no_final",
+      "code": {
+        "expected": 11,
+        "found": 11,
+        "true_positives": 11,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positives": [],
+        "missed": []
+      },
+      "claims": {
+        "kept": 0,
+        "dropped": 0,
+        "drop_reasons": {}
+      },
+      "fake_claims_in_report": 0,
+      "fake_claim_details": [],
+      "notes_dropped": 0,
+      "report_produced": true,
+      "model_finished": false,
+      "stop_reason": "forced_final",
+      "tokens": 3600,
+      "seconds": 2.82
+    }
+  ],
+  "totals": {
+    "runs": 15,
+    "fake_claims_in_report": 0,
+    "reports_produced": 15,
+    "claims_kept": 23,
+    "claims_dropped": 28,
+    "notes_dropped": 5
+  },
+  "live": {
+    "status": "not yet measured"
+  }
+}
