@@ -28,10 +28,18 @@ Totals: 15 runs, fake claims in report **0**, reports produced 15/15, claims kep
 
 ## Live runs
 
-### 2026-10-28 UTC, model `meta-models/muse-spark-open-1026`, 3 runs on the vulnerable demo app (cap 40000 tokens per scan, 6 steps, effort low)
+### 2026-10-28 UTC, model `meta-models/muse-spark-open-1026`, 3 runs on the vulnerable demo app (cap 40000 tokens per scan, 6 steps, effort low), 11 findings per run (before the jQuery check was added)
 
 | Run | Findings (code) | Claims kept | Claims dropped | FAKE CLAIMS IN REPORT | Tokens | Model latency (s) | Stop reason |
 |---|---|---|---|---|---|---|---|
 | 1 | 11 | 11 | 0 | **0** | 14052 | 10.37 | forced_final |
 | 2 | 11 | 11 | 0 | **0** | 13934 | 10.02 | forced_final |
 | 3 | 11 | 11 | 0 | **0** | 14040 | 9.44 | forced_final |
+
+### 2026-10-28 UTC, model `meta-models/muse-spark-open-1026`, 3 runs on the vulnerable demo app (cap 40000 tokens per scan, 6 steps, effort low), 12 findings per run
+
+| Run | Findings (code) | Claims kept | Claims dropped | FAKE CLAIMS IN REPORT | Tokens | Model latency (s) | Stop reason |
+|---|---|---|---|---|---|---|---|
+| 1 | 12 | 12 | 0 | **0** | 14589 | 12.34 | forced_final |
+| 2 | 12 | 12 | 0 | **0** | 14687 | 11.23 | forced_final |
+| 3 | 12 | 12 | 0 | **0** | 14621 | 10.68 | forced_final |

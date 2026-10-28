@@ -496,6 +496,42 @@
             "claims_dropped": 0
           }
         ]
+      },
+      {
+        "date": "2026-10-28",
+        "model": "meta-models/muse-spark-open-1026",
+        "rows": [
+          {
+            "fake_claims_in_report": 0,
+            "tokens": 14589,
+            "model_seconds": 12.34,
+            "stop_reason": "forced_final",
+            "model_finished": true,
+            "findings": 12,
+            "claims_kept": 12,
+            "claims_dropped": 0
+          },
+          {
+            "fake_claims_in_report": 0,
+            "tokens": 14687,
+            "model_seconds": 11.23,
+            "stop_reason": "forced_final",
+            "model_finished": true,
+            "findings": 12,
+            "claims_kept": 12,
+            "claims_dropped": 0
+          },
+          {
+            "fake_claims_in_report": 0,
+            "tokens": 14621,
+            "model_seconds": 10.68,
+            "stop_reason": "forced_final",
+            "model_finished": true,
+            "findings": 12,
+            "claims_kept": 12,
+            "claims_dropped": 0
+          }
+        ]
       }
     ]
   }
