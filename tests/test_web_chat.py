@@ -372,8 +372,10 @@ def test_latest_scan_with_no_issues_keeps_history_and_fixed_ids(web):
     lines = ctx.strip().splitlines()
     assert lines[1].startswith(f"- run {run2} ")
     assert "scan found 0 findings; later re-test: no re-test (statuses: no findings)" in lines[1]
-    assert lines[2].startswith(f"- run {run1} ")
-    assert "scan found 12 findings; later re-test: all fixed (statuses: FIXED 12)" in lines[2]
+    assert lines[2] == (f"  changes since the previous scan of this asset (run {run1}): 0 new, 12 resolved, "
+                        "0 unchanged, 0 severity change(s)")  # Web 9: one diff line per run pair
+    assert lines[3].startswith(f"- run {run1} ")
+    assert "scan found 12 findings; later re-test: all fixed (statuses: FIXED 12)" in lines[3]
     assert f"latest scan: no issues detected in the checks run (run {run2}" in ctx
     assert all(f"[{i}] (run {run1})" in ctx for i in ids)
     assert "MAYA has not scanned" not in ctx and "VERIFIED FINDINGS: none open in the latest scan" in ctx

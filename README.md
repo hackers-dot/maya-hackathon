@@ -106,6 +106,12 @@ Demo flow:
   - MAYA never visits the addresses. An optional DNS existence check goes only through the DNS-over-HTTPS resolver, for domains you confirm.
   - Findings go into the same table, report and evidence pack. The pack keeps the image hash and size, plus the image only if you choose.
   - Registrar and platform report notes come from fixed templates and become READY only after a named approval; MAYA never sends them.
+- **2026-10-28 (Web 9):** Scan diff, heuristic score, developer export, DNS TXT ownership.
+  - "What changed" compares two scans of the same site (new, resolved, unchanged, severity changed). "Re-scan" shows it automatically, and the chat sees one change line per scan pair.
+  - A heuristic A-F score of the checks run (fixed formula: 100 minus 30/15/6/2 per critical/high/medium/low finding). It is shown before and after the re-test (demo: F to A), with a score history and the checks that did not run listed beside it.
+  - "Copy as GitHub issue" per finding and "Download all as issues.md": fix snippets, rollback and the acceptance criterion "re-test shows FIXED", with secrets kept masked. A printable report can be saved as PDF from the browser.
+  - A third ownership method: a DNS TXT record (`_maya-verify.<domain>` = `maya-verify=<token>`), looked up through the DNS-over-HTTPS resolver, so the domain name is sent to cloudflare-dns.com.
+  - Offline eval not regenerated: finding and claim counts are unchanged (checked row by row).
 
 ## License
 

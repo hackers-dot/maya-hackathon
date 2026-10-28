@@ -421,11 +421,18 @@ CSS = ("body{font-family:system-ui,sans-serif;max-width:860px;margin:2rem auto;p
        ".low{background:#2c7a7b}.info{background:#555}section{border-top:1px solid #ddd;margin-top:1rem}")
 
 
-def to_html(report: dict) -> str:
+def to_html(report: dict, printable: bool = False) -> str:
+    """Self-contained HTML (inline CSS) for download; printable=True instead links /static/report-print.css and
+    /static/print.js, so the page can be served by MAYA under its CSP (no inline styles or scripts)."""
     u = report["usage"]
+    head = ('<link rel="stylesheet" href="/static/report-print.css"><script src="/static/print.js" defer></script>'
+            if printable else f"<style>{CSS}</style>")
     b = ["<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">",
          "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
-         f"<title>MAYA report</title><style>{CSS}</style></head><body><h1>MAYA report</h1>"]
+         f"<title>MAYA report</title>{head}</head><body>"
+         + ('<p class="print-bar"><button id="print-btn" type="button">Print or save as PDF</button> '
+            "Use your browser's print dialog and choose \"Save as PDF\".</p>" if printable else "")
+         + "<h1>MAYA report</h1>"]
     if report["demo"]:
         b.append(f"<p class=\"banner\">{_e(DEMO_BANNER)}</p>")
     b.append(f"<ul><li>Model: <code>{_e(report['model'])}</code></li>"

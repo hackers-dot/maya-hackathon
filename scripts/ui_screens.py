@@ -41,6 +41,7 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("consent", "/__preview/consent.html"),
     ("shell", "/__preview/chat.html"),
     ("connect-website", "/__preview/connect-website.html"),
+    ("connect-website-dns", "/__preview/connect-website.html?scrollto=ap-txt-name"),
     ("trace-running", "/__preview/chat.html?view=running"),
     ("result-finished", "/__preview/chat.html?view=finished"),
     ("result-finished-bottom", "/__preview/chat.html?view=finished&scroll=bottom"),
@@ -50,6 +51,7 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("proposals", "/__preview/chat.html?view=finished&scroll=proposals-panel"),
     ("retest-audit", "/__preview/chat.html?view=finished&scroll=retest-panel"),
     ("downloads", "/__preview/chat.html?view=finished&scroll=downloads-panel"),
+    ("diff", "/__preview/chat.html?view=finished&scroll=diff-panel"),
     ("checks", "/__preview/chat.html?view=finished&scroll=checks-heading"),
     ("quality", "/__preview/chat.html?view=finished&scroll=quality-panel"),
     ("upload-code", "/__preview/chat.html?view=upload-code"),
@@ -212,6 +214,12 @@ def shoot(cdp: CDP, url: str, out: Path, width: int, height: int, mobile: bool):
             "(() => { const c = document.querySelector('.conversation'); if (!c) return;"
             f" if ('{name}' === 'bottom') {{ c.scrollTop = c.scrollHeight; return; }}"
             f" const t = document.getElementById('{name}'); if (t) c.scrollTop += t.getBoundingClientRect().top - c.getBoundingClientRect().top - 12; }})()"))
+        time.sleep(0.2)
+    page_target = re.search(r"[?&]scrollto=([a-z-]+)", url)
+    if page_target:  # pages without the chat shell scroll the window itself
+        cdp.call("Runtime.evaluate", expression=(
+            f"(() => {{ const t = document.getElementById('{page_target.group(1)}');"
+            " if (t) window.scrollTo(0, t.getBoundingClientRect().top + window.scrollY - 120); })()"))
         time.sleep(0.2)
     metrics = cdp.call("Runtime.evaluate", returnByValue=True, expression=(
         "JSON.stringify({vw: innerWidth, scrollW: document.documentElement.scrollWidth})"))["result"]["value"]

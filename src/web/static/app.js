@@ -160,6 +160,7 @@
       setText("ap-meta", v.meta_tag);
       setText("ap-file", v.file_url);
       setText("ap-token", v.token);
+      if (v.dns_txt) { setText("ap-txt-name", v.dns_txt.name); setText("ap-txt-value", v.dns_txt.value); }
     }
   }
 
@@ -172,6 +173,16 @@
     onClick("use-demo", async () => {
       const d = await post("/api/assets", { demo: true });
       if (d && d.asset) renderAssetPanel(d.asset);
+    });
+    onClick("verify-dns-btn", async () => {
+      if (!currentAsset) return;
+      say("Looking up the TXT record through DNS-over-HTTPS...", false);
+      const d = await post("/api/assets/" + currentAsset.id + "/verify-dns", {});
+      if (d && d.asset) {
+        renderAssetPanel(d.asset);
+        say(d.asset.status === "verified" ? "Verified via DNS TXT." : "Not verified yet: " + (d.asset.reason || ""),
+          d.asset.status !== "verified");
+      }
     });
     onClick("verify-btn", async () => {
       if (!currentAsset) return;
@@ -309,8 +320,100 @@
     ev.appendChild(el("span", "label", "Evidence (from code)"));
     ev.appendChild(el("code", "", f.evidence_line));
     body.appendChild(ev);
+    const copy = el("button", "btn btn-quiet copy-issue", "Copy as GitHub issue");
+    copy.type = "button";
+    copy.addEventListener("click", () => copyIssue(f.id, copy));
+    body.appendChild(copy);
     card.appendChild(body);
     return card;
+  }
+
+  // ---------- developer export: GitHub issues from MAYA's fixed templates ----------
+  let issueCache = { run: null, issues: {} };
+  async function loadIssues(runId) {
+    if (PREVIEW || !runId) return;
+    const r = await getJSON("/api/runs/" + runId + "/issues.json");
+    if (r.ok) {
+      issueCache = { run: runId, issues: {} };
+      for (const i of r.data.issues) issueCache.issues[i.id] = i;
+    }
+  }
+  function copyIssue(findingId, button) {
+    const i = issueCache.issues[findingId];
+    if (!i) { say("The issue text is still loading; try again in a moment.", true); return; }
+    const text = i.title + "\n\n" + i.body;
+    try {
+      navigator.clipboard.writeText(text).then(() => {
+        button.textContent = "Copied";
+        setTimeout(() => { button.textContent = "Copy as GitHub issue"; }, 1500);
+      }, () => say("Copy failed: your browser blocked clipboard access.", true));
+    } catch (e) { say("Copy failed: your browser blocked clipboard access.", true); }
+  }
+
+  // ---------- heuristic score, what changed, score history ----------
+  function scoreText(s) {
+    return "Grade " + s.grade + " · " + s.score + "/100";
+  }
+  function renderScore(s) {
+    const badge = $("score-badge");
+    if (!badge) return;
+    clear(badge);
+    show("score-badge", !!s);
+    show("score-note", !!s);
+    if (!s) return;
+    badge.appendChild(el("span", "grade grade-" + s.grade, s.grade));
+    badge.appendChild(el("span", "", s.score + "/100 · " + s.label));
+    const byStatus = {};  // group the checks that did not run by why, e.g. "not applicable (loopback demo)"
+    for (const c of s.checks_not_run || []) (byStatus[c.status] = byStatus[c.status] || []).push(c.check);
+    const parts = Object.keys(byStatus).map((st) => byStatus[st].join(", ") + ": " + st);
+    setText("score-note", parts.length ? "Checks not in the score: " + parts.join("; ") + "."
+      : "Every check ran and is in the score.");
+  }
+  function renderRetestScore(before, after) {
+    show("retest-score", !!(before && after));
+    if (before && after) setText("retest-score", "Heuristic score of the checks run: " + scoreText(before) +
+      " before → " + scoreText(after) + " after the re-test.");
+  }
+  function listInto(id, items, fmt) {
+    const ul = $(id);
+    if (!ul) return;
+    clear(ul);
+    for (const i of items || []) ul.appendChild(el("li", "", fmt ? fmt(i) : i));
+    if (!(items || []).length) ul.appendChild(el("li", "muted", "None"));
+  }
+  async function loadDiff(asset) {
+    show("diff-panel", false);
+    if (!asset || PREVIEW) return;
+    const h = await getJSON("/api/assets/" + asset.id + "/history");
+    if (!h.ok || !h.data.runs.some((r) => r.score)) return;
+    const hist = $("score-history");
+    clear(hist);
+    for (const r of h.data.runs) {
+      const s = r.score ? scoreText(r.score) : "no score";
+      const after = r.retest_score ? "; after re-test " + scoreText(r.retest_score) : "";
+      hist.appendChild(el("li", "", r.date + ": " + s + ", " + r.findings + " finding(s)" + after));
+    }
+    const d = await getJSON("/api/assets/" + asset.id + "/diff");
+    show("diff-panel", true);
+    if (!d.ok) {
+      setText("diff-meta", d.data.error || "");
+      clear($("diff-counts"));
+      for (const id of ["diff-new", "diff-resolved", "diff-changed"]) listInto(id, []);
+      return;
+    }
+    renderDiff(d.data);
+  }
+  function renderDiff(d) {
+    setText("diff-meta", "latest scan vs the one before");
+    const counts = $("diff-counts");
+    clear(counts);
+    for (const [k, label, kind] of [["new", "new", "failed"], ["resolved", "resolved", "ok"],
+      ["unchanged", "unchanged", ""], ["severity_changed", "severity changed", "pending"]]) {
+      counts.appendChild(el("span", "chip chip-" + kind, d.counts[k] + " " + label));
+    }
+    listInto("diff-new", d.new);
+    listInto("diff-resolved", d.resolved);
+    listInto("diff-changed", d.severity_changed, (c) => c.id + ": " + c.from + " → " + c.to);
   }
 
   function renderFindings(findings) {
@@ -520,12 +623,18 @@
       : "Live model quality: not yet measured.");
   }
 
+  function renderFullScore(data) {
+    renderScore(data.score);
+    renderRetestScore(data.score, data.retest_score);
+  }
+
   function renderDownloads(run) {
     const done = !!(run && run.status !== "running");
     show("downloads-panel", done);
     if (!done) return;
     const base = "/api/runs/" + encodeURIComponent(run.id) + "/";
-    for (const [id, name] of [["dl-pack", "evidence.zip"], ["dl-report", "report.html"], ["dl-report-md", "report.md"]]) {
+    for (const [id, name] of [["dl-pack", "evidence.zip"], ["dl-report", "report.html"], ["dl-report-md", "report.md"],
+      ["dl-issues", "issues.md"], ["dl-print", "report-print.html"]]) {
       const a = $(id);
       if (a) a.setAttribute("href", base + name);
     }
@@ -543,6 +652,7 @@
 
   function renderFull(data) {
     renderDownloads(data.run);
+    renderFullScore(data);
     renderProposals(data.run, data.proposals);
     renderRetest(data.retest);
     refreshSidePanels();
@@ -677,7 +787,8 @@
     findingCards.clear();
     traceNext = 0;
     for (const id of ["run-panel", "findings-panel", "result-panel", "fixfirst-panel", "proposals-panel",
-      "retest-panel", "downloads-panel", "items-panel", "notes-panel", "demo-banner"]) show(id, false);
+      "retest-panel", "downloads-panel", "items-panel", "notes-panel", "diff-panel", "score-badge", "score-note",
+      "demo-banner"]) show(id, false);
     show("trace-empty", true);
   }
 
@@ -699,6 +810,8 @@
         renderResult(full.data.run, full.data.result);
         renderFixFirst(full.data.result && full.data.result.fix_first);
         renderFull(full.data);
+        loadIssues(runId);
+        loadDiff(currentAsset);  // after a re-scan, "What changed" appears on its own
       }
       const btn = $("scan-btn");
       if (btn && currentAsset && currentAsset.scannable) btn.disabled = false;
@@ -730,6 +843,7 @@
     show("summarize-btn", asset.kind === "logs");
     if (upload) setText("av-hint", "Uploaded file: checked once when uploaded. Upload it again to re-check.");
     show("reset-demo-btn", asset.kind === "demo");
+    if (btn) btn.textContent = asset.last_run ? "Re-scan" : "Run security scan";
     setResetEnabled(true);
     say("", false);
     if (asset.last_run && !PREVIEW) startPolling(asset.last_run);
@@ -1009,6 +1123,7 @@
     if (!d || !d.run) { if (btn) btn.disabled = !currentAsset.scannable; return; }
     resetRunPanels();
     currentAsset.last_run = d.run.id;
+    if (btn) btn.textContent = "Re-scan";
     renderRunMeta(d.run);
     startPolling(d.run.id);
   }
@@ -1081,6 +1196,10 @@
           renderAudit(r.data.extras.audit);
           renderUsage(r.data.extras.usage);
           renderDownloads(sample.run);
+          renderFullScore(r.data.extras);
+          if (r.data.extras.diff) { show("diff-panel", true); renderDiff(r.data.extras.diff);
+            const hist = $("score-history"); clear(hist);
+            for (const line of r.data.extras.score_history) hist.appendChild(el("li", "", line)); }
           renderQuality(r.data.eval);
           const open = document.querySelector("#findings-list details");
           if (open) open.open = true;  // show one expanded card in screenshots

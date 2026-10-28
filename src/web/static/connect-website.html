@@ -29,13 +29,19 @@
 <div class="asset-title"><h2 id="ap-label" class="verify-title"></h2><span id="ap-status" class="chip"></span></div>
 <p id="ap-reason" class="hint"></p>
 <div id="ap-methods" hidden>
-<p class="hint">Prove ownership with either method, then press Verify.</p>
+<p class="hint">Prove ownership with one of the three methods.</p>
 <div class="method"><h3>Option 1: meta tag on your homepage</h3>
 <p class="hint">Inside the &lt;head&gt; of your homepage:</p><code id="ap-meta" class="codebox"></code></div>
 <div class="method"><h3>Option 2: verification file</h3>
 <p class="hint">Create this file:</p><code id="ap-file" class="codebox"></code>
 <p class="hint">containing exactly:</p><code id="ap-token" class="codebox"></code></div>
-<button id="verify-btn" class="btn btn-primary btn-block" type="button">Verify ownership</button>
+<button id="verify-btn" class="btn btn-primary btn-block" type="button">Verify ownership (meta tag or file)</button>
+<div class="method"><h3>Option 3: DNS TXT record</h3>
+<p class="hint">Add this TXT record at your DNS provider:</p>
+<p class="hint">Name</p><code id="ap-txt-name" class="codebox"></code>
+<p class="hint">Value</p><code id="ap-txt-value" class="codebox"></code>
+<p class="hint">MAYA looks the record up through a public DNS-over-HTTPS resolver (cloudflare-dns.com), so your domain name is sent to that provider. DNS changes can take a few minutes to appear.</p>
+<button id="verify-dns-btn" class="btn btn-secondary btn-block" type="button">Verify via DNS TXT</button></div>
 </div>
 <a id="ap-continue" class="btn btn-secondary btn-block" href="/chat">Continue to MAYA</a>
 </section>

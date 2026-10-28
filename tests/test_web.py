@@ -214,7 +214,7 @@ SINKS = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|document\.write|\bev
 
 
 EXPECTED_STATIC = {"app.js", "theme.js", "style.css", "signin.html", "onboarding.html", "company.html",
-                   "connect.html", "consent.html", "connect-website.html", "chat.html"}
+                   "connect.html", "consent.html", "connect-website.html", "chat.html", "print.js", "report-print.css"}
 
 
 def test_static_files_have_no_injection_sinks_or_external_urls():

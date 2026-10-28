@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from src import scope
-from src.ownership import WELL_KNOWN_PATH, VerifiedTargets, new_token, verify_ownership
+from src.ownership import WELL_KNOWN_PATH, VerifiedTargets, new_token, txt_record, verify_dns_txt, verify_ownership
 
 DEMO_LABEL = "Demo app (loopback, no verification needed)"
 MAX_URL = 2048
@@ -146,15 +146,21 @@ class Assets:
         rows = self._rows("id = ? AND user_id = ?", (asset_id, user_id))
         return rows[0] if rows else None
 
-    def verify(self, user_id: int, asset_id, store=None, transport=None) -> dict | None:
+    def verify(self, user_id: int, asset_id, store=None, transport=None, method: str = "web") -> dict | None:
+        """method "web": meta tag or /.well-known file over HTTP; "dns": TXT record via DNS-over-HTTPS."""
         asset = self.get(user_id, asset_id)
-        if asset is None or asset["kind"] == "demo":
+        if asset is None or asset["kind"] != "website":
             return asset
-        result = verify_ownership(asset["origin"], asset["token"], self.targets, store=store, transport=transport)
-        status = "verified" if result.verified else "failed"
+        check = verify_dns_txt if method == "dns" else verify_ownership
+        try:
+            result = check(asset["origin"], asset["token"], self.targets, store=store, transport=transport)
+            verified, reason = result.verified, result.reason
+        except scope.OutOfScope as e:
+            verified, reason = False, f"target refused: {e}"
+        status = "verified" if verified else "failed"
         with self._db() as c, c:
             c.execute("UPDATE assets SET status = ?, reason = ?, verified_at = ? WHERE id = ?",
-                      (status, result.reason, self.clock() if result.verified else None, asset["id"]))
+                      (status, reason, self.clock() if verified else None, asset["id"]))
         return self.get(user_id, asset_id)
 
 
@@ -169,5 +175,6 @@ def public_asset(asset: dict, last_run: str | None = None) -> dict:
     elif not demo:
         out["verification"] = {"token": asset["token"],
                                "meta_tag": f'<meta name="maya-verify" content="{asset["token"]}">',
-                               "file_path": WELL_KNOWN_PATH, "file_url": asset["origin"] + WELL_KNOWN_PATH}
+                               "file_path": WELL_KNOWN_PATH, "file_url": asset["origin"] + WELL_KNOWN_PATH,
+                               "dns_txt": txt_record(asset["host"], asset["token"])}
     return out

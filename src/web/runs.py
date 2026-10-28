@@ -21,7 +21,10 @@ from src.evidence import EvidenceStore
 from src.provider import ProviderError
 from src.fixes import build_proposals
 from src.report import TEXT, owasp_label
+from src.scan_diff import diff
+from src.scan_diff import summary as diff_summary
 from src.scanner.http_client import HttpClient
+from src.score import score
 from src.scanner.checks_dns import DnsUnavailable
 from src.scanner.runner import ALL_CHECKS, FULL_SCAN, NET_CHECKS, NotRunnable, not_applicable, run_check
 from src.severity import rule
@@ -143,6 +146,12 @@ class RunManager:
                 items.append({**f, "asset": labels[asset_id], "status": finding_status(r, f["id"])})
         return sorted(items, key=lambda i: (SEVERITY_ORDER.index(i["severity"]), i["id"]))
 
+    def runs_for_asset(self, user_id: int, asset_id: str) -> list[Run]:
+        """This user's completed runs of one asset, oldest first (ties broken by start order)."""
+        mine = [(r.started_at, i, r) for i, r in enumerate(self.runs.values())
+                if r.user_id == user_id and r.asset_id == asset_id and r.result and r.status != "running"]
+        return [r for _, _, r in sorted(mine, key=lambda t: t[:2])]
+
     def history_for_user(self, user_id: int, labels: dict[str, str], limit: int = 3) -> list[dict]:
         """This user's last `limit` completed scans, newest first: run id, UTC date, findings count, status
         counts and the ids of findings that were FIXED (re-tested). Only this user's runs."""
@@ -157,8 +166,17 @@ class RunManager:
                         "date": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(r.started_at)),
                         "statuses": {k: v for k, v in counts.items() if v},
                         "fixed_ids": sorted(i for i, s in statuses.items() if s == "FIXED"),
-                        "retest": retest_outcome(r)})
+                        "retest": retest_outcome(r), "changes": self._changes(r)})
         return out
+
+    def _changes(self, run: Run) -> dict | None:
+        """Diff against the previous completed run of the same asset, if there is one."""
+        runs = self.runs_for_asset(run.user_id, run.asset_id)
+        i = next((n for n, r in enumerate(runs) if r.id == run.id), 0)
+        if i == 0:
+            return None
+        prev = runs[i - 1]
+        return {"from": prev.id, "summary": diff_summary(diff(prev.result["findings"], run.result["findings"]))}
 
     def record_upload(self, user_id: int, asset: dict, mode: str, findings: list, store, extra: dict) -> Run:
         """A finished run for an uploaded ZIP or log file (analysed synchronously, nothing fetched)."""
@@ -278,6 +296,25 @@ class RunManager:
                       "model_finished": False, "stop_reason": "deterministic",
                       "checks": checks_view(base, set(ALL_CHECKS) - set(errors), errors)}
         return "finished"
+
+
+SCORED_MODES = ("model", "deterministic")  # website / demo scans; uploads describe files, not a running site
+
+
+def run_score(run: Run) -> dict | None:
+    """Heuristic A-F score, only for a completed scan; checks that did not run are listed beside it."""
+    if run.mode not in SCORED_MODES or not run.result or run.status in ("running", "failed"):
+        return None
+    s = score(f["severity"] for f in run.result["findings"])
+    s["checks_not_run"] = [c for c in run.result.get("checks", []) if c["status"] != "ran"]
+    return s
+
+
+def retest_score(run: Run) -> dict | None:
+    """Score of what the re-test still (or newly) saw: the "after" side of before/after."""
+    if not run.retest or run.mode not in SCORED_MODES:
+        return None
+    return score(rule(f.check).severity for f in run.retest["after"].values())
 
 
 def retest_outcome(run: Run) -> str:

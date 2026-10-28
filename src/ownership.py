@@ -89,6 +89,39 @@ class VerifiedTargets:
             self.path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
 
+TXT_PREFIX = "_maya-verify."
+TXT_VALUE_PREFIX = "maya-verify="
+
+
+def txt_record(host: str, token: str) -> dict:
+    """The exact DNS TXT record the owner adds for the third verification method."""
+    return {"name": TXT_PREFIX + host, "type": "TXT", "value": TXT_VALUE_PREFIX + token}
+
+
+def verify_dns_txt(target_url: str, token: str, targets: VerifiedTargets, store: EvidenceStore | None = None,
+                   transport: httpx.BaseTransport | None = None) -> OwnershipResult:
+    """TXT _maya-verify.<host> must hold exactly maya-verify=<token>. Looked up only through the existing
+    DNS-over-HTTPS resolver (GET, no redirects, 5 s); the host must pass the URL rules and not be loopback,
+    checked before any request. The host name is sent to the DoH provider (the UI says so)."""
+    from src.scanner.checks_dns import DnsUnavailable, _clean, doh_txt
+    if not isinstance(token, str) or not token.startswith(TOKEN_PREFIX) or len(token) < len(TOKEN_PREFIX) + 16:
+        raise ValueError("token must come from new_token()")
+    parts = urlsplit(target_url)
+    host = (parts.hostname or "").lower()
+    if scope.is_loopback(host):
+        raise scope.OutOfScope("DNS verification does not apply to loopback")
+    scope.check_target(f"{parts.scheme}://{parts.netloc}", {host})  # raises OutOfScope: no IPs, no userinfo
+    record = txt_record(host, token)
+    try:
+        answers, _ = doh_txt(record["name"], transport, store)
+    except (DnsUnavailable, httpx.HTTPError) as e:
+        return OwnershipResult(host, False, None, f"DNS lookup of {record['name']} failed ({type(e).__name__})")
+    if any(_same(a, record["value"]) for a in _clean(answers)):
+        targets.add(host, "dns_txt")
+        return OwnershipResult(host, True, "dns_txt", f"token found in TXT {record['name']}")
+    return OwnershipResult(host, False, None, f"TXT {record['name']}: token not found ({len(answers)} record(s))")
+
+
 def verify_ownership(target_url: str, token: str, targets: VerifiedTargets, store: EvidenceStore | None = None,
                      transport: httpx.BaseTransport | None = None) -> OwnershipResult:
     if not isinstance(token, str) or not token.startswith(TOKEN_PREFIX) or len(token) < len(TOKEN_PREFIX) + 16:

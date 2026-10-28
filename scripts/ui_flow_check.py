@@ -158,6 +158,9 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
     token = (site.get("verification") or {}).get("token", "")
     rep.check(status == 200 and site.get("status") == "pending" and token.startswith("maya-verify-"),
               "website added: pending with a verification token", f"HTTP {status} status={site.get('status')}")
+    txt = (site.get("verification") or {}).get("dns_txt") or {}
+    rep.check(txt.get("name") == "_maya-verify.shop.example" and txt.get("value") == "maya-verify=" + token,
+              "DNS TXT ownership method shown (name and exact value)", f"{txt.get('name')}")
     status, _, data = b.post(f"/api/assets/{site.get('id')}/scan", {})
     rep.check(status == 409, "scan refused before ownership is verified", f"HTTP {status} {data.get('error')}")
     status, _, data = b.post("/api/assets", {"url": "http://127.0.0.1:8081"})
@@ -239,6 +242,33 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
                   f"{audit.get('count')} entries")
         st, _, raw = b.request("GET", "/api/usage")
         rep.check(st == 200 and json.loads(raw).get("runs") == 1, "token usage panel data", raw.decode()[:80])
+        # --- Web 9: heuristic score, re-scan + what changed, developer export ---
+        st, _, raw = b.request("GET", f"/api/runs/{run_id}")
+        full = json.loads(raw)
+        sb, sa = full.get("score") or {}, full.get("retest_score") or {}
+        rep.check(sb.get("grade") == "F" and sa.get("grade") == "A" and sb.get("label") == "heuristic score of the checks run",
+                  "heuristic score before/after re-test (demo F -> A)", f"{sb.get('score')} -> {sa.get('score')}")
+        st, _, raw = b.request("GET", f"/api/assets/{demo.get('id')}/diff")
+        rep.check(st == 409, "what changed: needs two completed scans", f"HTTP {st}")
+        status, _, data = b.post(f"/api/assets/{demo.get('id')}/scan", {})
+        rescan = (data.get("run") or {}).get("id")
+        for _ in range(300):
+            st, _, raw = b.request("GET", f"/api/runs/{rescan}")
+            if json.loads(raw)["run"]["status"] != "running":
+                break
+            time.sleep(0.1)
+        st, _, raw = b.request("GET", f"/api/assets/{demo.get('id')}/diff")
+        d = json.loads(raw) if st == 200 else {}
+        rep.check(st == 200 and d.get("from") == run_id and d.get("to") == rescan and
+                  d.get("counts", {}).get("resolved") == len(sev) and d.get("counts", {}).get("new") == 0,
+                  "re-scan, then what changed: every finding resolved", json.dumps(d.get("counts")))
+        st, hd, raw = b.request("GET", f"/api/runs/{run_id}/issues.md")
+        rep.check(st == 200 and raw.decode().count("\n## [") == len(sev) and b"fake-demo-key-not-real" not in raw
+                  and b"MAYA re-test of this check shows FIXED" in raw,
+                  "issues.md: one GitHub issue per finding, secrets masked", f"HTTP {st} {len(raw)} bytes")
+        st, hd, raw = b.request("GET", f"/api/runs/{run_id}/report-print.html")
+        rep.check(st == 200 and b"/static/report-print.css" in raw and b"<style" not in raw and
+                  "Content-Disposition" not in hd, "printable report (print CSS, no inline style)", f"HTTP {st}")
         # --- Web 5: downloads and the Quality panel ---
         st, hd, raw = b.request("GET", f"/api/runs/{run_id}/evidence.zip")
         with tempfile.TemporaryDirectory(prefix="maya-flow-pack-") as tmp:

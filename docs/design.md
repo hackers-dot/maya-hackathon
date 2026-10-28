@@ -344,6 +344,28 @@ See `src/models.py`:
 - **Evidence.** One evidence record holds the image hash prefix, size, type and the masked extraction (never pixels). The store's redaction masks long hex strings, so the pack also always gets `image/image_info.json` with the full SHA-256, size and type. The image file is added only if the user ticked "include image": it is held in memory with the run and deleted with "Delete my data". Attachments are hashed in the manifest and logged in the custody log (`attachment_included`).
 - **Report notes.** Fixed templates for a domain registrar and for a platform, with placeholders such as `[your business name]` and the image hash. `POST /api/runs/<id>/notes` drafts one with status DRAFT. Only `ApprovalGate.approve_note` with an approver name makes it READY (audited `note_approved`). There is no sending code anywhere; a test checks for mail libraries.
 
+### Web 9: scan diff, heuristic score, developer export, DNS TXT ownership
+
+- **What changed (`src/scan_diff.py`).** Two completed runs of the same asset are compared by finding id (check + location): new, resolved, unchanged, and severity changed (listed apart from unchanged, so every id is in exactly one list).
+  - `GET /api/assets/<id>/diff?from=&to=` defaults to the latest run against the one before. Another user's asset or run is 404; a run of a different asset is 400; with only one completed scan it is 409.
+  - The chat's scan history adds one line per run pair: "changes since the previous scan of this asset (run X): N new, M resolved, K unchanged, J severity change(s)".
+  - "Re-scan" is the same scan endpoint (same caps, one scan per user); when it finishes, the result view loads "What changed" by itself. There is no scheduler and no timer.
+- **Heuristic score (`src/score.py`).** Start at 100; subtract critical 30, high 15, medium 6, low 2, info 0 per finding; floor at 0. Grades: A >= 90, B >= 75, C >= 60, D >= 40, otherwise F.
+  - The label is always "heuristic score of the checks run" (a test checks it never says secure, safe or protected).
+  - Only completed website/demo scans get a score; uploads describe files, not a running site.
+  - Checks that did not run are listed beside the score, with the reason.
+  - The re-test panel shows before and after: the "after" score uses what the re-test still or newly saw (the demo goes from F to A).
+  - `GET /api/assets/<id>/history` gives the score history.
+- **Developer export (`src/issues.py`).**
+  - Per finding, "Copy as GitHub issue": a title plus a body with severity, check, location, finding id, OWASP "mapped to" label, the masked evidence line, the fixed fix text, the nginx/Apache/Python snippets, risk, rollback, and the acceptance criterion "MAYA re-test of this check shows FIXED".
+  - `GET /api/runs/<id>/issues.json` feeds the copy buttons; `issues.md` downloads all of them.
+  - Every value from a scan sits in a code span or fence longer than any backtick run inside it, so it cannot break the markdown, add links or @-mention anyone.
+  - `report-print.html` is the same report served for printing: it links `/static/report-print.css` (`@media print`) and `/static/print.js` (one `window.print()` button) instead of inline style or script, so it stays inside the CSP. "Save as PDF" is the browser's own; no PDF library.
+- **DNS TXT ownership (`ownership.verify_dns_txt`).** The third method next to the meta tag and the `/.well-known` file: TXT `_maya-verify.<domain>` must equal `maya-verify=<token>` (split TXT strings are joined; several records are fine; the comparison is constant-time).
+  - The lookup goes only through the existing DoH path (cloudflare-dns.com, GET, no redirects, 5 s). Loopback and numeric hosts are refused before any request.
+  - Success adds the host to `verified_targets.json` with method `dns_txt`, like the other methods.
+  - `POST /api/assets/<id>/verify-dns`; the connect card shows the exact record and says the domain name is sent to the DoH provider.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

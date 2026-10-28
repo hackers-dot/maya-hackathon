@@ -20,7 +20,7 @@ from src.web.chat import (CHAT_TOKEN_CAP, LABEL_UNVERIFIED, MAX_CHARS, MAX_TOKEN
 from src.web.auth import DEFAULT_DB, SESSION_TTL, Accounts, AuthError, RateLimited, Sessions
 from src.agent.tools import RUNNABLE_CHECKS
 from src.web.runs import (RunBusy, RunManager, checks_view, finding_status, findings_view, proposal_view,
-                          retest_view, run_view)
+                          retest_score, retest_view, run_score, run_view)
 
 ROOT = Path(__file__).resolve().parents[2]
 HOST = "127.0.0.1"
@@ -51,7 +51,7 @@ PAGES = {
     "/connect-website": ("connect-website.html", True),
     "/chat": ("chat.html", True),
 }
-ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|scan|reset-demo|disconnect)$")
+ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|verify-dns|scan|reset-demo|disconnect)$")
 RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest|approve-all|summarize|dns-check|notes)$")
 # path -> (asset kind, max body bytes, allowed extensions, allowed content types); raw body, never JSON
 UPLOADS = {
@@ -69,7 +69,9 @@ CHAT_SEND = re.compile(r"^/api/chats/([0-9a-f]{16})/messages$")
 APPROVE = re.compile(r"^/api/runs/([0-9a-f]{24})/proposals/(fix-[a-z_]{3,60})/approve$")
 AUDIT_ENTRIES_SHOWN = 12
 RUN_PATH = re.compile(r"^/api/runs/([0-9a-f]{24})(/trace)?$")
-RUN_FILE = re.compile(r"^/api/runs/([0-9a-f]{24})/(evidence\.zip|report\.html|report\.md)$")
+RUN_FILE = re.compile(r"^/api/runs/([0-9a-f]{24})/(evidence\.zip|report\.html|report\.md|issues\.md|issues\.json|"
+                      r"report-print\.html)$")
+ASSET_GET = re.compile(r"^/api/assets/([0-9a-f]{16})/(diff|history)$")
 # what the user has; only Website works now
 ASSETS = {"website": True, "webapp_api": False, "source_code": False, "server_tool": False, "mobile_desktop": False}
 
@@ -135,7 +137,19 @@ def _preview_extras(findings: list[dict]) -> dict:
          "hash": "7b13ce05a9f4"}]}
     usage = {"runs": 2, "model_runs": 1, "cap_per_run": 40000, "prompt_tokens": 8852, "completion_tokens": 913,
              "reasoning_tokens": 675, "total_tokens": 9765}
-    return {"proposals": proposals, "retest": retest, "audit": audit, "usage": usage}
+    # Web 9: heuristic score, re-test score, what changed (all from the real functions, on the sample findings)
+    from src.scan_diff import diff
+    from src.score import score
+    s = score(f["severity"] for f in findings)
+    s["checks_not_run"] = [{"check": c, "status": "not applicable (loopback demo)"}
+                           for c in ("missing_dmarc", "missing_spf", "weak_tls_or_expiring_cert")]
+    after = score(f["severity"] for f in findings[3:])
+    changes = diff(findings, findings[3:])
+    history = [f"2026-10-28 10:02 UTC: Grade {s['grade']} · {s['score']}/100, {len(findings)} finding(s); after re-test "
+               f"Grade {after['grade']} · {after['score']}/100",
+               f"2026-10-28 10:09 UTC: Grade {after['grade']} · {after['score']}/100, {len(findings) - 3} finding(s)"]
+    return {"proposals": proposals, "retest": retest, "audit": audit, "usage": usage, "score": s,
+            "retest_score": after, "diff": changes, "score_history": history}
 
 
 def _preview_sample() -> dict:
@@ -199,7 +213,9 @@ def _preview_sample() -> dict:
              "verification": {"token": "maya-verify-PREVIEWxSAMPLExTOKENx0000000000",
                               "meta_tag": '<meta name="maya-verify" content="maya-verify-PREVIEWxSAMPLExTOKENx0000000000">',
                               "file_path": "/.well-known/maya-verify.txt",
-                              "file_url": "https://shop.example/.well-known/maya-verify.txt"}},
+                              "file_url": "https://shop.example/.well-known/maya-verify.txt",
+                              "dns_txt": {"name": "_maya-verify.shop.example", "type": "TXT",
+                                          "value": "maya-verify=maya-verify-PREVIEWxSAMPLExTOKENx0000000000"}}},
         ],
         "running": {"run": {**run, "status": "running"}, "steps": steps[:3], "next": 3, "findings": findings[:3]},
         "finished": {"run": {**run, "status": "forced_final"}, "steps": steps, "next": 4, "findings": findings,
@@ -481,6 +497,12 @@ class WebHandler(BaseHTTPRequestHandler):
                 raise Reply(404, "not found")
             self._json(200, {"chat": chat, **self._chat_status(user)})
             return True
+        asset_m = ASSET_GET.match(path)
+        if asset_m:
+            if user is None:
+                raise Reply(401, "please sign in")
+            self._json(200, self._asset_get(user, asset_m.group(1), asset_m.group(2)))
+            return True
         file_m = RUN_FILE.match(path)
         if file_m:
             if user is None:
@@ -517,7 +539,48 @@ class WebHandler(BaseHTTPRequestHandler):
     def _run_full(self, run) -> dict:
         return {"run": run_view(run), "result": run.result,
                 "proposals": [proposal_view(p) for p in run.proposals.values()],
-                "retest": retest_view(run.retest) if run.retest else None}
+                "retest": retest_view(run.retest) if run.retest else None,
+                "score": run_score(run), "retest_score": retest_score(run)}
+
+    def _asset_get(self, user, asset_id: str, what: str):
+        """GET /api/assets/<id>/diff?from=&to= and /history. Another user's asset or run is "not found"."""
+        from urllib.parse import parse_qs
+        from src.scan_diff import diff
+        asset = self.app.assets.get(user["id"], asset_id)
+        if asset is None:
+            raise Reply(404, "not found")
+        runs = self.app.runs.runs_for_asset(user["id"], asset_id)
+        if what == "history":
+            return {"asset_id": asset_id, "runs": [
+                {"run": r.id, "date": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(r.started_at)),
+                 "findings": len(r.result["findings"]), "score": run_score(r), "retest_score": retest_score(r)}
+                for r in runs]}
+        q = parse_qs(urlsplit(self.path).query)
+        ids = {k: (q.get(k) or [None])[0] for k in ("from", "to")}
+        picked = {}
+        for k, rid in ids.items():
+            if rid is None:
+                continue
+            run = self.app.runs.get(user["id"], rid)  # another user's run is simply "not found"
+            if run is None:
+                raise Reply(404, "not found")
+            if run.asset_id != asset_id:
+                raise Reply(400, "both runs must be scans of this asset")
+            if not run.result or run.status == "running":
+                raise Reply(409, "that scan has not finished")
+            picked[k] = run
+        if "to" not in picked:
+            if not runs:
+                raise Reply(409, "this asset has no completed scan yet")
+            picked["to"] = runs[-1]
+        if "from" not in picked:
+            earlier = [r for r in runs if r.id != picked["to"].id and r.started_at <= picked["to"].started_at]
+            if not earlier:
+                raise Reply(409, "only one completed scan: run another scan to compare")
+            picked["from"] = earlier[-1]
+        d = diff(picked["from"].result["findings"], picked["to"].result["findings"])
+        return {"asset_id": asset_id, "from": picked["from"].id, "to": picked["to"].id, **d,
+                "score_from": run_score(picked["from"]), "score_to": run_score(picked["to"])}
 
     def _download(self, user, run, name: str):
         """Evidence pack zip (rebuilt and re-verified on every download) or the report from src/report.py."""
@@ -525,6 +588,16 @@ class WebHandler(BaseHTTPRequestHandler):
         from src.evidence_pack import PackError, build_pack, export_zip, verify_zip
         from src.report import build_report, to_html, to_markdown
         store = self._store()
+        if name in ("issues.md", "issues.json"):
+            from src.issues import issue, issues_md
+            asset = self.app.assets.get(user["id"], run.asset_id)
+            target = ("MAYA demo app (loopback)" if run.demo else asset["host"]) if asset else (run.base or "unknown")
+            findings = run.result["findings"]
+            if name == "issues.json":
+                return self._json(200, {"run": run.id, "issues": [issue(f, target) for f in findings]})
+            body = issues_md(run.id, findings, target).encode("utf-8")
+            return self._send(200, body, "text/markdown; charset=utf-8",
+                              {"Content-Disposition": f'attachment; filename="maya-{run.id[:8]}-issues.md"'})
         if name == "evidence.zip":
             try:
                 entries = self.app.gate(user["id"]).audit._entries()
@@ -548,6 +621,8 @@ class WebHandler(BaseHTTPRequestHandler):
         else:
             report = build_report(dict(run.findings), store, run.model, "low", run.result.get("usage") or {},
                                   run.claims, model_finished=bool(run.result.get("model_finished")))
+            if name == "report-print.html":  # opened in the browser (not a download) to print or save as PDF
+                return self._send(200, to_html(report, printable=True).encode("utf-8"), "text/html; charset=utf-8")
             if name == "report.html":
                 body, ctype = to_html(report).encode("utf-8"), "text/html; charset=utf-8"
             else:
@@ -816,9 +891,10 @@ class WebHandler(BaseHTTPRequestHandler):
         asset = self.app.assets.get(user["id"], asset_id)  # another user's asset is simply "not found"
         if asset is None:
             raise Reply(404, "not found")
-        if action == "verify":
+        if action in ("verify", "verify-dns"):
             asset = self.app.assets.verify(user["id"], asset_id, store=self._store(user),
-                                           transport=self.app.http_transport)
+                                           transport=self.app.http_transport,
+                                           method="dns" if action == "verify-dns" else "web")
             return 200, {"asset": public_asset(asset, self.app.runs.last_for_asset(user["id"], asset_id))}, None
         if action == "disconnect":
             if self.app.runs.active_for(user["id"]):

@@ -69,6 +69,9 @@ def history_context(history: list[dict]) -> list[str]:
         counts = ", ".join(f"{k} {v}" for k, v in h["statuses"].items()) or "no findings"
         lines.append(f"- run {h['run']} on {h['asset']}, {h['date']}: scan found {n} finding{'s' if n != 1 else ''}; "
                      f"later re-test: {h.get('retest', 'no re-test')} (statuses: {counts})")
+        if h.get("changes"):
+            lines.append(f"  changes since the previous scan of this asset (run {h['changes']['from']}): "
+                         f"{h['changes']['summary']}")
     latest = history[0]
     if latest["findings"] == 0:
         lines.append(f"{NO_ISSUES} (run {latest['run']} on {latest['asset']}).")
