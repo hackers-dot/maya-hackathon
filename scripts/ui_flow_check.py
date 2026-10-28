@@ -174,6 +174,13 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
         sev = [f["severity"] for f in result.get("findings", [])]
         rep.check(st == 200 and "critical" in sev and sev == sorted(sev, key=SEVERITY_ORDER.index),
                   "result findings, severity-sorted from the code table", f"{len(sev)} findings")
+        checks = {c["check"]: c["status"] for c in result.get("checks", [])}
+        na = sorted(c for c, v in checks.items() if v == "not applicable (loopback demo)")
+        rep.check(na == ["missing_dmarc", "missing_spf", "weak_tls_or_expiring_cert"] and
+                  checks.get("outdated_js_library") == "ran" and
+                  any(f["id"] == "outdated_js_library:/:jquery" for f in result.get("findings", [])),
+                  "checks ran vs not applicable (DNS/TLS on the loopback demo); old jQuery found",
+                  f"ran={sum(v == 'ran' for v in checks.values())} not_applicable={na}")
 
         # --- Web 3: fix proposals, approval gate, apply, re-test, audit ---
         full = json.loads(raw)
@@ -238,7 +245,7 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
         status, _, data = b.post(f"/api/assets/{demo.get('id')}/reset-demo", {})
         st, _, raw = b.request("GET", "/api/audit")
         audit = json.loads(raw)
-        rep.check(status == 200 and len(data.get("previous_fixes", [])) == 11 and audit.get("intact") and
+        rep.check(status == 200 and len(data.get("previous_fixes", [])) == 12 and audit.get("intact") and
                   audit["entries"][0]["event"] == "demo_reset", "reset demo app (audited as demo_reset)",
                   f"HTTP {status} previous_fixes={len(data.get('previous_fixes', []))}")
     else:

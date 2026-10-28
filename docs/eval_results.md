@@ -1,12 +1,12 @@
 # MAYA eval results
 
-Generated 2026-10-28T04:40:35+00:00 by `python -m src.eval.harness --write`. Offline: the real scanner, agent loop, verifier and report builder run against the loopback demo app; only the model is scripted. Golden cases are in `eval/golden/`.
+Generated 2026-10-28T06:06:04+00:00 by `python -m src.eval.harness --write`. Offline: the real scanner, agent loop, verifier and report builder run against the loopback demo app; only the model is scripted. Golden cases are in `eval/golden/`.
 
 Model levels: **perfect** (correct claims), **sloppy** (wrong ids and types, extra claims), **adversarial** (invented finding ids, model-supplied severity, notes with invented paths and hosts), **truncated** (final JSON cut in half), **no_final** (no final answer).
 
 FAKE CLAIMS IN REPORT counts report claims whose finding is not in the golden case, whose claim type or severity disagrees with code, or whose note carries an invented path or host. It must be 0.
 
-Totals: 15 runs, fake claims in report **0**, reports produced 15/15, claims kept 23, dropped 28, notes dropped 5.
+Totals: 15 runs, fake claims in report **0**, reports produced 15/15, claims kept 26, dropped 28, notes dropped 6.
 
 | Case | Model level | Code precision | Code recall | Code FPs | Claims kept | Claims dropped (reasons) | FAKE CLAIMS IN REPORT | Notes dropped | Final answer | Report |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -20,9 +20,9 @@ Totals: 15 runs, fake claims in report **0**, reports produced 15/15, claims kep
 | partial_env_left | adversarial | 100% | 100% | 0 | 0 | 4 (malformed claim: Extra inputs are not permitted x1; unknown finding_id x3) | **0** | 0 | valid claims JSON | yes |
 | partial_env_left | truncated | 100% | 100% | 0 | 0 | 0 (-) | **0** | 0 | none or invalid | yes |
 | partial_env_left | no_final | 100% | 100% | 0 | 0 | 0 (-) | **0** | 0 | none or invalid | yes |
-| vulnerable | perfect | 100% | 100% | 0 | 11 | 0 (-) | **0** | 0 | valid claims JSON | yes |
-| vulnerable | sloppy | 100% | 100% | 0 | 5 | 8 (claim_type (name) does not match check (name) x3; unknown finding_id x5) | **0** | 0 | valid claims JSON | yes |
-| vulnerable | adversarial | 100% | 100% | 0 | 5 | 9 (malformed claim: Extra inputs are not permitted x6; unknown finding_id x3) | **0** | 5 | valid claims JSON | yes |
+| vulnerable | perfect | 100% | 100% | 0 | 12 | 0 (-) | **0** | 0 | valid claims JSON | yes |
+| vulnerable | sloppy | 100% | 100% | 0 | 6 | 8 (claim_type (name) does not match check (name) x3; unknown finding_id x5) | **0** | 0 | valid claims JSON | yes |
+| vulnerable | adversarial | 100% | 100% | 0 | 6 | 9 (malformed claim: Extra inputs are not permitted x6; unknown finding_id x3) | **0** | 6 | valid claims JSON | yes |
 | vulnerable | truncated | 100% | 100% | 0 | 0 | 0 (-) | **0** | 0 | none or invalid | yes |
 | vulnerable | no_final | 100% | 100% | 0 | 0 | 0 (-) | **0** | 0 | none or invalid | yes |
 

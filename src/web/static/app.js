@@ -602,6 +602,7 @@
       li.appendChild(note);
       list.appendChild(li);
     }
+    renderChecks(result.checks);
     const noClaims = !(result.claims || []).length;
     show("claims-empty", noClaims);
     setText("claims-empty", run.mode === "model"
@@ -616,6 +617,29 @@
       dropped.appendChild(li);
     }
     if (!(result.dropped || []).length) dropped.appendChild(el("li", "muted", "None."));
+  }
+
+  // which checks ran, and which do not apply to this target (e.g. DNS/TLS on the loopback demo app)
+  function renderChecks(checks) {
+    const list = $("checks-list");
+    if (!list) return;
+    clear(list);
+    const items = checks || [];
+    const ran = items.filter((c) => c.status === "ran").map((c) => c.check);
+    setText("checks-summary", items.length
+      ? "Ran " + ran.length + " of " + items.length + " checks." : "No check list for this run.");
+    if (ran.length) {
+      const li = el("li");
+      li.appendChild(el("strong", "", "Ran: "));
+      li.appendChild(el("span", "", ran.join(", ")));
+      list.appendChild(li);
+    }
+    for (const c of items.filter((x) => x.status !== "ran")) {
+      const li = el("li");
+      li.appendChild(el("code", "", c.check));
+      li.appendChild(el("span", "muted", " " + c.status));
+      list.appendChild(li);
+    }
   }
 
   function resetRunPanels() {

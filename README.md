@@ -60,6 +60,12 @@ All code in this repository was written during the Meta Global AI Developer Hack
   - The chat sees your last 3 scans. After a clean re-scan it says "no issues detected in the checks run" and names the issues that were fixed and re-tested, instead of claiming nothing was scanned.
   - Evidence packs for the demo app are always marked DEMO, even when a scan found nothing, and an empty pack's README says "No issues detected in the checks run."
   - `scripts/demo_prepare.py --reset` prints the exact click order for a demo.
+- **2026-10-28 (Web 6):** Chat accuracy, DNS and TLS checks, outdated JS libraries.
+  - The chat sees, for each scan, "scan found N findings; later re-test: all fixed / M still open / no re-test", and is told never to say a scan found nothing when it found issues.
+  - SPF and DMARC checks now run for verified (non-loopback) domains. **Privacy note:** MAYA looks up your domain's TXT records through a public DNS-over-HTTPS resolver (cloudflare-dns.com), so your domain name is sent to that provider. Nothing about the loopback demo app is sent.
+  - A TLS check for verified https sites connects only to port 443 of that host and reports a certificate expiring within 14 days (high) or 30 days (medium), and protocols below TLS 1.2 (medium).
+  - Outdated JavaScript libraries: `<script src>` names are compared to a short example table and reported as "appears outdated". The demo app now loads an old jQuery, so a scan of it finds 12 issues; the live eval above was measured before this change (11).
+  - The result view lists which checks ran and which are "not applicable for this target".
 
 ## License
 

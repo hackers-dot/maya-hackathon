@@ -105,18 +105,20 @@ NOT_RUNNABLE = ["missing_spf", "missing_dmarc", "weak_tls_or_expiring_cert"]
 
 
 @pytest.mark.parametrize("check_id", NOT_RUNNABLE)
-def test_non_http_checks_not_offered_and_rejected(env, check_id):
+def test_dns_tls_checks_not_offered_on_loopback_and_rejected(env, check_id):
     registry, _, requests = env
     enum = TOOL_SPECS[0]["function"]["parameters"]["properties"]["check_id"]["enum"]
     assert check_id not in enum and check_id not in RUNNABLE_CHECKS
     assert check_id in TABLE  # still in the severity table
     out = registry.call("run_check", json.dumps({"check_id": check_id, "path": "/"}))
-    assert out["error"] == f"rejected: check_id not available: {check_id!r}" and requests == []
+    assert out["error"] == f"rejected: {check_id}: not applicable (loopback demo)" and requests == []
 
 
 def test_enum_and_prompt_list_exactly_the_runnable_checks():
     enum = TOOL_SPECS[0]["function"]["parameters"]["properties"]["check_id"]["enum"]
-    assert enum == RUNNABLE_CHECKS and len(enum) == 12 and set(enum) == set(TABLE) - set(NOT_RUNNABLE)
+    tls_findings = {"cert_expires_within_14_days", "cert_expires_within_30_days", "tls_protocol_below_1_2"}
+    assert enum == RUNNABLE_CHECKS and len(enum) == 13
+    assert set(enum) == set(TABLE) - set(NOT_RUNNABLE) - tls_findings
     listed = SYSTEM_PROMPT.split("The runnable checks are exactly: ")[1].split(". ")[0]
     assert listed.split(", ") == RUNNABLE_CHECKS
     assert not any(c in SYSTEM_PROMPT for c in NOT_RUNNABLE)
@@ -209,13 +211,13 @@ def test_default_max_steps_is_8(env):
 
 def test_final_requested_once_all_checks_attempted(env):
     registry, budget, _ = env
-    batches = [RUNNABLE_CHECKS[i:i + 4] for i in range(0, 12, 4)]
+    batches = [RUNNABLE_CHECKS[i:i + 4] for i in range(0, 13, 4)]
     provider = MockProvider(script=[
         tool_reply(*[call("run_check", {"check_id": c, "path": "/"}, cid=c) for c in batch]) for batch in batches
     ] + [final_reply([])])
-    result = run_agent(provider, registry, budget, "go")  # max_steps 8, but all 12 checks done after step 3
+    result = run_agent(provider, registry, budget, "go")  # max_steps 8, but all 13 checks done after step 4
     assert registry.all_checks_attempted()
-    assert [c["tool_choice"] for c in provider.calls] == ["auto", "auto", "auto", "none"]
+    assert [c["tool_choice"] for c in provider.calls] == ["auto", "auto", "auto", "auto", "none"]
     assert result.stop_reason == "forced_final" and result.final_answer_valid
 
 

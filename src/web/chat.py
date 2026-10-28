@@ -44,7 +44,10 @@ SYSTEM_PROMPT = (
     "the fix was applied but not yet confirmed by a re-test. DETECTED means no fix has been applied yet.\n"
     "6. If a SCAN HISTORY is listed, MAYA has scanned the user's site: never say that no scan was done. If the "
     "latest scan found no issues, say \"no issues detected in the checks run\" (never that the site is secure or "
-    "safe), and mention earlier findings that were fixed and re-tested, citing their ids."
+    "safe), and mention earlier findings that were fixed and re-tested, citing their ids.\n"
+    "7. Never say a scan found nothing if the history says it found N > 0 findings. Describe the scan result "
+    "and the later re-test outcome separately, e.g. \"the scan found 12 findings; a later re-test showed all of "
+    "them fixed\"."
 )
 
 
@@ -62,8 +65,10 @@ def history_context(history: list[dict]) -> list[str]:
     """history: newest first, from RunManager.history_for_user."""
     lines = ["SCAN HISTORY (newest first; MAYA has scanned this user's site):"]
     for h in history:
+        n = h["findings"]
         counts = ", ".join(f"{k} {v}" for k, v in h["statuses"].items()) or "no findings"
-        lines.append(f"- run {h['run']} on {h['asset']}, {h['date']}: {h['findings']} finding(s) ({counts})")
+        lines.append(f"- run {h['run']} on {h['asset']}, {h['date']}: scan found {n} finding{'s' if n != 1 else ''}; "
+                     f"later re-test: {h.get('retest', 'no re-test')} (statuses: {counts})")
     latest = history[0]
     if latest["findings"] == 0:
         lines.append(f"{NO_ISSUES} (run {latest['run']} on {latest['asset']}).")
@@ -98,7 +103,7 @@ def findings_context(items: list[dict], history: list[dict] | None = None) -> st
 
 # a sentence ends at . ! ? followed by whitespace, or at a line break (so "/.env" is not a sentence end)
 SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\n+")
-CITATION = re.compile(r"\[([a-z_]+:[^\]\s]*)\]")
+CITATION = re.compile(r"\[([a-z_]+:[^\]\n]*)\]")  # DNS ids contain a space: [missing_spf:TXT shop.example]
 
 
 def label_reply(text: str, known_ids: set[str]) -> dict:

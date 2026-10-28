@@ -32,6 +32,10 @@ OWASP = {  # check -> (code, name); None = outside the OWASP Top 10
     "weak_tls_or_expiring_cert": ("A02:2021", "Cryptographic Failures"),
     "missing_spf": None,
     "missing_dmarc": None,
+    "cert_expires_within_14_days": ("A02:2021", "Cryptographic Failures"),
+    "cert_expires_within_30_days": ("A02:2021", "Cryptographic Failures"),
+    "tls_protocol_below_1_2": ("A02:2021", "Cryptographic Failures"),
+    "outdated_js_library": ("A06:2021", "Vulnerable and Outdated Components"),  # the official category name
 }
 
 
@@ -136,6 +140,30 @@ TEXT = {
         "Like a post office with no rule for letters that carry a forged return address.",
         "There is no valid `v=DMARC1` record with a `p=` policy at `_dmarc`.",
         "Publish a DMARC record, start with `p=none`, then tighten to `quarantine` or `reject`."),
+    "cert_expires_within_14_days": Text(
+        "TLS certificate expires within 14 days",
+        "The certificate that protects the site expires very soon (or already has); browsers will then warn visitors.",
+        "Like an ID card that runs out next week.",
+        "The certificate's `notAfter` date is less than 14 days away.",
+        "Renew the certificate now and turn on automatic renewal."),
+    "cert_expires_within_30_days": Text(
+        "TLS certificate expires within 30 days",
+        "The certificate that protects the site expires within a month.",
+        "Like an ID card that runs out this month.",
+        "The certificate's `notAfter` date is less than 30 days away.",
+        "Renew the certificate and turn on automatic renewal."),
+    "tls_protocol_below_1_2": Text(
+        "TLS version below 1.2 accepted",
+        "The server still agrees to an old encryption protocol version.",
+        "Like a bank that still accepts an old, easily copied style of signature.",
+        "The handshake negotiated a protocol older than `TLSv1.2`.",
+        "Allow only TLS 1.2 and 1.3 (`ssl_protocols TLSv1.2 TLSv1.3;`)."),
+    "outdated_js_library": Text(
+        "JavaScript library appears outdated",
+        "The page loads an old release of a JavaScript library; old releases often have publicly documented issues.",
+        "Like running last decade's version of an app that has had many updates since.",
+        "A `<script src>` names a library version older than MAYA's short reference table.",
+        "Update the library to a current release and test the pages that use it."),
 }
 
 DEMO_BANNER = "DEMO: findings below come from MAYA's deliberately vulnerable demo app on loopback, not a real site."

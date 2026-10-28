@@ -6,9 +6,12 @@ HTTP check runs in a fixed order and nothing is generated. Both stream steps int
 findings into run.findings, which the trace endpoint reads while the run is in progress.
 """
 import secrets
+import ssl
 import threading
 import time
 from dataclasses import dataclass, field
+
+import httpx
 
 from src.agent.loop import run_agent
 from src.agent.tools import ToolRegistry
@@ -19,7 +22,8 @@ from src.provider import ProviderError
 from src.fixes import build_proposals
 from src.report import TEXT, owasp_label
 from src.scanner.http_client import HttpClient
-from src.scanner.runner import FULL_SCAN
+from src.scanner.checks_dns import DnsUnavailable
+from src.scanner.runner import ALL_CHECKS, FULL_SCAN, NET_CHECKS, NotRunnable, not_applicable, run_check
 from src.severity import rule
 
 MAX_STEPS = 6
@@ -148,7 +152,8 @@ class RunManager:
             out.append({"run": r.id, "asset": labels[r.asset_id], "findings": len(statuses),
                         "date": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(r.started_at)),
                         "statuses": {k: v for k, v in counts.items() if v},
-                        "fixed_ids": sorted(i for i, s in statuses.items() if s == "FIXED")})
+                        "fixed_ids": sorted(i for i, s in statuses.items() if s == "FIXED"),
+                        "retest": retest_outcome(r)})
         return out
 
     def usage_for(self, user_id: int) -> dict:
@@ -204,6 +209,7 @@ class RunManager:
             "order_note": claims.get("order_note", ""),
             "dropped": [{"finding_id": d.get("finding_id"), "reason": d["reason"]} for d in claims["insufficient"]],
             "usage": dict(budget.run), "model_finished": result.final_answer_valid, "stop_reason": result.stop_reason,
+            "checks": checks_view(base, registry.attempted_checks),
         }
         return {"final": "finished", "forced_final": "forced_final"}.get(result.stop_reason, result.stop_reason)
 
@@ -220,11 +226,53 @@ class RunManager:
                               "result_summary": f"{len(found)} finding(s)",
                               "tokens": {"prompt": 0, "completion": 0, "reasoning": 0},
                               "latency": round(time.perf_counter() - t0, 3)})
+        errors = {}
+        for check in NET_CHECKS:  # DNS / TLS: only for a verified non-loopback target
+            reason = not_applicable(check, base)
+            t0 = time.perf_counter()
+            if reason:
+                summary = reason
+            else:
+                try:
+                    found = run_check(client, base, check, "/")
+                    for f in found:
+                        run.findings[f.id] = f
+                    summary = f"{len(found)} finding(s)"
+                except (NotRunnable, DnsUnavailable, httpx.HTTPError, ssl.SSLError, OSError) as e:
+                    errors[check] = type(e).__name__
+                    summary = f"could not run: {type(e).__name__}"
+            run.trace.append({"step": len(run.trace) + 1, "tool": "deterministic check", "args": check,
+                              "result_summary": summary, "tokens": {"prompt": 0, "completion": 0, "reasoning": 0},
+                              "latency": round(time.perf_counter() - t0, 3)})
         run.result = {"findings": findings_view(run.findings, store), "claims": [], "order_note": "",
                       "dropped": [], "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
                                                "reasoning_tokens": 0},
-                      "model_finished": False, "stop_reason": "deterministic"}
+                      "model_finished": False, "stop_reason": "deterministic",
+                      "checks": checks_view(base, set(ALL_CHECKS) - set(errors), errors)}
         return "finished"
+
+
+def retest_outcome(run: Run) -> str:
+    """The later re-test of this run, in words: "all fixed", "M still open" or "no re-test"."""
+    if not run.retest:
+        return "no re-test"
+    still = len(run.retest["still_present"])
+    return "all fixed" if still == 0 else f"{still} still open"
+
+
+def checks_view(base: str, attempted, errors: dict | None = None) -> list[dict]:
+    """Per check: "ran", "could not run: ...", "not run", or why it does not apply to this target."""
+    out = []
+    for c in ALL_CHECKS:
+        reason = not_applicable(c, base)
+        if reason:
+            status = reason
+        elif c in (errors or {}):
+            status = f"could not run: {errors[c]}"
+        else:
+            status = "ran" if c in attempted else "not run"
+        out.append({"check": c, "status": status})
+    return out
 
 
 def run_view(run: Run) -> dict:

@@ -55,7 +55,7 @@ PLAN = [("exposed_env_file", "/.env"), ("exposed_git_dir", "/.git/HEAD"), ("expo
         ("directory_listing", "/backup/"), ("cookie_missing_secure", "/"), ("cookie_missing_httponly", "/"),
         ("cookie_missing_samesite", "/"), ("missing_csp", "/"), ("missing_hsts", "/"),
         ("missing_x_frame_options", "/"), ("missing_x_content_type_options", "/"),
-        ("server_version_disclosure", "/")]
+        ("server_version_disclosure", "/"), ("outdated_js_library", "/")]
 # text the adversarial model plants in notes; none of it may ever reach a report
 PLANTED = ["/admin/backup.tar", "cdn.evil.example"]
 INVENTED_IDS = [("sql_injection:/login", "header_missing"), ("exposed_env_file:/admin/.env", "file_exposed"),

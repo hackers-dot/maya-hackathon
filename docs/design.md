@@ -42,7 +42,7 @@ Starts the demo app on a free loopback port (`--fixed` for fixed mode) and runs 
 
 ## Single egress point: `src/scanner/http_client.py`
 
-`HttpClient` is the ONLY code that makes outbound HTTP for scanning. It enforces:
+`HttpClient` is the ONLY code that makes outbound HTTP requests to a scan target. (Since Web 6, two narrow, scope-checked exceptions exist for verified non-loopback targets only: the DNS-over-HTTPS lookup to one fixed resolver, and one TLS handshake with the target's own port 443. See "Web 6".) It enforces:
 - `scope.check(url)` before every request, **including every redirect hop**. Redirects are followed manually (max 5), so a redirect to an out-of-scope host is refused before it is requested.
 - Only GET and HEAD. Any other method raises `MethodNotAllowed` before anything is sent.
 - 5 s timeout, at most 1 request per 0.2 s, a fixed User-Agent `MAYA-scanner/0.1 (authorized security check)`.
@@ -294,6 +294,16 @@ See `src/models.py`:
 - **Chat scan history.** The chat context lists the user's last 3 completed scans (run id, UTC date, findings count, status counts). If the latest scan found nothing, it says "latest scan: no issues detected in the checks run" and lists the earlier runs' FIXED finding ids. Those ids also count as known citations for reply labels. System prompt rule 6: when a history is listed, never say no scan was done, and never call the site secure. With no scans at all, the context is unchanged ("none … has not scanned"). "Latest" breaks ties in `started_at` by start order.
 - **Pack demo marker from the asset.** `build_pack(demo=...)` is set from the run's asset (the loopback demo app), so a run with 0 findings is still marked DEMO. With no findings, README.txt says "No issues detected in the checks run."
 - **`scripts/demo_prepare.py --reset`** prints the demo click order (reset, scan, approve all, apply, re-test, download pack, chat question). It only prints.
+
+### Web 6: chat accuracy, DNS and TLS checks, JS libraries
+
+- **Chat accuracy.** Each scan-history line now reads "scan found N findings; later re-test: all fixed / M still open / no re-test", plus the status counts. Prompt rule 7: never say a scan found nothing when it found N > 0, and describe the re-test outcome separately. Chat citations may contain a space, so DNS ids such as `[missing_spf:TXT shop.example]` count as citations.
+- **Which checks apply.** `runner.not_applicable(check, base)` returns "not applicable (loopback demo)" for the DNS and TLS checks on loopback, and "not applicable (target is not HTTPS)" for TLS on an http target. `runnable_checks(base)` is what the agent sees: `ToolRegistry` builds its tool enum and `system_prompt(runnable)` per target, so DNS and TLS are offered to the model only for a verified non-loopback target. Every result carries `checks` (ran / not run / could not run / not applicable), which the result view lists under "Checks".
+- **SPF / DMARC (`checks_dns.run_dns_check`).** The scope guard must accept the domain (verified) and it must not be loopback, before any request. Then a GET to `https://cloudflare-dns.com/dns-query?name=<domain>&type=TXT` (and `_dmarc.<domain>`) with `accept: application/dns-json`, a 5 s timeout, no redirects and `trust_env=False`. The raw JSON answer is stored (redacted) as the evidence record. The existing pure parsers decide; severity comes from the table. **The domain name is sent to that DNS-over-HTTPS provider**, which the connect page and README say. If the lookup fails, the check "could not run" (no finding is invented).
+- **TLS (`checks_tls`).** `scope.check_target` runs before any socket. One handshake with port 443 of the verified host reads the certificate without trusting it (an expired or self-signed certificate must still be readable), then the connection closes. Findings get their own table rows so severity stays a fixed lookup: `cert_expires_within_14_days` (high; also already expired), `cert_expires_within_30_days` (medium), `tls_protocol_below_1_2` (medium). Evidence: not_after, protocol and issuer, stored as a record. The verifier re-judges the claim against the record's capture time.
+- **Outdated JS libraries (`checks_js`).** `<script src>` names such as `jquery-1.12.4.min.js`, `jquery@1.12.4/...` or `.../jquery/1.12.4/...` are compared to a SHORT EXAMPLE table (`OLD_BEFORE`). Wording is always "appears outdated". Severity medium, OWASP mapped to A06:2021 (its official category name). Proposal kind "dependency update". The demo app's homepage now loads `jquery-1.12.4.min.js`, and its `outdated_js_library` fix switches it to `jquery-3.7.1.min.js`, so the vulnerable demo has 12 findings.
+- **Re-test.** It re-runs the check that produced each finding (TLS findings re-run the TLS check). A check that cannot run now keeps its findings "still present": nothing is called fixed without proof.
+- **Tests without outbound network.** DoH answers come from `httpx.MockTransport`. TLS runs against a loopback TLS server with certificates made by the `openssl` command line at test time (tests skip if it is not installed), including a real TLS 1.1 handshake.
 
 ## Model provider
 

@@ -10,10 +10,10 @@ START = ".venv\\Scripts\\python scripts\\run_web.py   then open http://127.0.0.1
 RESET = ('Sidebar: click "Demo app (loopback)", then "Reset demo app" (top right). It restores YOUR demo app to the '
          'vulnerable state and writes "demo_reset" to your audit log. Refused while a scan is running.')
 STEPS = [
-    'Click "Run security scan" and watch the live trace until the status chip says finished (11 findings).',
+    'Click "Run security scan" and watch the live trace until the status chip says finished (12 findings).',
     'Fix proposals: type your name in "Approver name", click "Approve all" (each approval is audited).',
     'Click "Apply approved fixes" (loopback demo app only; health check with automatic rollback).',
-    'Click "Re-test": the before/after panel shows FIXED, 11 resolved.',
+    'Click "Re-test": the before/after panel shows FIXED, 12 resolved.',
     'Downloads: click "Download evidence pack" (re-verified before download), optionally "Download report".',
     'Click "+ New chat" and ask: "Which issues did MAYA find on my demo app, and are they fixed now?" '
     "(needs a model key; the answer should say FIXED and cite finding ids).",

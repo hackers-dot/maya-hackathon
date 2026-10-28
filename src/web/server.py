@@ -18,8 +18,9 @@ from src.web.assets import AssetError, Assets, public_asset
 from src.web.chat import (CHAT_TOKEN_CAP, LABEL_UNVERIFIED, MAX_CHARS, MAX_TOKENS, ChatError, ChatStore,
                           build_messages, clean_user_text, findings_context, known_ids, label_reply)
 from src.web.auth import DEFAULT_DB, SESSION_TTL, Accounts, AuthError, RateLimited, Sessions
-from src.web.runs import (RunBusy, RunManager, finding_status, findings_view, proposal_view, retest_view,
-                          run_view)
+from src.agent.tools import RUNNABLE_CHECKS
+from src.web.runs import (RunBusy, RunManager, checks_view, finding_status, findings_view, proposal_view,
+                          retest_view, run_view)
 
 ROOT = Path(__file__).resolve().parents[2]
 HOST = "127.0.0.1"
@@ -206,7 +207,9 @@ def _preview_sample() -> dict:
                                 "dropped": [{"finding_id": "exposed_git_dir:/.git/HEAD", "reason": "unknown finding_id"}],
                                 "usage": {"prompt_tokens": 8852, "completion_tokens": 913, "reasoning_tokens": 675,
                                           "total_tokens": 9765},
-                                "model_finished": True, "stop_reason": "forced_final"}},
+                                "model_finished": True, "stop_reason": "forced_final",
+                                "checks": checks_view("http://127.0.0.1:8081",
+                                                      set(RUNNABLE_CHECKS) - {"exposed_git_dir"})}},
     }
 
 

@@ -88,7 +88,7 @@ def test_result_has_fixed_template_details_and_proposals(web):
     c = company_user(web["new_client"](), "a@shop.example")
     run_id, body = demo_run(c)
     findings = body["result"]["findings"]
-    assert len(findings) == 11
+    assert len(findings) == 12
     for f in findings:
         for key in ("plain", "analogy", "technical", "fix", "owasp"):
             assert f[key], (f["id"], key)
@@ -157,7 +157,7 @@ def test_full_fix_flow_then_retest_fixed(web):
     assert audit["intact"] is True
     events = [e["event"] for e in reversed(audit["entries"])]
     assert events[-3:] == ["applied", "health_ok", "retested"] and events.count("approved") == 9  # last 12 shown
-    assert audit["count"] == 11 + 3
+    assert audit["count"] == 12 + 3
 
 
 def test_retest_still_present_when_one_fix_is_held_back(web):
@@ -189,7 +189,7 @@ def test_each_user_has_their_own_demo_app(web):
     approve_all(a, run_a, body_a["proposals"])
     post(a, f"/api/runs/{run_a}/apply")
     _, body_b = demo_run(b)  # Bob's demo app is still vulnerable: Alice's fixes never reach it
-    assert len(body_b["result"]["findings"]) == 11
+    assert len(body_b["result"]["findings"]) == 12
     assert web["server"].app.demo_port(1) != web["server"].app.demo_port(2)
 
 
@@ -283,19 +283,19 @@ def test_reset_demo_restores_the_vulnerable_app(web):
     asset = demo_asset(c)
     run_id, body = finished_run(c, asset["id"])
     original = {f["id"] for f in body["result"]["findings"]}
-    assert len(original) == 11
+    assert len(original) == 12
     approve_all(c, run_id, body["proposals"])
     assert post(c, f"/api/runs/{run_id}/apply").status_code == 200
     assert post(c, f"/api/runs/{run_id}/retest").json()["retest"]["status"] == "FIXED"
     _, fixed = finished_run(c, asset["id"])
     assert fixed["result"]["findings"] == []  # fixes are on
     r = post(c, f"/api/assets/{asset['id']}/reset-demo")
-    assert r.status_code == 200 and r.json()["reset"] is True and len(r.json()["previous_fixes"]) == 11
+    assert r.status_code == 200 and r.json()["reset"] is True and len(r.json()["previous_fixes"]) == 12
     audit = c.get("/api/audit").json()
     assert audit["intact"] and audit["entries"][0]["event"] == "demo_reset"
-    assert len(audit["entries"][0]["details"]["previous_fixes"]) == 11
+    assert len(audit["entries"][0]["details"]["previous_fixes"]) == 12
     _, again = finished_run(c, asset["id"])
-    assert {f["id"] for f in again["result"]["findings"]} == original  # the original 11 issues are back
+    assert {f["id"] for f in again["result"]["findings"]} == original  # the original 12 issues are back
 
 
 def test_reset_demo_touches_only_this_users_demo_app(web):

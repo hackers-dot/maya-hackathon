@@ -50,6 +50,7 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("proposals", "/__preview/chat.html?view=finished&scroll=proposals-panel"),
     ("retest-audit", "/__preview/chat.html?view=finished&scroll=retest-panel"),
     ("downloads", "/__preview/chat.html?view=finished&scroll=downloads-panel"),
+    ("checks", "/__preview/chat.html?view=finished&scroll=checks-heading"),
     ("quality", "/__preview/chat.html?view=finished&scroll=quality-panel"),
     ("chat", "/__preview/chat.html?view=chat"),
     ("chat-nokey", "/__preview/chat.html?view=chat-nokey"),

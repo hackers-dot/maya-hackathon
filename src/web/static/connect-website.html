@@ -42,5 +42,6 @@
 <p id="message" class="message" role="status"></p>
 </main>
 <p class="footnote">MAYA runs read-only checks on sites you own. Nothing changes without your approval.</p>
+<p class="footnote">For the email checks (SPF and DMARC), MAYA looks up your domain's TXT records through a public DNS-over-HTTPS resolver (cloudflare-dns.com), so your domain name is sent to that provider. The TLS check connects only to port 443 of your own verified host.</p>
 </body>
 </html>

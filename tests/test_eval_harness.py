@@ -19,7 +19,7 @@ def rows(summary, case=None, level=None):
 def test_golden_cases_cover_three_states():
     cases = {c["name"]: c for c in load_cases()}
     assert set(cases) == {"vulnerable", "fixed", "partial_env_left"}
-    assert len(cases["vulnerable"]["expected"]) == 11 and cases["fixed"]["expected"] == []
+    assert len(cases["vulnerable"]["expected"]) == 12 and cases["fixed"]["expected"] == []
     assert cases["partial_env_left"]["expected"] == ["exposed_env_file:/.env"]
 
 
@@ -40,7 +40,7 @@ def test_code_findings_match_golden(summary):
 
 def test_levels_behave_as_designed(summary):
     perfect = rows(summary, "vulnerable", "perfect")[0]
-    assert perfect["claims"] == {"kept": 11, "dropped": 0, "drop_reasons": {}} and perfect["model_finished"]
+    assert perfect["claims"] == {"kept": 12, "dropped": 0, "drop_reasons": {}} and perfect["model_finished"]
     sloppy = rows(summary, "vulnerable", "sloppy")[0]["claims"]
     assert sloppy["dropped"] > 0 and "unknown finding_id" in sloppy["drop_reasons"]
     assert any(k.startswith("claim_type") for k in sloppy["drop_reasons"])
@@ -104,7 +104,7 @@ def test_eval_live_dry_run_never_writes_live_numbers(summary, tmp_path, capsys):
     live.write_doc([row], "model-x", doc, js)
     text = doc.read_text(encoding="utf-8")
     live_part = text.split("## Live runs")[1]
-    assert NOT_MEASURED not in live_part and "model `model-x`" in live_part and "| 1 | 11 | 11 | 0 | **0** |" in live_part
+    assert NOT_MEASURED not in live_part and "model `model-x`" in live_part and "| 1 | 12 | 12 | 0 | **0** |" in live_part
     data = json.loads(js.read_text(encoding="utf-8"))["live"]
     assert data["status"] == "measured" and data["measured"][0]["model"] == "model-x"
 

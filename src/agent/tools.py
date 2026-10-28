@@ -9,13 +9,16 @@ from src.agent.verifier import evidence_line
 from src.evidence import EvidenceStore, redact_text
 from src.models import Finding
 from src.scanner.http_client import HttpClient
-from src.scanner.runner import HTTP_CHECKS, NotRunnable, run_check
+import ssl
+
+from src.scanner.checks_dns import DnsUnavailable
+from src.scanner.runner import ALL_CHECKS, HTTP_CHECKS, NotRunnable, not_applicable, run_check, runnable_checks
 from src.scope import OutOfScope
 
 log = logging.getLogger("maya.agent.tools")
 
-# Only checks that can actually run over HTTP are offered. DNS/TLS checks stay in the severity table
-# (src/severity.py) but are hidden from the model until they are runnable.
+# Checks offered to the model depend on the target: HTTP checks always; DNS (SPF/DMARC) and TLS only for a
+# verified non-loopback target (see runner.not_applicable). RUNNABLE_CHECKS is the loopback demo app's list.
 RUNNABLE_CHECKS = sorted(HTTP_CHECKS)
 MAX_GET_EVIDENCE = 2
 # must start with a single "/", no scheme/host, no "..", no "@", "\" or "#", no whitespace
@@ -25,13 +28,14 @@ DEFERRED_MESSAGE = "deferred: per-step limit reached, call again next step"
 EVIDENCE_LIMIT_MESSAGE = (f"limit reached: get_evidence is capped at {MAX_GET_EVIDENCE} calls per run; "
                           "use the evidence summary returned by run_check")
 
-TOOL_SPECS = [
+def tool_specs(runnable: list[str]) -> list[dict]:
+    return [
     {"type": "function", "function": {
         "name": "run_check",
         "description": "Run one MAYA security check against a path on the target. Returns the findings code "
                        "detected, each with a one-line evidence summary.",
         "parameters": {"type": "object", "properties": {
-            "check_id": {"type": "string", "enum": RUNNABLE_CHECKS},
+            "check_id": {"type": "string", "enum": list(runnable)},
             "path": {"type": "string", "description": "URL path starting with /, e.g. /login"},
         }, "required": ["check_id", "path"], "additionalProperties": False},
     }},
@@ -47,7 +51,10 @@ TOOL_SPECS = [
         "parameters": {"type": "object", "properties": {"id": {"type": "string"}},
                        "required": ["id"], "additionalProperties": False},
     }},
-]
+    ]
+
+
+TOOL_SPECS = tool_specs(RUNNABLE_CHECKS)
 ARG_KEYS = {s["function"]["name"]: set(s["function"]["parameters"]["properties"]) for s in TOOL_SPECS}
 
 
@@ -58,6 +65,8 @@ class ToolError(ValueError):
 class ToolRegistry:
     def __init__(self, client: HttpClient, base_url: str, store: EvidenceStore):
         self.client, self.base_url, self.store = client, base_url, store
+        self.runnable = runnable_checks(base_url)  # per target: DNS/TLS only for verified non-loopback hosts
+        self.tool_specs = tool_specs(self.runnable)
         self.findings: dict[str, Finding] = {}
         self.attempted_checks: set[str] = set()
         self.evidence_calls = 0
@@ -67,7 +76,7 @@ class ToolRegistry:
         assert set(self._handlers) == set(ARG_KEYS)  # allowlist and specs stay in sync
 
     def all_checks_attempted(self) -> bool:
-        return set(RUNNABLE_CHECKS) <= self.attempted_checks
+        return set(self.runnable) <= self.attempted_checks
 
     def summary(self, f: Finding) -> dict:
         line = evidence_line(f, self.store)
@@ -90,9 +99,9 @@ class ToolRegistry:
         try:
             result, summary = self._handlers[name](**args)
             out = {"ok": True, "result": result, "summary": summary}
-        except (NotRunnable, OutOfScope, KeyError) as e:
+        except (NotRunnable, OutOfScope, KeyError, DnsUnavailable) as e:
             out = {"ok": False, "error": str(e), "summary": f"error: {e}"}
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, ssl.SSLError, OSError) as e:
             out = {"ok": False, "error": f"request failed: {type(e).__name__}", "summary": "error: request failed"}
         return self._record(name, args, out)
 
@@ -127,7 +136,9 @@ class ToolRegistry:
         if set(args) != ARG_KEYS[name]:
             raise ToolError(f"expected exactly {sorted(ARG_KEYS[name])}, got {sorted(args)}")
         if name == "run_check":
-            if args["check_id"] not in RUNNABLE_CHECKS:
+            if args["check_id"] in ALL_CHECKS and args["check_id"] not in self.runnable:
+                raise ToolError(f"{args['check_id']}: {not_applicable(args['check_id'], self.base_url)}")
+            if args["check_id"] not in self.runnable:
                 raise ToolError(f"check_id not available: {args['check_id']!r}")
             path = args["path"]
             if not isinstance(path, str) or not PATH_RE.match(path) or "://" in path or ".." in path:

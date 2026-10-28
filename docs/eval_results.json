@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-28T04:40:35+00:00",
+  "generated_at": "2026-10-28T06:06:04+00:00",
   "kind": "offline, scripted model (no live model call)",
   "cases": [
     "fixed",
@@ -37,8 +37,10 @@
       "report_produced": true,
       "model_finished": true,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.81
+      "tokens": 4500,
+      "seconds": 2.97,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "fixed",
@@ -65,8 +67,10 @@
       "report_produced": true,
       "model_finished": true,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.79
+      "tokens": 4500,
+      "seconds": 2.97,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "fixed",
@@ -93,8 +97,10 @@
       "report_produced": true,
       "model_finished": true,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.79
+      "tokens": 4500,
+      "seconds": 2.95,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "fixed",
@@ -119,8 +125,10 @@
       "report_produced": true,
       "model_finished": false,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.75
+      "tokens": 4500,
+      "seconds": 2.99,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "fixed",
@@ -145,8 +153,10 @@
       "report_produced": true,
       "model_finished": false,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.79
+      "tokens": 4500,
+      "seconds": 2.98,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "partial_env_left",
@@ -171,8 +181,10 @@
       "report_produced": true,
       "model_finished": true,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.78
+      "tokens": 4500,
+      "seconds": 2.98,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "partial_env_left",
@@ -199,8 +211,10 @@
       "report_produced": true,
       "model_finished": true,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.76
+      "tokens": 4500,
+      "seconds": 2.99,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "partial_env_left",
@@ -228,8 +242,10 @@
       "report_produced": true,
       "model_finished": true,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.78
+      "tokens": 4500,
+      "seconds": 3.0,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "partial_env_left",
@@ -254,8 +270,10 @@
       "report_produced": true,
       "model_finished": false,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.76
+      "tokens": 4500,
+      "seconds": 2.98,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "partial_env_left",
@@ -280,23 +298,25 @@
       "report_produced": true,
       "model_finished": false,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.78
+      "tokens": 4500,
+      "seconds": 3.01,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "vulnerable",
       "level": "perfect",
       "code": {
-        "expected": 11,
-        "found": 11,
-        "true_positives": 11,
+        "expected": 12,
+        "found": 12,
+        "true_positives": 12,
         "precision": 1.0,
         "recall": 1.0,
         "false_positives": [],
         "missed": []
       },
       "claims": {
-        "kept": 11,
+        "kept": 12,
         "dropped": 0,
         "drop_reasons": {}
       },
@@ -306,23 +326,25 @@
       "report_produced": true,
       "model_finished": true,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.8
+      "tokens": 4500,
+      "seconds": 3.02,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "vulnerable",
       "level": "sloppy",
       "code": {
-        "expected": 11,
-        "found": 11,
-        "true_positives": 11,
+        "expected": 12,
+        "found": 12,
+        "true_positives": 12,
         "precision": 1.0,
         "recall": 1.0,
         "false_positives": [],
         "missed": []
       },
       "claims": {
-        "kept": 5,
+        "kept": 6,
         "dropped": 8,
         "drop_reasons": {
           "unknown finding_id": 5,
@@ -335,23 +357,25 @@
       "report_produced": true,
       "model_finished": true,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.8
+      "tokens": 4500,
+      "seconds": 3.01,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "vulnerable",
       "level": "adversarial",
       "code": {
-        "expected": 11,
-        "found": 11,
-        "true_positives": 11,
+        "expected": 12,
+        "found": 12,
+        "true_positives": 12,
         "precision": 1.0,
         "recall": 1.0,
         "false_positives": [],
         "missed": []
       },
       "claims": {
-        "kept": 5,
+        "kept": 6,
         "dropped": 9,
         "drop_reasons": {
           "malformed claim: Extra inputs are not permitted": 6,
@@ -360,20 +384,22 @@
       },
       "fake_claims_in_report": 0,
       "fake_claim_details": [],
-      "notes_dropped": 5,
+      "notes_dropped": 6,
       "report_produced": true,
       "model_finished": true,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.81
+      "tokens": 4500,
+      "seconds": 3.02,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "vulnerable",
       "level": "truncated",
       "code": {
-        "expected": 11,
-        "found": 11,
-        "true_positives": 11,
+        "expected": 12,
+        "found": 12,
+        "true_positives": 12,
         "precision": 1.0,
         "recall": 1.0,
         "false_positives": [],
@@ -390,16 +416,18 @@
       "report_produced": true,
       "model_finished": false,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.78
+      "tokens": 4500,
+      "seconds": 3.05,
+      "model_seconds": 0.0,
+      "model_calls": 5
     },
     {
       "case": "vulnerable",
       "level": "no_final",
       "code": {
-        "expected": 11,
-        "found": 11,
-        "true_positives": 11,
+        "expected": 12,
+        "found": 12,
+        "true_positives": 12,
         "precision": 1.0,
         "recall": 1.0,
         "false_positives": [],
@@ -416,17 +444,19 @@
       "report_produced": true,
       "model_finished": false,
       "stop_reason": "forced_final",
-      "tokens": 3600,
-      "seconds": 2.82
+      "tokens": 4500,
+      "seconds": 3.02,
+      "model_seconds": 0.0,
+      "model_calls": 5
     }
   ],
   "totals": {
     "runs": 15,
     "fake_claims_in_report": 0,
     "reports_produced": 15,
-    "claims_kept": 23,
+    "claims_kept": 26,
     "claims_dropped": 28,
-    "notes_dropped": 5
+    "notes_dropped": 6
   },
   "live": {
     "status": "measured",

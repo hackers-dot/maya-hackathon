@@ -8,10 +8,11 @@ import json
 import time
 from dataclasses import dataclass, field
 
-from src.agent.tools import MAX_GET_EVIDENCE, RUNNABLE_CHECKS, TOOL_SPECS, ToolRegistry
+from src.agent.tools import MAX_GET_EVIDENCE, RUNNABLE_CHECKS, ToolRegistry
 from src.agent.verifier import CLAIM_FOR_CHECK, NOTE_MAX, verify
 from src.budget import BudgetExceeded, TokenBudget
 from src.evidence import redact_text
+from src.scanner.runner import ALL_CHECKS, NET_CHECKS
 
 MAX_STEPS = 8
 MAX_CALLS_PER_STEP = 4
@@ -19,29 +20,40 @@ MAX_CALLS_PER_STEP = 4
 PRIORITY = [
     ("exposed_env_file", "/.env"), ("exposed_git_dir", "/.git/HEAD"), ("exposed_backup_file", "/db.sql"),
     ("exposed_backup_file", "/backup.zip"), ("directory_listing", "/backup/"),
+    ("weak_tls_or_expiring_cert", "/"), ("outdated_js_library", "/"),
     ("cookie_missing_secure", "/"), ("cookie_missing_httponly", "/"), ("cookie_missing_samesite", "/"),
     ("missing_csp", "/"), ("missing_hsts", "/"), ("missing_x_frame_options", "/"),
     ("missing_x_content_type_options", "/"), ("server_version_disclosure", "/"),
+    ("missing_spf", "/"), ("missing_dmarc", "/"),
 ]
-assert {c for c, _ in PRIORITY} == set(RUNNABLE_CHECKS)  # the prompt names exactly the runnable checks
+assert {c for c, _ in PRIORITY} == set(ALL_CHECKS)  # every check has a place in the order
 
-SYSTEM_PROMPT = (
-    "You are MAYA, a security agent checking a site its owner authorized. Use only the provided tools; "
-    "code runs them and returns findings. Severity is decided by code, never by you. "
-    f"The runnable checks are exactly: {', '.join(RUNNABLE_CHECKS)}. Paths must start with '/'. "
-    f"Make at most {MAX_CALLS_PER_STEP} run_check calls per step; extra calls are deferred and must be repeated "
-    "in a later step. Order: high-impact items first, then cookies, then headers: "
-    + "; ".join(f"{c} {p}" for c, p in PRIORITY) + ". "
-    "Each run_check result includes an evidence_summary per finding. You do not need "
-    f"get_evidence (it is capped at {MAX_GET_EVIDENCE} calls per run). When every check above was attempted, "
-    "stop calling tools and give the final answer. "
-    "Final reply: ONLY a JSON object "
-    '{"claims": [{"finding_id": "...", "claim_type": "...", "priority": 1, "note": "..."}]}. '
-    f"claim_type is one of: {', '.join(sorted(set(CLAIM_FOR_CHECK.values())))}. "
-    "Do NOT quote evidence: code attaches the evidence line itself. priority is your fix order, 1 = fix first, "
-    f"each number used once. note is one plain-language sentence for the site owner (max {NOTE_MAX} characters); "
-    "mention only paths, hosts or numbers that appear in that finding's evidence."
-)
+
+def system_prompt(runnable: list[str]) -> str:
+    """The prompt names exactly the checks runnable on this target (DNS/TLS only for verified non-loopback)."""
+    order = [(c, p) for c, p in PRIORITY if c in runnable]
+    net = [c for c in runnable if c in NET_CHECKS]
+    return (
+        "You are MAYA, a security agent checking a site its owner authorized. Use only the provided tools; "
+        "code runs them and returns findings. Severity is decided by code, never by you. "
+        f"The runnable checks are exactly: {', '.join(runnable)}. Paths must start with '/'. "
+        + (f"{', '.join(net)} look at the domain itself; use path '/' for them. " if net else "")
+        + f"Make at most {MAX_CALLS_PER_STEP} run_check calls per step; extra calls are deferred and must be "
+        "repeated in a later step. Order: high-impact items first, then cookies, then headers: "
+        + "; ".join(f"{c} {p}" for c, p in order) + ". "
+        "Each run_check result includes an evidence_summary per finding. You do not need "
+        f"get_evidence (it is capped at {MAX_GET_EVIDENCE} calls per run). When every check above was attempted, "
+        "stop calling tools and give the final answer. "
+        "Final reply: ONLY a JSON object "
+        '{"claims": [{"finding_id": "...", "claim_type": "...", "priority": 1, "note": "..."}]}. '
+        f"claim_type is one of: {', '.join(sorted(set(CLAIM_FOR_CHECK.values())))}. "
+        "Do NOT quote evidence: code attaches the evidence line itself. priority is your fix order, 1 = fix first, "
+        f"each number used once. note is one plain-language sentence for the site owner (max {NOTE_MAX} "
+        "characters); mention only paths, hosts or numbers that appear in that finding's evidence."
+    )
+
+
+SYSTEM_PROMPT = system_prompt(RUNNABLE_CHECKS)  # the loopback demo app's prompt
 FINAL_INSTRUCTION = (
     "Stop calling tools now. Write the final answer: ONLY the JSON object "
     '{"claims": [{"finding_id", "claim_type", "priority", "note"}]} for the findings returned so far. '
@@ -75,16 +87,16 @@ def run_agent(provider, registry: ToolRegistry, budget: TokenBudget, goal: str,
               max_steps: int = MAX_STEPS, trace: list | None = None, verifier=verify) -> AgentResult:
     """trace: optional list the caller can read while the loop runs (entries are appended live).
     verifier: always src.agent.verifier.verify, except in the eval harness's own tests (a leaky fake)."""
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
+    messages = [{"role": "system", "content": system_prompt(registry.runnable)}, {"role": "user", "content": goal}]
     result = AgentResult(stop_reason="forced_final", trace=trace if trace is not None else [])
     for step in range(1, max_steps + 1):
         forced = step == max_steps or registry.all_checks_attempted()
         t0 = time.perf_counter()
         if forced:
             reply = provider.chat(messages + [{"role": "user", "content": FINAL_INSTRUCTION}],
-                                  tools=TOOL_SPECS, tool_choice="none")
+                                  tools=registry.tool_specs, tool_choice="none")
         else:
-            reply = provider.chat(messages, tools=TOOL_SPECS, tool_choice="auto")
+            reply = provider.chat(messages, tools=registry.tool_specs, tool_choice="auto")
         latency = round(time.perf_counter() - t0, 3)  # model call time for this step, seconds
         tokens = _tokens(reply.usage)
         try:

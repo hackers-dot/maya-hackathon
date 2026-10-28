@@ -13,6 +13,7 @@
     "missing_hsts:/",
     "missing_x_content_type_options:/",
     "missing_x_frame_options:/",
+    "outdated_js_library:/:jquery",
     "server_version_disclosure:/:server"
   ]
 }

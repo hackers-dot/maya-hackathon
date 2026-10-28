@@ -58,6 +58,18 @@ TABLE: dict[str, Rule] = {
     "missing_dmarc": Rule("low",
         "Without DMARC, receivers have no policy for rejecting spoofed email from your domain.",
         "Publish a DMARC TXT record at _dmarc.<domain>, starting with p=none and tightening."),
+    "cert_expires_within_14_days": Rule("high",
+        "The TLS certificate expires within 14 days (or already has); visitors will soon get browser errors.",
+        "Renew the certificate now and set up automatic renewal."),
+    "cert_expires_within_30_days": Rule("medium",
+        "The TLS certificate expires within 30 days.",
+        "Renew the certificate and set up automatic renewal."),
+    "tls_protocol_below_1_2": Rule("medium",
+        "The server accepts a TLS version older than 1.2, which has known weaknesses.",
+        "Allow only TLS 1.2 and 1.3."),
+    "outdated_js_library": Rule("medium",
+        "A JavaScript library on the page appears outdated; old releases often have publicly documented issues.",
+        "Update the library to a current release and test the pages that use it."),
 }
 
 

@@ -13,7 +13,9 @@ evidence is dropped (the claim is kept). Priorities order the claims only if the
 otherwise claims are ordered by severity. Report text comes from fixed templates; severity comes from the
 finding (the fixed table), never the model.
 """
+import json
 import re
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -21,10 +23,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from src.evidence import EvidenceStore, mask
 from src.models import Finding
 from src.scanner.checks_files import ENV_LINE, GIT_HEAD, LISTING
+from src.scanner.checks_dns import check_dmarc, check_spf
+from src.scanner.checks_js import outdated
+from src.scanner.checks_tls import TLS_FINDING_CHECKS, tls_findings
 from src.scanner.checks_headers import SECURITY_HEADERS, VERSION
 
 ClaimType = Literal["header_missing", "cookie_flag_missing", "version_disclosed", "file_exposed",
-                    "directory_listing", "dns_record_missing", "tls_weakness"]
+                    "directory_listing", "dns_record_missing", "tls_weakness", "library_outdated"]
 
 CLAIM_FOR_CHECK = {
     "missing_csp": "header_missing", "missing_hsts": "header_missing",
@@ -35,7 +40,9 @@ CLAIM_FOR_CHECK = {
     "exposed_env_file": "file_exposed", "exposed_git_dir": "file_exposed", "exposed_backup_file": "file_exposed",
     "directory_listing": "directory_listing",
     "missing_spf": "dns_record_missing", "missing_dmarc": "dns_record_missing",
-    "weak_tls_or_expiring_cert": "tls_weakness",
+    "weak_tls_or_expiring_cert": "tls_weakness", "cert_expires_within_14_days": "tls_weakness",
+    "cert_expires_within_30_days": "tls_weakness", "tls_protocol_below_1_2": "tls_weakness",
+    "outdated_js_library": "library_outdated",
 }
 
 TEMPLATES = {
@@ -46,6 +53,8 @@ TEMPLATES = {
     "directory_listing": "{location} on {target} lists its directory contents ({check}). Severity: {severity}.",
     "dns_record_missing": "{location} for {target} is missing or invalid ({check}). Severity: {severity}.",
     "tls_weakness": "{target} has a TLS or certificate weakness ({check}). Severity: {severity}.",
+    "library_outdated": "{location} on {target} loads a library version that appears outdated ({check}). "
+                        "Severity: {severity}.",
 }
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
@@ -162,7 +171,25 @@ def support_lines(finding: Finding, record: dict) -> list[str]:
         return signature + [f"content-type: {value('content-type')}"]
     if check == "directory_listing":
         return [l for l in body_lines if LISTING.search(l.encode())] if ok_200 else []
-    return []  # DNS/TLS evidence is not recorded over HTTP, so nothing here can support those claims
+    if check == "outdated_js_library":
+        return [f'<script src="{src}">' for name, _, src in outdated(resp["body"]) if name == suffix] if ok_200 else []
+    if check in ("missing_spf", "missing_dmarc"):  # the record is the stored DNS-over-HTTPS JSON answer
+        try:
+            data = json.loads(resp["body"])
+        except ValueError:
+            return []
+        answers = [a.get("data", "") for a in data.get("Answer") or [] if a.get("type") == 16]
+        domain = finding.target.removeprefix("dns:")
+        redo = check_spf(domain, answers) if check == "missing_spf" else check_dmarc(domain, answers)
+        return [f.evidence[0].data for f in redo]
+    if check in TLS_FINDING_CHECKS:  # the record is the stored handshake summary; judged at capture time
+        try:
+            info = json.loads(resp["body"])
+            when = datetime.fromisoformat(record["captured_at"])
+        except (ValueError, KeyError):
+            return []
+        return [f.evidence[0].data for f in tls_findings(info, when) if f.check == check]
+    return []
 
 
 def evidence_line(finding: Finding, store: EvidenceStore | None) -> str:

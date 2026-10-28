@@ -370,8 +370,10 @@ def test_latest_scan_with_no_issues_keeps_history_and_fixed_ids(web):
     ctx = context_of(web)
     assert "SCAN HISTORY (newest first; MAYA has scanned this user's site):" in ctx
     lines = ctx.strip().splitlines()
-    assert lines[1].startswith(f"- run {run2} ") and "0 finding(s) (no findings)" in lines[1]
-    assert lines[2].startswith(f"- run {run1} ") and "11 finding(s) (FIXED 11)" in lines[2]
+    assert lines[1].startswith(f"- run {run2} ")
+    assert "scan found 0 findings; later re-test: no re-test (statuses: no findings)" in lines[1]
+    assert lines[2].startswith(f"- run {run1} ")
+    assert "scan found 12 findings; later re-test: all fixed (statuses: FIXED 12)" in lines[2]
     assert f"latest scan: no issues detected in the checks run (run {run2}" in ctx
     assert all(f"[{i}] (run {run1})" in ctx for i in ids)
     assert "MAYA has not scanned" not in ctx and "VERIFIED FINDINGS: none open in the latest scan" in ctx
@@ -404,3 +406,44 @@ def test_demo_prepare_prints_the_click_order(capsys):
     assert positions == sorted(positions)
     demo_prepare.main([])
     assert '"Reset demo app"' not in capsys.readouterr().out
+
+
+# --- Web 6: explicit scan result + later re-test outcome per run ---
+
+def test_system_prompt_separates_scan_result_from_retest():
+    assert "Never say a scan found nothing if the history says it found N > 0 findings" in SYSTEM_PROMPT
+    assert "re-test outcome separately" in SYSTEM_PROMPT
+
+
+def run_line(web, run_id):
+    return next(l for l in context_of(web).splitlines() if l.startswith(f"- run {run_id} "))
+
+
+def test_history_line_no_retest_then_still_open_then_all_fixed(web):
+    c = user(web["new_client"](), "retestline@shop.example", company=True)
+    run_id, body = scan_demo(c)
+    n = len(body["result"]["findings"])
+    chat_id = new_chat(c)
+    send(c, chat_id, "status?")
+    assert f"scan found {n} findings; later re-test: no re-test" in run_line(web, run_id)
+    # approve everything except the .env fix, apply, re-test: one finding stays open
+    for p in body["proposals"]:
+        if p["check_id"] != "exposed_env_file":
+            assert post(c, f"/api/runs/{run_id}/proposals/{p['id']}/approve", {"approver": "demo-user"}).status_code == 200
+    assert post(c, f"/api/runs/{run_id}/apply").status_code == 200
+    assert post(c, f"/api/runs/{run_id}/retest").json()["retest"]["still_present"] == ["exposed_env_file:/.env"]
+    send(c, chat_id, "and now?")
+    assert f"scan found {n} findings; later re-test: 1 still open" in run_line(web, run_id)
+    assert post(c, f"/api/runs/{run_id}/approve-all", {"approver": "demo-user"}).status_code == 200
+    assert post(c, f"/api/runs/{run_id}/apply").status_code == 200
+    assert post(c, f"/api/runs/{run_id}/retest").json()["retest"]["status"] == "FIXED"
+    send(c, chat_id, "and now?")
+    line = run_line(web, run_id)
+    assert f"scan found {n} findings; later re-test: all fixed" in line and n > 0
+    assert "latest scan: no issues detected" not in context_of(web)  # the scan found n > 0: never "nothing"
+
+
+def test_dns_finding_ids_count_as_citations():
+    known = {"missing_spf:TXT shop.example"}
+    meta = label_reply("Add an SPF record [missing_spf:TXT shop.example].", known)
+    assert meta["cited"] == ["missing_spf:TXT shop.example"] and meta["label"] == "restates verified findings"

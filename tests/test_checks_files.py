@@ -85,7 +85,8 @@ def test_scan_all_against_demo(start_demo, tmp_path, fixed):
     expected = set() if fixed else {
         "missing_csp", "missing_hsts", "missing_x_frame_options", "missing_x_content_type_options",
         "cookie_missing_secure", "cookie_missing_httponly", "cookie_missing_samesite",
-        "server_version_disclosure", "exposed_env_file", "exposed_backup_file", "directory_listing"}
+        "server_version_disclosure", "exposed_env_file", "exposed_backup_file", "directory_listing",
+        "outdated_js_library"}
     assert checks == expected
     assert "exposed_git_dir" not in checks  # demo serves no .git
     for f in findings:

@@ -45,6 +45,7 @@ class HttpClient:
     def __init__(self, verified: frozenset[str] = frozenset(), store: EvidenceStore | None = None,
                  transport: httpx.BaseTransport | None = None, min_interval: float = MIN_INTERVAL_S):
         self.verified = verified
+        self.transport = transport  # also used by the DNS-over-HTTPS lookup (tests inject a fake)
         self.store = store
         self.min_interval = min_interval
         self._last = 0.0

@@ -39,9 +39,11 @@ def events(gate):
 # --- proposals ---
 
 def test_every_runnable_check_has_a_fixed_plan():
-    assert set(PLANS) == set(RUNNABLE_CHECKS)
+    from src.scanner.checks_tls import TLS_FINDING_CHECKS
+    assert set(PLANS) == set(RUNNABLE_CHECKS) | set(TLS_FINDING_CHECKS)  # DNS findings: no template yet
     for check, p in PLANS.items():
-        assert p.kind in ("config diff", "header addition", "file block rule"), check
+        assert p.kind in ("config diff", "header addition", "file block rule", "dependency update",
+                          "certificate renewal"), check
         assert p.nginx and p.apache and p.python_note and p.rollback, check
         assert p.risk in ("low", "medium"), check
 
@@ -199,8 +201,8 @@ def test_demo_fix_flow_script(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(socket, "create_connection", loopback_only)
     assert demo_fix_flow.main([], data_dir=tmp_path) == 0
     out = capsys.readouterr().out
-    assert "11 fix proposals (fixed templates, proposed, not applied)" in out
-    assert "Approved by 'demo-user': 11/11" in out
+    assert "12 fix proposals (fixed templates, proposed, not applied)" in out
+    assert "Approved by 'demo-user': 12/12" in out
     assert "APPLIED, health check GET / = 200" in out
     assert "Re-test of the same checks on the same paths: FIXED" in out
     assert "still present (0)" in out and "hash chain intact" in out

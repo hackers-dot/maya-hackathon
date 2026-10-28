@@ -72,6 +72,24 @@ PLANS: dict[str, FixPlan] = {
         "config diff", "server_tokens off;", "ServerTokens Prod\nServerSignature Off",
         "Override BaseHTTPRequestHandler.version_string() to return a name without versions.",
         "low", f"Restore the previous server_tokens / ServerTokens value, {RELOAD}."),
+    "outdated_js_library": FixPlan(
+        "dependency update", "# no server change: point the <script src> at a current release of the library",
+        "# no server change: point the <script src> at a current release of the library",
+        "Replace the bundled file (e.g. jquery-1.12.4.min.js) with a current release, update the script tag, "
+        "and test the pages that use it.",
+        "medium", "Restore the previous file and script tag."),
+    "tls_protocol_below_1_2": FixPlan(
+        "config diff", "ssl_protocols TLSv1.2 TLSv1.3;", "SSLProtocol -all +TLSv1.2 +TLSv1.3",
+        "Set ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2 where the app creates its TLS context.",
+        "medium", f"Restore the previous ssl_protocols / SSLProtocol line, {RELOAD}."),
+    "cert_expires_within_14_days": FixPlan(
+        "certificate renewal", "# renew (e.g. certbot renew), keep ssl_certificate paths", "# renew, keep SSLCertificateFile paths",
+        "Load the renewed certificate and key where the app creates its TLS context.",
+        "low", f"Point back to the previous certificate files, {RELOAD}."),
+    "cert_expires_within_30_days": FixPlan(
+        "certificate renewal", "# renew (e.g. certbot renew), keep ssl_certificate paths", "# renew, keep SSLCertificateFile paths",
+        "Load the renewed certificate and key where the app creates its TLS context.",
+        "low", f"Point back to the previous certificate files, {RELOAD}."),
 }
 
 

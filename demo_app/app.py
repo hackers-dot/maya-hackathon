@@ -12,6 +12,7 @@ Intentional weaknesses (default mode):
   - /.env served with FAKE values
   - directory listing on /backup/
   - a downloadable database dump at /db.sql (FAKE content)
+  - the homepage loads an old jQuery release by name (jquery-1.12.4.min.js; the file itself is not served)
 
 Each weakness has an independent fix keyed by MAYA's check id. --fixed turns on all of them.
 --control FILE turns on the fixes listed in that JSON file ({"fixes": [...]}), re-read on every request;
@@ -34,7 +35,9 @@ FAKE_ENV = (
     "DB_PASSWORD=fake-demo-password-not-real\n"
 )
 FAKE_BACKUP = "-- FAKE demo dump\nINSERT INTO products VALUES (1, 'Demo mug', 9.99);\n"
-INDEX_HTML = "<!doctype html><title>Demo Shop</title><h1>Demo Shop</h1><p>Mugs, 9.99</p>"
+INDEX_HTML = ('<!doctype html><title>Demo Shop</title><script src="/static/{jquery}"></script>'
+              "<h1>Demo Shop</h1><p>Mugs, 9.99</p>")
+JQUERY_OLD, JQUERY_CURRENT = "jquery-1.12.4.min.js", "jquery-3.7.1.min.js"
 LISTING_HTML = ("<!doctype html><title>Index of /backup/</title><h1>Index of /backup/</h1>"
                 '<ul><li><a href="shop-db.sql.bak">shop-db.sql.bak</a></li></ul>')
 COOKIE = "session=demo-session-0001; Path=/"
@@ -51,7 +54,8 @@ FIX_COOKIE = {"cookie_missing_secure": "; Secure", "cookie_missing_httponly": ";
 FIX_BLOCKED = {"exposed_env_file": {"/.env"},
                "exposed_backup_file": {"/db.sql", "/backup/shop-db.sql.bak"},
                "directory_listing": {"/backup", "/backup/"}}
-ALL_FIXES = frozenset(FIX_HEADERS) | frozenset(FIX_COOKIE) | frozenset(FIX_BLOCKED) | {"server_version_disclosure"}
+ALL_FIXES = (frozenset(FIX_HEADERS) | frozenset(FIX_COOKIE) | frozenset(FIX_BLOCKED)
+             | {"server_version_disclosure", "outdated_js_library"})
 FIXED_CONFIG = {"fixes": sorted(ALL_FIXES)}  # what --fixed turns on
 
 
@@ -93,7 +97,8 @@ class DemoHandler(BaseHTTPRequestHandler):
             return self._send(404, "text/plain", "Not found", send_body)
         if path == "/":
             cookie = COOKIE + "".join(FIX_COOKIE[f] for f in sorted(self._fixes & FIX_COOKIE.keys()))
-            return self._send(200, "text/html", INDEX_HTML, send_body, cookie)
+            jquery = JQUERY_CURRENT if "outdated_js_library" in self._fixes else JQUERY_OLD
+            return self._send(200, "text/html", INDEX_HTML.format(jquery=jquery), send_body, cookie)
         if path == "/.env":
             return self._send(200, "text/plain", FAKE_ENV, send_body)
         if path in ("/backup", "/backup/"):
