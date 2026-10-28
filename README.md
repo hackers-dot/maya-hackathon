@@ -4,6 +4,35 @@ MAYA is an AI security agent for sites and apps you own. You connect a target, p
 
 All code in this repository was written during the Meta Global AI Developer Hackathon (26 Oct to 4 Nov 2026). A private prototype existed before the event, but none of its code was reused here.
 
+## Requirements
+
+- **Python 3.10 or newer** (tested on 3.10.0, Windows).
+- **Pinned dependencies** in `requirements.txt`: `httpx==0.28.1`, `pydantic==2.14.1`, `pytest==9.1.1`. Everything else is the Python standard library.
+- **Optional tools:**
+  - `openssl` on the PATH: used only by the 5 TLS tests (3 expiry cases, protocol, evidence), to make throwaway test certificates. Without it those tests are skipped, with the reason shown.
+  - Google Chrome: used only by `scripts/ui_screens.py` (screenshots).
+- **Model key (optional):** with no model key, scans run in Deterministic-only mode. With a key set (`BASETEN_API_KEY`), the agent uses the model. The key is read from the environment at call time and is never written to a file.
+
+### Run it (Windows)
+
+```
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pytest -v
+.venv\Scripts\python scripts\run_web.py
+```
+
+Then open http://127.0.0.1:8090 (loopback only). Options: `--port 8095` and `--data-dir <folder>` (default `data/`, git-ignored).
+
+Demo flow:
+
+```
+.venv\Scripts\python scripts\demo_fix_flow.py
+.venv\Scripts\python scripts\demo_prepare.py --reset
+```
+
+`demo_fix_flow.py` runs scan, propose, approve, apply and re-test against the loopback demo app in the terminal, with no model. `demo_prepare.py --reset` prints the click order for the same flow in the browser: reset, scan, approve all, apply, re-test, download pack, chat question.
+
 ## Build log
 
 - **2026-10-27 (Day 1):** Repo scaffold, design doc, `Finding` model, target scope guard (loopback or verified targets only), OpenAI-compatible model client that keeps reasoning separate from the final answer, and offline tests.
