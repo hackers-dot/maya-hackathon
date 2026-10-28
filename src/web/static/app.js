@@ -116,6 +116,19 @@
     verified: ["verified", "ok"],
     pending: ["pending", "pending"],
     failed: ["failed", "failed"],
+    uploaded: ["uploaded", "ok"],
+  };
+  const UPLOAD_KINDS = {
+    code: { title: "Source code ZIP", path: "/api/uploads/code", accept: ".zip", max: 10 * 1024 * 1024,
+      desc: "Upload a .zip of your code (max 10 MB). MAYA reads it in memory, never runs or imports anything, " +
+        "and never saves the file. It looks for hard-coded secrets (masked), a committed .env file, risky calls " +
+        "(debug=True, eval/exec, pickle.loads, shell=True, MD5/SHA-1 for passwords) and dependencies that " +
+        "appear outdated. Limits: 2000 files, 50 MB unpacked; binary files are skipped." },
+    logs: { title: "Logs", path: "/api/uploads/logs", accept: ".log,.txt", max: 5 * 1024 * 1024,
+      desc: "Upload an nginx/Apache access log or an auth/ssh log (.log or .txt, max 5 MB). MAYA flags bursts " +
+        "of failed logins (default: 10 within 5 minutes, a configurable heuristic), requests for sensitive paths, " +
+        "many 4xx responses, SQL-injection-like or traversal strings (detection only) and a login that succeeded " +
+        "after failures. Findings are grouped by source address. The file is read in memory and never saved." },
   };
   function statusChip(id, status) {
     const s = STATUS[status] || [String(status || ""), ""];
@@ -191,7 +204,8 @@
       const li = el("li");
       const btn = el("button", "asset-item");
       btn.type = "button";
-      btn.appendChild(el("span", "asset-name", a.kind === "demo" ? "Demo app (loopback)" : a.label));
+      const prefix = a.kind === "code" ? "Code: " : a.kind === "logs" ? "Logs: " : "";
+      btn.appendChild(el("span", "asset-name", a.kind === "demo" ? "Demo app (loopback)" : prefix + a.label));
       const s = STATUS[a.status] || [a.status, ""];
       btn.appendChild(el("span", "chip chip-" + s[1], s[0]));
       btn.addEventListener("click", () => { selectAsset(a); setSidebar(false); });
@@ -571,7 +585,9 @@
   function renderResult(run, result) {
     if (!result) return;
     show("result-panel", true);
-    setText("result-model", run.mode === "model" ? run.model : "none (no model key configured)");
+    const upload = run.mode === "code" || run.mode === "logs";
+    setText("result-model", result.summary_model ? result.summary_model + " (optional summary)"
+      : run.mode === "model" ? run.model : upload ? "none (findings come from code checks)" : "none (no model key configured)");
     setText("result-mode", run.mode_label);
     const u = result.usage || {};
     setText("result-tokens", (u.prompt_tokens || 0) + " prompt, " + (u.completion_tokens || 0) + " completion (" +
@@ -603,11 +619,14 @@
       list.appendChild(li);
     }
     renderChecks(result.checks);
+    renderGroups(result.groups);
     const noClaims = !(result.claims || []).length;
     show("claims-empty", noClaims);
-    setText("claims-empty", run.mode === "model"
+    setText("claims-empty", run.mode === "model" || result.summary_model
       ? (result.model_finished ? "The model made no verified claims." : "The model did not finish; findings above are from code checks.")
-      : "No model in deterministic mode; findings above are from code checks.");
+      : run.mode === "logs" ? "Optional: press \"Summarize with model\" for a verified summary."
+        : run.mode === "code" ? "Code uploads use no model; findings above are from code checks."
+          : "No model in deterministic mode; findings above are from code checks.");
     const dropped = $("dropped-list");
     clear(dropped);
     for (const d of result.dropped || []) {
@@ -697,6 +716,10 @@
     setText("mode-label", "");
     const btn = $("scan-btn");
     if (btn) btn.disabled = !asset.scannable;
+    const upload = asset.kind === "code" || asset.kind === "logs";
+    show("scan-btn", !upload);
+    show("summarize-btn", asset.kind === "logs");
+    if (upload) setText("av-hint", "Uploaded file: checked once when uploaded. Upload it again to re-check.");
     show("reset-demo-btn", asset.kind === "demo");
     setResetEnabled(true);
     say("", false);
@@ -721,6 +744,125 @@
     }
   }
 
+  // ---------- connectors: uploads, disconnect, model summary, data deletion ----------
+  let uploadKind = null;
+  function openUpload(kind) {
+    const k = UPLOAD_KINDS[kind];
+    uploadKind = kind;
+    stopPolling();
+    showView("upload");
+    setText("up-title", k.title);
+    setText("up-desc", k.desc);
+    setText("up-label", k.title === "Logs" ? "Log file (.log or .txt)" : "ZIP file (.zip)");
+    const input = $("up-file");
+    if (input) { input.value = ""; input.setAttribute("accept", k.accept); }
+    const b = $("up-btn");
+    if (b) b.disabled = true;
+    setText("up-message", "");
+  }
+
+  function uploadChosen() {
+    const input = $("up-file");
+    const k = UPLOAD_KINDS[uploadKind];
+    const f = input && input.files && input.files[0];
+    const ok = !!(f && k && f.size > 0 && f.size <= k.max);
+    const b = $("up-btn");
+    if (b) b.disabled = !ok;
+    setText("up-message", f && k && f.size > k.max ? "This file is larger than the limit." : "");
+  }
+
+  async function uploadFile() {
+    const input = $("up-file");
+    const k = UPLOAD_KINDS[uploadKind];
+    const f = input && input.files && input.files[0];
+    if (!f || !k) return;
+    const b = $("up-btn");
+    if (b) b.disabled = true;
+    setText("up-message", "Checking " + f.name + "...");
+    let r;
+    try {
+      r = await fetch(k.path, {
+        method: "POST", credentials: "same-origin", body: await f.arrayBuffer(),
+        headers: { "Content-Type": "application/octet-stream", "X-CSRF-Token": csrf || "",
+          "X-Upload-Name": f.name.replace(/[^A-Za-z0-9._ -]/g, "_").slice(0, 100) },
+      });
+    } catch (e) {
+      setText("up-message", "Could not reach MAYA. Is the server running?");
+      if (b) b.disabled = false;
+      return;
+    }
+    let data = {};
+    try { data = await r.json(); } catch (e) { data = {}; }
+    if (!r.ok) {
+      setText("up-message", data.error || "Upload failed.");
+      if (b) b.disabled = false;
+      return;
+    }
+    const assets = await getJSON("/api/assets");
+    if (assets.ok) renderAssetList(assets.data.assets);
+    selectAsset(data.asset);
+  }
+
+  async function disconnectAsset() {
+    if (!currentAsset || PREVIEW) return;
+    if (!window.confirm("Disconnect " + (currentAsset.label || "this asset") + "? Its verified status is removed.")) return;
+    const d = await post("/api/assets/" + currentAsset.id + "/disconnect", {});
+    if (!d) return;
+    stopPolling();
+    currentAsset = null;
+    const assets = await getJSON("/api/assets");
+    if (assets.ok) renderAssetList(assets.data.assets);
+    showView("home");
+  }
+
+  async function summarize() {
+    if (!currentRunId) return;
+    say("Asking the model for a summary...", false);
+    const d = await post("/api/runs/" + currentRunId + "/summarize", {});
+    if (d) { renderResult(d.run, d.result); say("Summary added. Model text is labelled and verified against the evidence.", false); }
+  }
+
+  function openData() {
+    stopPolling();
+    showView("data");
+    const input = $("delete-confirm");
+    if (input) input.value = "";
+    const b = $("delete-btn");
+    if (b) b.disabled = true;
+    setText("data-message", "");
+  }
+
+  async function deleteData() {
+    const input = $("delete-confirm");
+    if (!input || input.value !== "DELETE") return;
+    const d = await post("/api/data/delete", { confirm: input.value });
+    if (!d) { setText("data-message", "Not deleted. See the message above."); return; }
+    const c = d.deleted || {};
+    setText("data-message", "Deleted: " + c.assets + " asset(s), " + c.runs + " run(s), " + c.evidence_records +
+      " evidence record(s), " + c.chats + " chat(s). Your account remains.");
+    input.value = "";
+    $("delete-btn").disabled = true;
+    const assets = await getJSON("/api/assets");
+    if (assets.ok) renderAssetList(assets.data.assets);
+    loadChats();
+  }
+
+  function renderGroups(groups) {
+    const list = $("groups-list");
+    if (!list) return;
+    clear(list);
+    const items = groups || [];
+    show("groups-heading", items.length > 0);
+    show("groups-list", items.length > 0);
+    for (const g of items) {
+      const li = el("li");
+      li.appendChild(el("code", "", g.source));
+      li.appendChild(el("span", "muted", " " + g.label + ": " + g.findings.length + " finding(s) (" +
+        g.findings.join(", ") + ")"));
+      list.appendChild(li);
+    }
+  }
+
   async function startScan() {
     if (!currentAsset) return;
     const btn = $("scan-btn");
@@ -739,6 +881,17 @@
     if (avatar) avatar.textContent = user && user.email ? user.email.charAt(0).toUpperCase() : (PREVIEW ? "P" : "?");
     onClick("scan-btn", startScan);
     onClick("reset-demo-btn", resetDemo);
+    onClick("disconnect-btn", disconnectAsset);
+    onClick("summarize-btn", summarize);
+    onClick("conn-code", () => { setSidebar(false); openUpload("code"); });
+    onClick("conn-logs", () => { setSidebar(false); openUpload("logs"); });
+    onClick("up-btn", uploadFile);
+    onClick("data-link", () => { setSidebar(false); openData(); });
+    onClick("delete-btn", deleteData);
+    const upInput = $("up-file");
+    if (upInput) upInput.addEventListener("change", uploadChosen);
+    const delInput = $("delete-confirm");
+    if (delInput) delInput.addEventListener("input", () => { $("delete-btn").disabled = delInput.value !== "DELETE"; });
     onClick("apply-btn", applyFixes);
     onClick("approve-all-btn", approveAll);
     onClick("retest-btn", runRetest);
@@ -750,6 +903,7 @@
       const r = await getJSON("/__preview/sample.json");
       if (!r.ok) return;
       show("add-asset", true);
+      show("connectors", true);
       renderAssetList(r.data.assets);
       renderChatList(r.data.chat.list);
       const view = new URLSearchParams(window.location.search).get("view");
@@ -757,6 +911,17 @@
       if (view === "chat") {
         renderChat(r.data.chat.chat);
         renderChatList(r.data.chat.list);  // after opening, so the open chat is highlighted (as loadChats does)
+      }
+      if (view === "upload-code" || view === "upload-logs") openUpload(view.slice(7));
+      if (view === "data") openData();
+      if (view === "logs") {
+        const s = r.data.logs;
+        selectAsset(s.asset);
+        appendSteps(s.steps);
+        renderFindings(s.result.findings);
+        renderRunMeta(s.run);
+        renderResult(s.run, s.result);
+        renderFixFirst(s.result.fix_first);
       }
       if (view === "running" || view === "finished") {
         const sample = r.data[view];
@@ -782,6 +947,7 @@
     refreshSidePanels();
     loadChats();
     show("add-asset", !!(user && user.account_type === "company" && user.consented));
+    show("connectors", !!(user && user.account_type === "company" && user.consented));
     const r = await getJSON("/api/assets");
     if (r.ok) renderAssetList(r.data.assets);
   }
@@ -795,6 +961,8 @@
     show("home", view === "home");
     show("chat-view", view === "chat");
     show("asset-view", view === "asset");
+    show("upload-view", view === "upload");
+    show("data-view", view === "data");
     if (view !== "asset") stopPolling();
   }
 

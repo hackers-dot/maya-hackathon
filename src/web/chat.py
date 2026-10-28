@@ -173,6 +173,11 @@ class ChatStore:
                 c.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (now, chat_id))
         return {"role": role, "content": content, "meta": meta, "created_at": now}
 
+    def delete_user(self, user_id: int) -> int:
+        with self._db() as c, c:
+            c.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,))
+            return c.execute("DELETE FROM chats WHERE user_id = ?", (user_id,)).rowcount
+
     def tokens_used(self, user_id: int, window: float = 86_400) -> int:
         with self._db() as c:
             row = c.execute("SELECT COALESCE(SUM(tokens), 0) FROM chat_messages WHERE user_id = ? AND created_at > ?",

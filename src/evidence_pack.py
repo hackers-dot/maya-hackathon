@@ -28,6 +28,9 @@ DISCLAIMER = ("Tamper-evident, not tamper-proof (unsigned). Provenance is self-r
 DEMO_MARKER = ("DEMO: this evidence comes from MAYA's deliberately vulnerable demo app on loopback, "
                "not from a real site.")
 CAPTURE_TOOL = "maya HttpClient (GET/HEAD, scope-checked)"
+TOOL_FOR_METHOD = {"FILE": "maya code connector (ZIP read in memory, nothing executed)",
+                   "LOG": "maya log parser (uploaded log, read only)",
+                   "TLS": "maya TLS check (one handshake, scope-checked)"}
 PACK_TOOL = "maya evidence_pack"
 NO_ISSUES = "No issues detected in the checks run."
 SEALED_FILES = {"manifest.json", "custody_log.jsonl"}  # not listed in the manifest (the log seals the manifest)
@@ -82,9 +85,10 @@ def build_pack(dest, run_id: str, findings: dict, store, audit_entries=(), model
             raise PackError(f"evidence record {record_id} fails its stored sha256; not packed")
         summary, _ = store._row(record_id)  # exactly the redacted text the store sealed
         captured = json.loads(summary)["captured_at"]
+        tool = TOOL_FOR_METHOD.get(json.loads(summary)["request"]["method"], CAPTURE_TOOL)
         meta = add_file(f"artifacts/{record_id}.json", summary.encode("utf-8"), captured,
-                        [f.check for f in fs], [f.id for f in fs], CAPTURE_TOOL, None)
-        entry("evidence_captured", captured, CAPTURE_TOOL, file=meta["path"], sha256=meta["sha256"],
+                        [f.check for f in fs], [f.id for f in fs], tool, None)
+        entry("evidence_captured", captured, tool, file=meta["path"], sha256=meta["sha256"],
               finding_ids=meta["finding_ids"])
 
     for a in audit_entries:  # approve / apply / re-test, copied with their original hash for cross-checking

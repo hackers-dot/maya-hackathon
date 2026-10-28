@@ -73,12 +73,19 @@ def _sha256(text: str) -> str:
 
 
 class EvidenceStore:
-    def __init__(self, path: str | Path = DEFAULT_DB):
+    """owner (e.g. "user-3") tags every record this store writes, so a user's records can be deleted together.
+    The owner is not part of the sealed summary or its hash."""
+
+    def __init__(self, path: str | Path = DEFAULT_DB, owner: str | None = None):
         self.path = Path(path)
+        self.owner = owner
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as c:
             c.execute("CREATE TABLE IF NOT EXISTS evidence "
-                      "(id TEXT PRIMARY KEY, captured_at TEXT NOT NULL, summary TEXT NOT NULL, sha256 TEXT NOT NULL)")
+                      "(id TEXT PRIMARY KEY, captured_at TEXT NOT NULL, summary TEXT NOT NULL, sha256 TEXT NOT NULL, "
+                      "owner TEXT)")
+            if "owner" not in {r[1] for r in c.execute("PRAGMA table_info(evidence)")}:
+                c.execute("ALTER TABLE evidence ADD COLUMN owner TEXT")  # databases from before Web 7
 
     def _conn(self):
         return _Conn(self.path)
@@ -96,8 +103,8 @@ class EvidenceStore:
         }, sort_keys=True)
         record_id = uuid.uuid4().hex
         with self._conn() as c:
-            c.execute("INSERT INTO evidence VALUES (?, ?, ?, ?)",
-                      (record_id, json.loads(summary)["captured_at"], summary, _sha256(summary)))
+            c.execute("INSERT INTO evidence (id, captured_at, summary, sha256, owner) VALUES (?, ?, ?, ?, ?)",
+                      (record_id, json.loads(summary)["captured_at"], summary, _sha256(summary), self.owner))
         return record_id
 
     def _row(self, record_id: str):
@@ -110,6 +117,11 @@ class EvidenceStore:
     def get(self, record_id: str) -> dict:
         summary, digest = self._row(record_id)
         return {"id": record_id, "sha256": digest, **json.loads(summary)}
+
+    def delete_owner(self, owner: str) -> int:
+        """Delete every record tagged with this owner; returns how many were deleted."""
+        with self._conn() as c:
+            return c.execute("DELETE FROM evidence WHERE owner = ?", (owner,)).rowcount
 
     def verify(self, record_id: str) -> bool:
         summary, digest = self._row(record_id)

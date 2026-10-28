@@ -28,7 +28,9 @@ from src.severity import rule
 
 MAX_STEPS = 6
 TOKEN_CAP = 40_000
-MODE_LABELS = {"model": "Model-guided scan", "deterministic": "Deterministic only (no model key configured)"}
+MODE_LABELS = {"model": "Model-guided scan", "deterministic": "Deterministic only (no model key configured)",
+               "code": "Source code ZIP: read-only text checks (nothing executed)",
+               "logs": "Log upload: pattern checks (heuristics, not a standard)"}
 GOAL = ("Check the target web app for misconfigurations. Use run_check on relevant paths (for example /, /.env, "
         "/db.sql, /backup/), then give the final claims JSON.")
 
@@ -156,6 +158,30 @@ class RunManager:
                         "retest": retest_outcome(r)})
         return out
 
+    def record_upload(self, user_id: int, asset: dict, mode: str, findings: list, store, extra: dict) -> Run:
+        """A finished run for an uploaded ZIP or log file (analysed synchronously, nothing fetched)."""
+        now = self.app.clock()
+        run = Run(id=secrets.token_hex(12), user_id=user_id, asset_id=asset["id"], demo=False, mode=mode,
+                  model="none", started_at=now, status="finished", finished_at=now)
+        run.findings = {f.id: f for f in findings}
+        run.trace.append({"step": 1, "tool": f"{mode} upload", "args": asset["host"],
+                          "result_summary": f"{len(findings)} finding(s)",
+                          "tokens": {"prompt": 0, "completion": 0, "reasoning": 0}, "latency": 0.0})
+        view = findings_view(run.findings, store)
+        run.result = {"findings": view, "fix_first": view[:3], "claims": [], "order_note": "", "dropped": [],
+                      "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "reasoning_tokens": 0},
+                      "model_finished": False, "stop_reason": mode, **extra}
+        with self._lock:
+            self.runs[run.id] = run
+        return run
+
+    def drop_for_user(self, user_id: int) -> int:
+        with self._lock:
+            mine = [rid for rid, r in self.runs.items() if r.user_id == user_id]
+            for rid in mine:
+                del self.runs[rid]
+        return len(mine)
+
     def usage_for(self, user_id: int) -> dict:
         totals = {"prompt_tokens": 0, "completion_tokens": 0, "reasoning_tokens": 0, "total_tokens": 0}
         mine = [r for r in self.runs.values() if r.user_id == user_id]
@@ -167,7 +193,7 @@ class RunManager:
 
     # --- worker ---
     def _work(self, run: Run, asset: dict, provider):
-        store = EvidenceStore(self.app.data_dir / "evidence.db")
+        store = EvidenceStore(self.app.data_dir / "evidence.db", owner=f"user-{int(run.user_id)}")
         try:
             if run.demo:
                 base, verified = self.app.ensure_demo(run.user_id), frozenset()

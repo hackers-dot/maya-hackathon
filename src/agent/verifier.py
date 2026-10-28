@@ -24,12 +24,15 @@ from src.evidence import EvidenceStore, mask
 from src.models import Finding
 from src.scanner.checks_files import ENV_LINE, GIT_HEAD, LISTING
 from src.scanner.checks_dns import check_dmarc, check_spf
+from src.logs import LOG_CHECKS
+from src.logs import support_lines as log_support_lines
 from src.scanner.checks_js import outdated
 from src.scanner.checks_tls import TLS_FINDING_CHECKS, tls_findings
 from src.scanner.checks_headers import SECURITY_HEADERS, VERSION
 
 ClaimType = Literal["header_missing", "cookie_flag_missing", "version_disclosed", "file_exposed",
-                    "directory_listing", "dns_record_missing", "tls_weakness", "library_outdated"]
+                    "directory_listing", "dns_record_missing", "tls_weakness", "library_outdated",
+                    "code_pattern", "log_activity"]
 
 CLAIM_FOR_CHECK = {
     "missing_csp": "header_missing", "missing_hsts": "header_missing",
@@ -43,6 +46,19 @@ CLAIM_FOR_CHECK = {
     "weak_tls_or_expiring_cert": "tls_weakness", "cert_expires_within_14_days": "tls_weakness",
     "cert_expires_within_30_days": "tls_weakness", "tls_protocol_below_1_2": "tls_weakness",
     "outdated_js_library": "library_outdated",
+    "code_hardcoded_secret": "code_pattern",
+    "code_env_file_committed": "code_pattern",
+    "code_debug_enabled": "code_pattern",
+    "code_dangerous_eval": "code_pattern",
+    "code_unsafe_deserialization": "code_pattern",
+    "code_shell_true": "code_pattern",
+    "code_weak_password_hash": "code_pattern",
+    "code_outdated_dependency": "code_pattern",
+    "log_failed_login_burst": "log_activity",
+    "log_sensitive_path_probe": "log_activity",
+    "log_many_4xx": "log_activity",
+    "log_injection_pattern": "log_activity",
+    "log_login_after_failures": "log_activity",
 }
 
 TEMPLATES = {
@@ -55,6 +71,9 @@ TEMPLATES = {
     "tls_weakness": "{target} has a TLS or certificate weakness ({check}). Severity: {severity}.",
     "library_outdated": "{location} on {target} loads a library version that appears outdated ({check}). "
                         "Severity: {severity}.",
+    "code_pattern": "{location} in {target} shows a pattern MAYA flags ({check}). Severity: {severity}.",
+    "log_activity": "Log activity that shares {location} was detected in {target} ({check}). "
+                    "Severity: {severity}.",
 }
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
@@ -182,6 +201,8 @@ def support_lines(finding: Finding, record: dict) -> list[str]:
         domain = finding.target.removeprefix("dns:")
         redo = check_spf(domain, answers) if check == "missing_spf" else check_dmarc(domain, answers)
         return [f.evidence[0].data for f in redo]
+    if check in LOG_CHECKS:  # the record is the stored, credential-masked log lines
+        return log_support_lines(check, resp["body"])
     if check in TLS_FINDING_CHECKS:  # the record is the stored handshake summary; judged at capture time
         try:
             info = json.loads(resp["body"])

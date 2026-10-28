@@ -410,6 +410,17 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .diff-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .diff-list { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; overflow-wrap: anywhere; }
 .downloads { margin-top: 4px; }
+.connectors .connector { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  padding: 4px 10px; border-radius: 10px; font: inherit; font-size: 13.5px; color: var(--text); background: transparent;
+  border: 0; text-align: left; text-decoration: none; cursor: pointer; }
+.connectors button.connector:hover, .connectors a.connector:hover { background: var(--panel-2); }
+.connectors .connector-soon { color: var(--muted); cursor: default; }
+.btn-danger { color: #fff; background: #b42318; border-color: #b42318; }
+.btn-danger:hover { filter: brightness(1.08); }
+.data-note li { margin-bottom: 8px; }
+.danger-zone { margin-top: 18px; }
+.danger-zone .hint { margin-bottom: 14px; }
+.side-actions .btn { white-space: nowrap; padding: 6px 10px; }
 .checks-list { margin: 0 0 14px; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; overflow-wrap: anywhere; }
 .downloads .btn { text-align: center; }
 .quality-summary { margin: 0 0 10px; font-size: 14px; }

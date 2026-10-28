@@ -305,6 +305,30 @@ See `src/models.py`:
 - **Re-test.** It re-runs the check that produced each finding (TLS findings re-run the TLS check). A check that cannot run now keeps its findings "still present": nothing is called fixed without proof.
 - **Tests without outbound network.** DoH answers come from `httpx.MockTransport`. TLS runs against a loopback TLS server with certificates made by the `openssl` command line at test time (tests skip if it is not installed), including a real TLS 1.1 handshake.
 
+### Web 7: code connector, logs upload, data delete
+
+- **Uploads are assets with a finished run.** `POST /api/uploads/code` (ZIP, at most 10 MB) and `POST /api/uploads/logs` (`.log`/`.txt`, at most 5 MB) take the raw file as the body: CSRF header, an allowed `Content-Type`, and `X-Upload-Name` (a plain file name with the right extension). Company users only, after consent, one at a time per user. A body a little over the cap is drained and refused with 413; anything larger closes the connection. Each upload becomes an asset of kind `code` or `logs` (only its name is kept) and a finished run (`RunManager.record_upload`). So the findings table, report download, evidence pack, chat context and per-user 404s all work unchanged. Apply and re-test are refused for uploads.
+- **Code connector (`src/code_scan.py`).** The ZIP is read in memory with `zipfile` and never extracted to disk, imported or executed. Before any member is read, the whole upload is refused for a `..`, absolute, drive-letter or backslash name, a symbolic link, an encrypted member, more than 2000 entries, or more than 50 MB declared. While reading: a per-member ratio guard (over 100:1 is treated as a zip bomb), at most 2 MB per file and 50 MB in total actually read (declared sizes are not trusted). Files with NUL bytes or non-UTF-8 content are skipped as binary.
+  - Checks are pure functions over (path, text): hard-coded secrets (name = value, well-known token prefixes, private-key blocks; references such as `os.environ[...]` and placeholders are ignored), a committed `.env` (templates such as `.env.example` are not), `debug=True`, `eval(`/`exec(`, `pickle.load(s)`, `shell=True`, MD5/SHA-1 near passwords, and pinned dependency versions older than a SHORT EXAMPLE table (`requirements.txt`, `package.json`).
+  - Evidence is `path:line` plus a masked excerpt. A secret becomes first 3 + "..." + last 2 before it reaches a finding or the evidence store; a test checks the full value is in neither, nor in the pack. Wording is "appears" / "detected". OWASP labels are "mapped to" (A07, A05, A03, A08, A02, A06).
+- **Logs (`src/logs.py`).** Parsers for nginx/Apache combined access logs and syslog sshd lines: at most 100,000 lines, 2000 characters each. Detections are grouped by source address and labelled "shares source address", never as one actor:
+  - a burst of failed logins (10 within 5 minutes by default), including POSTs to login paths answered 401/403;
+  - requests for `.env`, `.git`, `wp-login.php`, `phpmyadmin`;
+  - many 4xx responses (20);
+  - SQL-injection-like or traversal strings in the request line (detection only; it does not show success);
+  - a successful login after 3 or more failures.
+
+  These thresholds are configurable heuristics, not a standard. Evidence lines are verbatim with their line numbers; only credentials inside a line are masked, and IP addresses stay visible. Log detections have no OWASP category: they describe activity, not a weakness in the app.
+- **Optional model summary.** `POST /api/runs/<id>/summarize` (log runs only) sends the finding list to the existing provider (low effort, 1200 max tokens, TokenBudget 40,000). The model returns typed claims `{finding_id, claim_type: "log_activity", priority, note}` and never quotes. The same `verify()` as scans keeps a claim only if its finding exists, its evidence record's hash verifies, and the stored lines still show the detection (`logs.support_lines`); code attaches the evidence line. Severity comes from the table, a model-supplied field makes the claim malformed, and notes that name addresses or paths outside that finding's evidence are dropped. Without a key the answer is 409 "Model not configured".
+- **Evidence owner.** `EvidenceStore(owner="user-<id>")` tags each record; older databases get the column added in place. The owner is not part of the sealed summary or its hash. Evidence packs name the capture tool per record (HTTP client, code connector, log parser, TLS check).
+- **Disconnect and Delete my data.**
+  - `POST /api/assets/<id>/disconnect` deletes the asset row and, if no other verified asset uses that host, its entry in `verified_targets.json`.
+  - `POST /api/data/delete {"confirm": "DELETE"}` (CSRF; refused while a scan runs) deletes the user's assets (and verified status), runs, evidence records (by owner), chats and messages, and the demo app's control file. It replaces the user's audit log with one entry, `user_data_deleted`, holding counts only.
+  - The account stays. Uploads were never stored, and packs are built on demand, so neither has anything left to delete. Token usage lines in `usage.jsonl` hold no content and are kept.
+  - Another user's data is untouched (tested).
+  - The data-use note (what is stored, where, how long) is on the "Your data" page, and a short version is on the consent page.
+- **Dashboard.** The sidebar lists connectors: Website, Source code ZIP and Logs work; API, Mobile and Cloud are labelled "coming soon" and are not buttons.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

@@ -25,11 +25,23 @@
 <ul id="assets-list" class="side-list"></ul>
 <p id="assets-empty" class="side-empty">Nothing connected yet</p>
 <a id="add-asset" class="side-link" href="/connect-website" hidden>&#65291; Connect a website</a>
+<div id="connectors" hidden>
+<h3 class="side-heading">Connectors</h3>
+<ul class="side-list connectors">
+<li><a class="connector" href="/connect-website"><span>Website</span><span class="chip chip-ok">works</span></a></li>
+<li><button id="conn-code" class="connector" type="button"><span>Source code ZIP</span><span class="chip chip-ok">works</span></button></li>
+<li><button id="conn-logs" class="connector" type="button"><span>Logs</span><span class="chip chip-ok">works</span></button></li>
+<li class="connector connector-soon"><span>API</span><span class="chip">coming soon</span></li>
+<li class="connector connector-soon"><span>Mobile</span><span class="chip">coming soon</span></li>
+<li class="connector connector-soon"><span>Cloud</span><span class="chip">coming soon</span></li>
+</ul>
+</div>
 </nav>
 <div class="side-bottom">
 <div class="user"><span id="avatar" class="avatar" aria-hidden="true"></span><span id="who" class="who"></span></div>
 <div class="side-actions">
 <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">&#9680;</button>
+<button id="data-link" class="btn btn-quiet" type="button">Your data</button>
 <button id="signout" class="btn btn-quiet" type="button">Sign out</button>
 </div>
 </div>
@@ -63,12 +75,37 @@
 <ol id="chat-messages" class="chat-messages" aria-live="polite"></ol>
 <p id="chat-empty" class="side-empty">Ask MAYA anything about web security. It answers about your own sites only from verified findings.</p>
 </section>
+<section id="upload-view" class="asset-view" hidden aria-live="polite">
+<h1 id="up-title" class="title">Upload</h1>
+<p id="up-desc" class="hint"></p>
+<div class="field"><label id="up-label" for="up-file">File</label><input id="up-file" type="file"></div>
+<div class="actions"><button id="up-btn" class="btn btn-primary" type="button" disabled>Upload and check</button></div>
+<p id="up-message" class="message" role="status"></p>
+</section>
+<section id="data-view" class="asset-view" hidden aria-live="polite">
+<h1 class="title">Your data</h1>
+<ul class="checklist data-note">
+<li><strong>What is stored:</strong> your account (email and a scrypt password hash), what you connected (website addresses, upload file names), scan results with their evidence records (secrets masked before storing), your chats, and an audit log of approvals.</li>
+<li><strong>Uploads:</strong> ZIP and log files are read in memory and never saved. Only findings with masked excerpts are kept.</li>
+<li><strong>Where:</strong> only on this computer, in MAYA's local data folder (SQLite and JSON files). Exceptions you control: with a model key, findings and chat messages go to the model provider; the SPF/DMARC check sends your domain name to cloudflare-dns.com.</li>
+<li><strong>How long:</strong> until you delete it here. Scan runs are held in memory and end when the server restarts; evidence records and chats stay until deleted.</li>
+</ul>
+<section class="panel danger-zone">
+<div class="panel-head"><h2>Delete my data</h2></div>
+<p class="hint">Deletes your connected assets (and their verified status), scan runs, evidence records, chats and your demo app's fix state. Your account stays so you can sign in again; one audit entry with counts only (no content) records the deletion.</p>
+<div class="field"><label for="delete-confirm">Type DELETE to confirm</label><input id="delete-confirm" type="text" autocomplete="off" maxlength="10"></div>
+<div class="actions"><button id="delete-btn" class="btn btn-danger" type="button" disabled>Delete my data</button></div>
+<p id="data-message" class="message" role="status"></p>
+</section>
+</section>
 <section id="asset-view" class="asset-view" hidden aria-live="polite">
 <p id="demo-banner" class="banner" hidden>DEMO: these results come from MAYA's deliberately vulnerable demo app on loopback, not a real site.</p>
 <div class="asset-head">
 <div class="asset-title"><h1 id="av-label" class="title"></h1><span id="av-status" class="chip"></span></div>
 <div class="asset-actions"><span id="mode-label" class="mode-label"></span>
 <button id="reset-demo-btn" class="btn btn-quiet" type="button" hidden disabled>Reset demo app</button>
+<button id="disconnect-btn" class="btn btn-quiet" type="button">Disconnect</button>
+<button id="summarize-btn" class="btn btn-secondary" type="button" hidden>Summarize with model</button>
 <button id="scan-btn" class="btn btn-primary" type="button" disabled>Run security scan</button></div>
 </div>
 <p id="av-hint" class="hint"></p>
@@ -136,6 +173,8 @@
 <h3 id="checks-heading" class="sub-heading">Checks</h3>
 <p id="checks-summary" class="hint"></p>
 <ul id="checks-list" class="checks-list"></ul>
+<h3 id="groups-heading" class="sub-heading" hidden>By source address</h3>
+<ul id="groups-list" class="checks-list" hidden></ul>
 <h3 class="sub-heading">Claims not included</h3>
 <ul id="dropped-list" class="dropped"></ul>
 </section>

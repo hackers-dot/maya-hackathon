@@ -118,7 +118,11 @@ def test_enum_and_prompt_list_exactly_the_runnable_checks():
     enum = TOOL_SPECS[0]["function"]["parameters"]["properties"]["check_id"]["enum"]
     tls_findings = {"cert_expires_within_14_days", "cert_expires_within_30_days", "tls_protocol_below_1_2"}
     assert enum == RUNNABLE_CHECKS and len(enum) == 13
-    assert set(enum) == set(TABLE) - set(NOT_RUNNABLE) - tls_findings
+    from src.code_scan import CODE_CHECKS
+    from src.logs import LOG_CHECKS
+    upload_checks = set(CODE_CHECKS) | set(LOG_CHECKS)  # run on uploaded files, never offered to the scan agent
+    assert set(enum) == set(TABLE) - set(NOT_RUNNABLE) - tls_findings - upload_checks
+    assert not upload_checks & set(enum)
     listed = SYSTEM_PROMPT.split("The runnable checks are exactly: ")[1].split(". ")[0]
     assert listed.split(", ") == RUNNABLE_CHECKS
     assert not any(c in SYSTEM_PROMPT for c in NOT_RUNNABLE)

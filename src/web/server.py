@@ -51,8 +51,15 @@ PAGES = {
     "/connect-website": ("connect-website.html", True),
     "/chat": ("chat.html", True),
 }
-ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|scan|reset-demo)$")
-RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest|approve-all)$")
+ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|scan|reset-demo|disconnect)$")
+RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest|approve-all|summarize)$")
+# path -> (asset kind, max body bytes, allowed extensions, allowed content types); raw body, never JSON
+UPLOADS = {
+    "/api/uploads/code": ("code", 10 * 1024 * 1024, (".zip",),
+                          {"application/zip", "application/x-zip-compressed", "application/octet-stream"}),
+    "/api/uploads/logs": ("logs", 5 * 1024 * 1024, (".log", ".txt"), {"text/plain", "application/octet-stream"}),
+}
+UPLOAD_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,99}$")
 CHAT_PATH = re.compile(r"^/api/chats/([0-9a-f]{16})$")
 CHAT_SEND = re.compile(r"^/api/chats/([0-9a-f]{16})/messages$")
 APPROVE = re.compile(r"^/api/runs/([0-9a-f]{24})/proposals/(fix-[a-z_]{3,60})/approve$")
@@ -213,7 +220,35 @@ def _preview_sample() -> dict:
     }
 
 
+def _preview_logs() -> dict:
+    """A log-upload result for screenshots, produced by the real parser from documentation-range addresses."""
+    from src.logs import LOG_CHECKS, log_findings
+    lines = [f"Oct 28 11:00:{i * 4:02d} web1 sshd[2201]: Failed password for root from 203.0.113.7 port {40000 + i} ssh2"
+             for i in range(12)]
+    lines.append("Oct 28 11:01:00 web1 sshd[2201]: Accepted password for root from 203.0.113.7 port 40100 ssh2")
+    lines += [f'198.51.100.23 - - [28/Oct/2026:10:01:{i:02d} +0000] "GET {p} HTTP/1.1" 404 512 "-" "scanner/1.0"'
+              for i, p in enumerate(["/.env", "/.git/HEAD", "/wp-login.php", "/phpmyadmin/"] + [f"/x{n}" for n in range(18)])]
+    lines.append('192.0.2.44 - - [28/Oct/2026:10:03:00 +0000] "GET /item?id=1%27%20OR%20%271%27=%271 HTTP/1.1" 200 5 "-" "x"')
+    findings, groups, counts = log_findings("\n".join(lines), "server.log")
+    view = findings_view({f.id: f for f in findings}, None)
+    run = {"id": "1" * 24, "asset_id": "1" * 16, "mode": "logs", "mode_label": "Log upload: pattern checks "
+           "(heuristics, not a standard)", "model": "none", "demo": False, "error": None, "started_at": 1_800_000_000,
+           "finished_at": 1_800_000_000, "steps": 1, "can_apply": False, "status": "finished"}
+    return {"asset": {"id": "1" * 16, "kind": "logs", "label": "server.log", "origin": None, "status": "uploaded",
+                      "reason": None, "scannable": False, "last_run": None},
+            "run": run, "steps": [{"step": 1, "tool": "logs upload", "args": "server.log",
+                                   "result_summary": f"{len(findings)} finding(s)",
+                                   "tokens": {"prompt": 0, "completion": 0, "reasoning": 0}, "latency": 0.0}],
+            "result": {"findings": view, "fix_first": view[:3], "claims": [], "order_note": "", "dropped": [],
+                       "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "reasoning_tokens": 0},
+                       "model_finished": False, "stop_reason": "logs", "upload": {"name": "server.log", **counts},
+                       "checks": [{"check": c, "status": "ran"} for c in LOG_CHECKS],
+                       "groups": [{"source": ip, "label": "shares source address", "findings": ids}
+                                  for ip, ids in sorted(groups.items())]}}
+
+
 PREVIEW_SAMPLE = _preview_sample()
+PREVIEW_SAMPLE["logs"] = _preview_logs()
 
 
 def default_provider_factory():
@@ -489,9 +524,10 @@ class WebHandler(BaseHTTPRequestHandler):
                  "hash": (e.get("hash") or "")[:12]} for e in entries[-AUDIT_ENTRIES_SHOWN:]][::-1]
         return {"intact": intact, "first_bad_entry": bad, "count": len(entries), "entries": last}
 
-    def _store(self):
+    def _store(self, user=None):
+        """Records written through this store are tagged with the user, so "Delete my data" can remove them."""
         from src.evidence import EvidenceStore
-        return EvidenceStore(self.app.data_dir / "evidence.db")
+        return EvidenceStore(self.app.data_dir / "evidence.db", owner=f"user-{int(user['id'])}" if user else None)
 
     # --- GET ---
     def do_GET(self):
@@ -548,7 +584,7 @@ class WebHandler(BaseHTTPRequestHandler):
 
     # --- POST (all state-changing) ---
     POSTS = {"/api/signup", "/api/signin", "/api/signout", "/api/profile", "/api/asset", "/api/connect",
-             "/api/consent"}
+             "/api/consent", "/api/data/delete"}
 
     def do_POST(self):
         if not self._host_ok():
@@ -557,15 +593,20 @@ class WebHandler(BaseHTTPRequestHandler):
         action = ASSET_ACTION.match(path)
         run_action, approve = RUN_ACTION.match(path), APPROVE.match(path)
         chat_send = CHAT_SEND.match(path)
-        known = (path in self.POSTS or path in ("/api/assets", "/api/chats")
+        known = (path in self.POSTS or path in ("/api/assets", "/api/chats") or path in UPLOADS
                  or bool(action or run_action or approve or chat_send))
         try:
-            raw = self._read_body()  # always drain first, so an early refusal (even a 404) never resets the connection
+            cap = UPLOADS[path][1] if path in UPLOADS else MAX_BODY
+            # always drain first, so an early refusal (even a 404) never resets the connection
+            raw = self._read_body(cap, cap + DRAIN_MAX)  # a little over the cap is drained, then refused
             if not known:
                 raise Reply(404, "not found")
             session = self._session()
             if not self.app.sessions.csrf_ok(session, self.headers.get("X-CSRF-Token")):
                 raise Reply(403, "missing or invalid CSRF token; reload the page")
+            if path in UPLOADS:
+                status, payload, headers = self._post_upload(session, path, raw)
+                return self._json(status, payload, headers)
             body = self._parse_json(raw)
             if action:
                 status, payload, headers = self._post_asset_action(session, action.group(1), action.group(2))
@@ -672,8 +713,11 @@ class WebHandler(BaseHTTPRequestHandler):
         run = self.app.runs.get(user["id"], run_id)  # another user's run is simply "not found"
         if run is None:
             raise Reply(404, "not found")
+        if action == "summarize":
+            return self._post_summarize(user, run)
         if run.status == "running" or run.base is None:
-            raise Reply(409, "wait for the scan to finish")
+            raise Reply(409, "wait for the scan to finish" if run.status == "running"
+                        else "this result comes from an upload: there is nothing to apply or re-test")
         gate = self.app.gate(user["id"])
         if action == "approve-all":
             pending = [p for p in run.proposals.values() if p.status == "PROPOSED"]
@@ -708,7 +752,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 raise Reply(409, str(e) if run.demo else "fixes can be applied only to the loopback demo app") \
                     from None
         else:
-            client = self.app.runs.client_for(run, self._store())
+            client = self.app.runs.client_for(run, self._store(user))
             try:
                 run.retest = retest(client, run.base, dict(run.findings))
             finally:
@@ -723,9 +767,14 @@ class WebHandler(BaseHTTPRequestHandler):
         if asset is None:
             raise Reply(404, "not found")
         if action == "verify":
-            asset = self.app.assets.verify(user["id"], asset_id, store=self._store(),
+            asset = self.app.assets.verify(user["id"], asset_id, store=self._store(user),
                                            transport=self.app.http_transport)
             return 200, {"asset": public_asset(asset, self.app.runs.last_for_asset(user["id"], asset_id))}, None
+        if action == "disconnect":
+            if self.app.runs.active_for(user["id"]):
+                raise Reply(409, "wait for the running scan to finish")
+            self.app.assets.remove(user["id"], asset_id)  # the asset and its verified status
+            return 200, {"disconnected": asset_id}, None
         if action == "reset-demo":
             if asset["kind"] != "demo":
                 raise Reply(409, "only MAYA's demo app can be reset")
@@ -742,17 +791,131 @@ class WebHandler(BaseHTTPRequestHandler):
             raise Reply(409, str(e)) from None
         return 200, {"run": run_view(run)}, None
 
-    def _read_body(self) -> bytes:
+    # --- uploads (code ZIP, logs): analysed in memory, never stored, never executed ---
+    def _post_upload(self, session, path: str, raw: bytes):
+        from src.code_scan import CODE_CHECKS, UploadRefused, read_zip, scan_upload
+        from src.logs import (FAILED_LOGIN_THRESHOLD, FAILED_LOGIN_WINDOW_S, FAILS_BEFORE_SUCCESS, LOG_CHECKS,
+                              MANY_4XX_THRESHOLD, log_findings)
+        user = self._require_user(session)
+        if not (user["account_type"] == "company" and user["connect"] and user["consent_at"]):
+            raise Reply(409, "give consent before connecting anything")
+        kind, _, extensions, ctypes = UPLOADS[path]
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype not in ctypes:
+            raise Reply(415, f"expected one of: {', '.join(sorted(ctypes))}")
+        name = (self.headers.get("X-Upload-Name") or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+        if not UPLOAD_NAME.match(name) or not name.lower().endswith(extensions):
+            raise Reply(400, f"file name must end in {' or '.join(extensions)}")
+        if not raw:
+            raise Reply(400, "the file is empty")
+        if self.app.runs.active_for(user["id"]):
+            raise Reply(409, "wait for the running scan to finish")
+        store = self._store(user)
+        if kind == "code":
+            try:
+                files, counts = read_zip(raw)
+            except UploadRefused as e:
+                raise Reply(400, f"ZIP refused: {e}") from None
+            asset = self.app.assets.add_upload(user["id"], "code", name)
+            findings = scan_upload(files, name, store)
+            extra = {"upload": {"name": name, **counts},
+                     "checks": [{"check": c, "status": "ran"} for c in CODE_CHECKS]}
+        else:
+            if b"\x00" in raw[:8192]:
+                raise Reply(400, "this does not look like a text log file")
+            asset = self.app.assets.add_upload(user["id"], "logs", name)
+            findings, groups, counts = log_findings(raw.decode("utf-8", "replace"), name, store)
+            extra = {"upload": {"name": name, **counts},
+                     "checks": [{"check": c, "status": "ran"} for c in LOG_CHECKS],
+                     "groups": [{"source": ip, "label": "shares source address", "findings": ids}
+                                for ip, ids in sorted(groups.items())],
+                     "thresholds": {"failed_logins": FAILED_LOGIN_THRESHOLD, "window_minutes": FAILED_LOGIN_WINDOW_S // 60,
+                                    "many_4xx": MANY_4XX_THRESHOLD, "fails_before_success": FAILS_BEFORE_SUCCESS}}
+        run = self.app.runs.record_upload(user["id"], asset, kind, findings, store, extra)
+        return 200, {"asset": public_asset(asset, run.id), "run": run_view(run)}, None
+
+    def _post_summarize(self, user, run):
+        """Optional model summary of a log upload: typed claims, verified like scan claims (no model quotes)."""
+        from src.agent.loop import _parse_claims
+        from src.agent.verifier import verify
+        from src.budget import BudgetExceeded, TokenBudget
+        from src.provider import ProviderError
+        from src.web.runs import TOKEN_CAP
+        if run.mode != "logs":
+            raise Reply(409, "a model summary is available for log uploads only")
+        provider, model = self.app.provider_factory()
+        if provider is None:
+            raise Reply(409, "Model not configured: the optional summary needs a model key on the server")
+        store = self._store(user)
+        lines = [f"- {f['id']} | {f['check']} | {f['severity']} | {f['evidence_line'][:160]}"
+                 for f in run.result["findings"]]
+        messages = [
+            {"role": "system", "content": (
+                "You summarize log findings for a site owner. Reply with ONLY a JSON object "
+                '{"claims": [{"finding_id": "...", "claim_type": "log_activity", "priority": 1, "note": "..."}]}. '
+                "Use only the finding ids listed. Do not quote log lines: code attaches the evidence. priority is "
+                "the order to look at them, 1 = first, each number once. note is one plain sentence (max 160 "
+                "characters) that mentions only addresses or paths from that finding. Findings that share a source "
+                "address are not necessarily the same actor: never call anyone an attacker.")},
+            {"role": "user", "content": "Log findings:\n" + "\n".join(lines or ["(none)"])},
+        ]
+        try:
+            reply = provider.chat(messages, max_tokens=1200, reasoning_effort="low")
+        except ProviderError as e:  # already key-scrubbed by the provider
+            raise Reply(502, f"model call failed: {e}") from None
+        budget = TokenBudget(f"summary-{run.id}", cap=TOKEN_CAP, path=self.app.data_dir / "usage.jsonl")
+        try:
+            budget.add(reply.usage or {})
+        except (BudgetExceeded, ValueError, TypeError):
+            pass
+        claims = _parse_claims(reply.answer or "")
+        checked = verify(claims or [], dict(run.findings), store)
+        run.claims, run.model = checked, model
+        run.result.update({
+            "claims": [{"priority": v.get("priority"), "severity": v["severity"], "text": v["text"],
+                        "evidence_line": v["supporting_evidence"], "note": v.get("note"),
+                        "note_dropped": v.get("note_dropped")} for v in checked["verified"]],
+            "order_note": checked.get("order_note", ""),
+            "dropped": [{"finding_id": d.get("finding_id"), "reason": d["reason"]} for d in checked["insufficient"]],
+            "usage": dict(budget.run), "model_finished": claims is not None, "summary_model": model})
+        return 200, self._run_full(run), None
+
+    # --- data deletion ---
+    def _post_delete(self, session, body):
+        """Delete my data: assets (and verified status), runs, evidence records, chats and the demo control file.
+        The per-user audit log is replaced by one minimal entry "user_data_deleted" (counts only, no content)."""
+        from src.approval import AuditLog
+        from src.evidence import EvidenceStore
+        user = self._require_user(session)
+        if body.get("confirm") != "DELETE":
+            raise Reply(400, 'type DELETE to confirm')
+        uid = int(user["id"])
+        if self.app.runs.active_for(uid):
+            raise Reply(409, "wait for the running scan to finish")
+        counts = {"assets": self.app.assets.remove_all(uid), "runs": self.app.runs.drop_for_user(uid),
+                  "evidence_records": EvidenceStore(self.app.data_dir / "evidence.db").delete_owner(f"user-{uid}"),
+                  "chats": self.app.chats.delete_user(uid)}
+        control = self.app.demo_control(uid)
+        counts["demo_control_file"] = int(control.exists())
+        control.unlink(missing_ok=True)
+        audit_path = self.app.data_dir / "audit" / f"user-{uid}.jsonl"
+        with self.app._demo_lock:
+            self.app._gates.pop(uid, None)
+            audit_path.unlink(missing_ok=True)
+            AuditLog(audit_path).append("user_data_deleted", **counts)
+        return 200, {"deleted": counts}, None
+
+    def _read_body(self, cap: int = MAX_BODY, drain: int = DRAIN_MAX) -> bytes:
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             self.close_connection = True
             raise Reply(400, "bad Content-Length") from None
-        if length < 0 or length > DRAIN_MAX:
+        if length < 0 or length > drain:
             self.close_connection = True  # too big to drain: answer and hang up
             raise Reply(413, "request too large")
         raw = self.rfile.read(length)
-        if length > MAX_BODY:
+        if length > cap:
             raise Reply(413, "request too large")
         return raw
 

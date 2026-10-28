@@ -36,6 +36,20 @@ OWASP = {  # check -> (code, name); None = outside the OWASP Top 10
     "cert_expires_within_30_days": ("A02:2021", "Cryptographic Failures"),
     "tls_protocol_below_1_2": ("A02:2021", "Cryptographic Failures"),
     "outdated_js_library": ("A06:2021", "Vulnerable and Outdated Components"),  # the official category name
+    "code_hardcoded_secret": ("A07:2021", "Identification and Authentication Failures"),
+    "code_env_file_committed": ("A05:2021", "Security Misconfiguration"),
+    "code_debug_enabled": ("A05:2021", "Security Misconfiguration"),
+    "code_dangerous_eval": ("A03:2021", "Injection"),
+    "code_unsafe_deserialization": ("A08:2021", "Software and Data Integrity Failures"),
+    "code_shell_true": ("A03:2021", "Injection"),
+    "code_weak_password_hash": ("A02:2021", "Cryptographic Failures"),
+    "code_outdated_dependency": ("A06:2021", "Vulnerable and Outdated Components"),  # the official category name
+    # log detections describe observed activity, not a weakness in the app: no OWASP category
+    "log_failed_login_burst": None,
+    "log_sensitive_path_probe": None,
+    "log_many_4xx": None,
+    "log_injection_pattern": None,
+    "log_login_after_failures": None,
 }
 
 
@@ -164,6 +178,84 @@ TEXT = {
         "Like running last decade's version of an app that has had many updates since.",
         "A `<script src>` names a library version older than MAYA's short reference table.",
         "Update the library to a current release and test the pages that use it."),
+    "code_hardcoded_secret": Text(
+        "Hard-coded secret detected in source",
+        "A password, key or token appears to be written into the code itself.",
+        "Like writing the combination on the door of the safe.",
+        "A secret-looking value is assigned in the file at the line shown (value masked).",
+        "Rotate the secret now, then read it from an environment variable or secret store."),
+    "code_env_file_committed": Text(
+        "Environment file (.env) found in the code",
+        "A settings file that usually holds passwords and keys is part of the code.",
+        "Like packing the house keys into a box that strangers will open.",
+        "A `.env` file (not a template such as `.env.example`) is in the upload.",
+        "Remove the file from the code, add `.env` to `.gitignore`, and rotate every value it held."),
+    "code_debug_enabled": Text(
+        "Debug mode appears enabled",
+        "Debug mode can show code, settings and data to anyone who triggers an error.",
+        "Like leaving the workshop door open with all the plans on the wall.",
+        "`DEBUG = True` or `debug=True` is set in the file shown.",
+        "Turn debug mode off in production; read the setting from an environment variable."),
+    "code_dangerous_eval": Text(
+        "eval / exec call detected",
+        "Text is run as code; if a user can influence that text, they can run their own code.",
+        "Like a cashier who does whatever is written on any note handed over.",
+        "An `eval(` or `exec(` call appears at the line shown.",
+        "Replace it with explicit parsing (`json.loads`, `ast.literal_eval`) or a lookup table."),
+    "code_unsafe_deserialization": Text(
+        "pickle deserialization detected",
+        "pickle can run code hidden inside the data it reads.",
+        "Like opening a parcel that assembles itself into a machine inside your house.",
+        "A `pickle.load(` or `pickle.loads(` call appears at the line shown.",
+        "Use JSON (or another data-only format) for anything that comes from outside."),
+    "code_shell_true": Text(
+        "Shell command with shell=True detected",
+        "The command goes through a shell, so extra text in it can become extra commands.",
+        "Like reading a shopping list aloud to someone who obeys every word on it.",
+        "A call with `shell=True` appears at the line shown.",
+        "Pass the command as a list without `shell=True`; never build it from user input."),
+    "code_weak_password_hash": Text(
+        "Fast hash (MD5/SHA-1) near password handling",
+        "Passwords hashed with MD5 or SHA-1 can be guessed quickly if the data leaks.",
+        "Like a lock that can be tried a billion times a second.",
+        "`md5` or `sha1` appears on a line that also mentions a password.",
+        "Use bcrypt, scrypt or argon2 for passwords and rehash on next login."),
+    "code_outdated_dependency": Text(
+        "Dependency appears outdated",
+        "A pinned package version is older than the short reference table in MAYA.",
+        "Like running an app version that has had many updates since.",
+        "`requirements.txt` or `package.json` pins a version older than the example table.",
+        "Update the dependency to a current release and run your tests."),
+    "log_failed_login_burst": Text(
+        "Burst of failed logins from one source address",
+        "Many failed logins from one source address in a short time can mean someone is guessing passwords.",
+        "Like someone trying key after key in your front door.",
+        "At least the configured number of failed logins share one source address within the configured window (a heuristic, not a standard).",
+        "Rate-limit or block the source address, require strong passwords, and turn on MFA."),
+    "log_sensitive_path_probe": Text(
+        "Requests for sensitive paths",
+        "Someone asked for files like `.env`, `.git` or admin tools, which suggests automated scanning.",
+        "Like a stranger trying the handles of every back door.",
+        "Requests for `.env`, `.git`, `wp-login.php` or `phpmyadmin` share one source address.",
+        "Make sure these paths return 404; consider blocking the source address."),
+    "log_many_4xx": Text(
+        "Many client errors from one source address",
+        "One source address caused many error responses, which often comes from automated scanning.",
+        "Like someone ringing every doorbell in the building.",
+        "At least the configured number of 4xx responses share one source address.",
+        "Review the requests; rate-limit the source address if they are unwanted."),
+    "log_injection_pattern": Text(
+        "Injection-like or traversal strings in requests",
+        "Requests contained text typical of database-injection or file-path tricks; this shows attempts, not success.",
+        "Like finding pry marks on a door that stayed shut.",
+        "Request lines contain SQL-injection-like (`union select`, `or 1=1`) or traversal (`../`) strings.",
+        "Check that the endpoints use parameterised queries and safe path handling."),
+    "log_login_after_failures": Text(
+        "Successful login after repeated failures",
+        "A login succeeded right after several failed tries from the same source address.",
+        "Like a door that opened after many wrong keys were tried.",
+        "A successful login follows the configured number of failed logins that share one source address.",
+        "Confirm the login with the account owner, reset the password if unsure, and turn on MFA."),
 }
 
 DEMO_BANNER = "DEMO: findings below come from MAYA's deliberately vulnerable demo app on loopback, not a real site."

@@ -6,6 +6,7 @@ Prints one line per check and exits 1 if any check fails.
 """
 import argparse
 import http.cookiejar
+import io
 import json
 import shutil
 import sys
@@ -32,6 +33,12 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None  # report 3xx as-is so the check can see where the server sends the user
 
 
+def data_asset(b, kind):
+    """The id of this user's first asset of `kind`, or None."""
+    _, _, raw = b.request("GET", "/api/assets")
+    return next((a["id"] for a in json.loads(raw)["assets"] if a["kind"] == kind), None)
+
+
 class Browserless:
     def __init__(self, base: str):
         self.base = base.rstrip("/")
@@ -56,6 +63,18 @@ class Browserless:
         status, headers, raw = self.request("GET", "/api/session")
         self.csrf = json.loads(raw)["csrf"]
         return status, headers, json.loads(raw)
+
+    def upload(self, path: str, data: bytes, name: str, ctype: str):
+        if self.csrf is None:
+            self.session()
+        req = urllib.request.Request(self.base + path, data=data, method="POST")
+        for k, v in {"Content-Type": ctype, "X-Upload-Name": name, "X-CSRF-Token": self.csrf or ""}.items():
+            req.add_header(k, v)
+        try:
+            with self.opener.open(req, timeout=30) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
 
     def post(self, path: str, body: dict):
         if self.csrf is None:
@@ -301,6 +320,43 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
     rep.check(status == 404, "another user's asset cannot be scanned", f"HTTP {status}")
     status, _, _ = b2.post(f"/api/assets/{demo.get('id')}/reset-demo", {})
     rep.check(status == 404, "another user's demo app cannot be reset", f"HTTP {status}")
+
+    # --- Web 7: code ZIP and log uploads, disconnect, delete my data (company user) ---
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:  # FAKE secret, made up for this check
+        z.writestr("app.py", 'SECRET_KEY = "fake-flow-check-secret-123456"\nDEBUG = True\n')
+    status, data = b.upload("/api/uploads/code", buf.getvalue(), "app.zip", "application/zip")
+    code_run = (data.get("run") or {}).get("id")
+    st, _, raw = b.request("GET", f"/api/runs/{code_run}")
+    found = sorted(f["id"] for f in json.loads(raw).get("result", {}).get("findings", [])) if st == 200 else []
+    rep.check(status == 200 and found == ["code_debug_enabled:app.py:2", "code_hardcoded_secret:app.py:1"]
+              and b"fake-flow-check-secret-123456" not in raw, "code ZIP upload: findings, secret masked",
+              f"HTTP {status} {found}")
+    log = "\n".join(f"Oct 28 11:00:{i:02d} web1 sshd[1]: Failed password for root from 203.0.113.7 port {i} ssh2"
+                    for i in range(10)).encode()
+    status, data = b.upload("/api/uploads/logs", log, "auth.log", "text/plain")
+    log_run = (data.get("run") or {}).get("id")
+    st, _, raw = b.request("GET", f"/api/runs/{log_run}")
+    res = json.loads(raw).get("result", {}) if st == 200 else {}
+    rep.check(status == 200 and [f["id"] for f in res.get("findings", [])] == ["log_failed_login_burst:ip:203.0.113.7"]
+              and res.get("groups", [{}])[0].get("label") == "shares source address",
+              "log upload: failed-login burst grouped by source address", f"HTTP {status}")
+    status, _, data = b.post(f"/api/runs/{log_run}/summarize", {})
+    rep.check(status == 409 and str(data.get("error", "")).startswith("Model not configured"),
+              "optional model summary without a key: 'Model not configured'", f"HTTP {status}")
+    status, _, _ = b2.request("GET", f"/api/runs/{code_run}")
+    rep.check(status == 404, "another user's upload result is not found", f"HTTP {status}")
+    status, _, _ = b.post(f"/api/assets/{data_asset(b, 'code')}/disconnect", {})
+    rep.check(status == 200 and data_asset(b, "code") is None, "disconnect removes the asset", f"HTTP {status}")
+    status, _, data = b.post("/api/data/delete", {"confirm": "nope"})
+    rep.check(status == 400, "delete my data needs DELETE typed", f"HTTP {status}")
+    status, _, data = b.post("/api/data/delete", {"confirm": "DELETE"})
+    st, _, raw = b.request("GET", "/api/audit")
+    audit = json.loads(raw)
+    st2, _, raw2 = b.request("GET", "/api/assets")
+    rep.check(status == 200 and json.loads(raw2)["assets"] == [] and audit.get("intact") and
+              [e["event"] for e in audit["entries"]] == ["user_data_deleted"],
+              "delete my data: assets gone, one audit entry user_data_deleted", json.dumps(data.get("deleted")))
 
     print(f"\n{'ALL CHECKS PASSED' if rep.failures == 0 else str(rep.failures) + ' CHECK(S) FAILED'}")
     return 1 if rep.failures else 0

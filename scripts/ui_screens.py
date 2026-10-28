@@ -52,6 +52,11 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("downloads", "/__preview/chat.html?view=finished&scroll=downloads-panel"),
     ("checks", "/__preview/chat.html?view=finished&scroll=checks-heading"),
     ("quality", "/__preview/chat.html?view=finished&scroll=quality-panel"),
+    ("upload-code", "/__preview/chat.html?view=upload-code"),
+    ("upload-logs", "/__preview/chat.html?view=upload-logs"),
+    ("logs-result", "/__preview/chat.html?view=logs"),
+    ("logs-groups", "/__preview/chat.html?view=logs&scroll=checks-heading"),
+    ("data", "/__preview/chat.html?view=data"),
     ("chat", "/__preview/chat.html?view=chat"),
     ("chat-nokey", "/__preview/chat.html?view=chat-nokey"),
 ]

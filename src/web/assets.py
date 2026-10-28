@@ -87,6 +87,36 @@ class Assets:
                       tuple(asset[k] for k in self.COLS))
         return asset
 
+    def add_upload(self, user_id: int, kind: str, name: str) -> dict:
+        """A code ZIP or log file upload. Only its name and kind are kept; the content never is."""
+        assert kind in ("code", "logs")
+        asset = {"id": secrets.token_hex(8), "user_id": user_id, "kind": kind,
+                 "origin": f"upload:{kind}:{secrets.token_hex(8)}", "host": name, "token": None,
+                 "status": "uploaded", "reason": None, "created_at": self.clock(), "verified_at": None}
+        with self._db() as c, c:
+            c.execute(f"INSERT INTO assets ({', '.join(self.COLS)}) VALUES ({', '.join('?' * len(self.COLS))})",
+                      tuple(asset[k] for k in self.COLS))
+        return asset
+
+    def remove(self, user_id: int, asset_id) -> dict | None:
+        """Disconnect: delete the asset row and, if no other verified asset uses its host, its verified status."""
+        asset = self.get(user_id, asset_id)
+        if asset is None:
+            return None
+        with self._db() as c, c:
+            c.execute("DELETE FROM assets WHERE id = ? AND user_id = ?", (asset["id"], user_id))
+            still = c.execute("SELECT COUNT(*) FROM assets WHERE host = ? AND status = 'verified'",
+                              (asset["host"],)).fetchone()[0]
+        if asset["status"] == "verified" and not still:
+            self.targets.remove(asset["host"])
+        return asset
+
+    def remove_all(self, user_id: int) -> int:
+        assets = self.list(user_id)
+        for a in assets:
+            self.remove(user_id, a["id"])
+        return len(assets)
+
     def list(self, user_id: int) -> list[dict]:
         return self._rows("user_id = ?", (user_id,))
 
@@ -114,7 +144,10 @@ def public_asset(asset: dict, last_run: str | None = None) -> dict:
     out = {"id": asset["id"], "kind": asset["kind"], "label": DEMO_LABEL if demo else asset["host"],
            "origin": None if demo else asset["origin"], "status": asset["status"], "reason": asset["reason"],
            "scannable": asset["status"] in ("verified", "loopback"), "last_run": last_run}
-    if not demo:
+    if asset["kind"] in ("code", "logs"):
+        out["label"] = asset["host"]
+        out["origin"] = None
+    elif not demo:
         out["verification"] = {"token": asset["token"],
                                "meta_tag": f'<meta name="maya-verify" content="{asset["token"]}">',
                                "file_path": WELL_KNOWN_PATH, "file_url": asset["origin"] + WELL_KNOWN_PATH}

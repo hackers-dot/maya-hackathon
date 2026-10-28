@@ -66,6 +66,11 @@ All code in this repository was written during the Meta Global AI Developer Hack
   - A TLS check for verified https sites connects only to port 443 of that host and reports a certificate expiring within 14 days (high) or 30 days (medium), and protocols below TLS 1.2 (medium).
   - Outdated JavaScript libraries: `<script src>` names are compared to a short example table and reported as "appears outdated". The demo app now loads an old jQuery, so a scan of it finds 12 issues; the live eval above was measured before this change (11).
   - The result view lists which checks ran and which are "not applicable for this target".
+- **2026-10-28 (Web 7):** Code connector, log upload and data deletion.
+  - Source code ZIP upload (up to 10 MB): read in memory, never executed or saved, with path, symlink, size, file-count and zip-bomb guards. It flags hard-coded secrets (masked), a committed `.env`, `debug=True`, `eval`/`exec`, `pickle.loads`, `shell=True`, MD5/SHA-1 for passwords, and dependencies that appear outdated (a short example list).
+  - Log upload (access logs and ssh auth logs, up to 5 MB): failed-login bursts, sensitive-path probing, many 4xx responses, injection-like strings (detection only) and a login after repeated failures. Findings are grouped by "shares source address", with configurable heuristic thresholds, and evidence lines are verbatim with credentials masked. An optional model summary uses typed claims verified like scans; without a key it says "Model not configured".
+  - Upload findings go into the same findings table, report and evidence pack.
+  - "Disconnect" per asset, and "Delete my data" (type DELETE): removes your assets, runs, evidence records, chats and demo app state, leaving one audit entry with counts only. A data-use note says what is stored, where (only on this computer) and for how long.
 
 ## License
 

@@ -83,6 +83,11 @@ class VerifiedTargets:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
+    def remove(self, host: str) -> None:
+        data = self.load()
+        if data.pop(host, None) is not None:
+            self.path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
 
 def verify_ownership(target_url: str, token: str, targets: VerifiedTargets, store: EvidenceStore | None = None,
                      transport: httpx.BaseTransport | None = None) -> OwnershipResult:

@@ -351,7 +351,7 @@ def test_preview_sample_only_in_preview_mode(tmp_path, web):
     try:
         with httpx.Client(base_url=f"http://127.0.0.1:{server.server_address[1]}", trust_env=False) as c:
             data = c.get("/__preview/sample.json").json()
-            assert set(data) == {"assets", "running", "finished", "extras", "chat", "eval"}
+            assert set(data) == {"assets", "running", "finished", "extras", "chat", "eval", "logs"}
             assert data["eval"]["available"] is False or "totals" in data["eval"]  # read from the real file
             assert c.get("/__preview/connect-website.html").status_code == 200
             assert c.get("/api/assets").status_code == 401  # preview gives no account data
