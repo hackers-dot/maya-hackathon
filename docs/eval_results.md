@@ -28,4 +28,10 @@ Totals: 15 runs, fake claims in report **0**, reports produced 15/15, claims kep
 
 ## Live runs
 
-Live model quality: not yet measured. Run `scripts/eval_live.py --write-doc` with a model key to measure it.
+### 2026-10-28 UTC, model `meta-models/muse-spark-open-1026`, 3 runs on the vulnerable demo app (cap 40000 tokens per scan, 6 steps, effort low)
+
+| Run | Findings (code) | Claims kept | Claims dropped | FAKE CLAIMS IN REPORT | Tokens | Model latency (s) | Stop reason |
+|---|---|---|---|---|---|---|---|
+| 1 | 11 | 11 | 0 | **0** | 14052 | 10.37 | forced_final |
+| 2 | 11 | 11 | 0 | **0** | 13934 | 10.02 | forced_final |
+| 3 | 11 | 11 | 0 | **0** | 14040 | 9.44 | forced_final |

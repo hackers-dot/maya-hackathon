@@ -429,6 +429,44 @@
     "notes_dropped": 5
   },
   "live": {
-    "status": "not yet measured"
+    "status": "measured",
+    "measured": [
+      {
+        "date": "2026-10-28",
+        "model": "meta-models/muse-spark-open-1026",
+        "rows": [
+          {
+            "fake_claims_in_report": 0,
+            "tokens": 14052,
+            "model_seconds": 10.37,
+            "stop_reason": "forced_final",
+            "model_finished": true,
+            "findings": 11,
+            "claims_kept": 11,
+            "claims_dropped": 0
+          },
+          {
+            "fake_claims_in_report": 0,
+            "tokens": 13934,
+            "model_seconds": 10.02,
+            "stop_reason": "forced_final",
+            "model_finished": true,
+            "findings": 11,
+            "claims_kept": 11,
+            "claims_dropped": 0
+          },
+          {
+            "fake_claims_in_report": 0,
+            "tokens": 14040,
+            "model_seconds": 9.44,
+            "stop_reason": "forced_final",
+            "model_finished": true,
+            "findings": 11,
+            "claims_kept": 11,
+            "claims_dropped": 0
+          }
+        ]
+      }
+    ]
   }
 }
