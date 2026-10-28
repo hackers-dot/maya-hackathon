@@ -400,6 +400,8 @@
     }
     const approved = (proposals || []).some((p) => p.status === "APPROVED");
     const idle = run && run.status !== "running";
+    const approveAllBtn = $("approve-all-btn");
+    if (approveAllBtn) approveAllBtn.disabled = !(idle && (proposals || []).some((p) => p.status === "PROPOSED"));
     const apply = $("apply-btn");
     if (apply) apply.disabled = !(run && run.can_apply && idle && approved);
     const retestBtn = $("retest-btn");
@@ -608,8 +610,7 @@
     currentAsset = asset;
     stopPolling();
     resetRunPanels();
-    show("home", false);
-    show("asset-view", true);
+    showView("asset");
     setText("av-label", asset.kind === "demo" ? "Demo app (loopback)" : asset.label);
     statusChip("av-status", asset.status);
     setText("av-hint", asset.scannable
@@ -640,6 +641,7 @@
     if (avatar) avatar.textContent = user && user.email ? user.email.charAt(0).toUpperCase() : (PREVIEW ? "P" : "?");
     onClick("scan-btn", startScan);
     onClick("apply-btn", applyFixes);
+    onClick("approve-all-btn", approveAll);
     onClick("retest-btn", runRetest);
     for (const r of ROLES) onClick("role-" + r, () => setRole(r));
     let saved = null;
@@ -650,7 +652,13 @@
       if (!r.ok) return;
       show("add-asset", true);
       renderAssetList(r.data.assets);
+      renderChatList(r.data.chat.list);
       const view = new URLSearchParams(window.location.search).get("view");
+      setComposer(view === "chat-nokey" ? { model_configured: false, model: null } : r.data.chat.status);
+      if (view === "chat") {
+        renderChat(r.data.chat.chat);
+        renderChatList(r.data.chat.list);  // after opening, so the open chat is highlighted (as loadChats does)
+      }
       if (view === "running" || view === "finished") {
         const sample = r.data[view];
         selectAsset(r.data.assets[0]);
@@ -671,16 +679,174 @@
       return;
     }
     refreshSidePanels();
+    loadChats();
     show("add-asset", !!(user && user.account_type === "company" && user.consented));
     const r = await getJSON("/api/assets");
     if (r.ok) renderAssetList(r.data.assets);
   }
 
-  function chatNotReady() {
+  // ---------- chat ----------
+  let chatStatus = { model_configured: false, model: null };
+  let currentChatId = null;
+  let sending = false;
+
+  function showView(view) {
+    show("home", view === "home");
+    show("chat-view", view === "chat");
+    show("asset-view", view === "asset");
+    if (view !== "asset") stopPolling();
+  }
+
+  function composerHint(text, kind) {
     const hint = $("composer-hint");
     if (!hint) return;
-    hint.textContent = "Chat coming next. Suggestions will work once chat is live.";
-    hint.classList.add("is-notice");
+    hint.textContent = text;
+    hint.className = "composer-hint" + (kind ? " is-" + kind : "");
+  }
+
+  function setComposer(status) {
+    chatStatus = status;
+    const box = $("prompt");
+    const send = document.querySelector("#composer .send");
+    const ready = !!status.model_configured && !sending && !!(box && box.value.trim());
+    if (box) box.disabled = !status.model_configured;
+    if (send) send.disabled = !ready;  // active only with a model and something to send
+    if (!status.model_configured) {
+      composerHint("Model not configured: chat needs a model key on the server. No replies are generated.", "error");
+    } else {
+      composerHint("Model: " + status.model + ". Answers about your sites come only from MAYA's verified findings.", "");
+    }
+  }
+
+  function renderChatList(chats) {
+    const list = $("chats-list");
+    if (!list) return;
+    clear(list);
+    for (const c of chats) {
+      const li = el("li");
+      const btn = el("button", "asset-item" + (c.id === currentChatId ? " is-current" : ""));
+      btn.type = "button";
+      btn.appendChild(el("span", "asset-name", c.title));
+      btn.addEventListener("click", () => { openChat(c.id); setSidebar(false); });
+      li.appendChild(btn);
+      list.appendChild(li);
+    }
+    show("chats-empty", chats.length === 0);
+  }
+
+  async function loadChats() {
+    const r = await getJSON("/api/chats");
+    if (!r.ok) return;
+    setComposer(r.data);
+    renderChatList(r.data.chats);
+  }
+
+  function messageItem(m) {
+    const li = el("li", "msg msg-" + m.role);
+    li.appendChild(el("div", "msg-body", m.content));
+    if (m.role === "assistant" && m.meta) {
+      const meta = el("div", "msg-meta");
+      const restates = m.meta.label === "restates verified findings";
+      meta.appendChild(el("span", "chip " + (restates ? "chip-ok" : "chip-forced"), m.meta.label));
+      const t = m.meta.tokens || {};
+      meta.appendChild(el("span", "", "Model that ran: " + (m.meta.model || "-")));
+      meta.appendChild(el("span", "", (t.prompt || 0) + " in / " + (t.completion || 0) + " out (" +
+        (t.reasoning || 0) + " reasoning)"));
+      li.appendChild(meta);
+      if ((m.meta.cited || []).length) li.appendChild(el("div", "msg-cites", "Cites your findings: " + m.meta.cited.join(", ")));
+      if ((m.meta.cited_unknown || []).length) {
+        li.appendChild(el("div", "msg-cites is-warning", "Not in your verified findings: " + m.meta.cited_unknown.join(", ")));
+      }
+    }
+    return li;
+  }
+
+  function renderChat(chat) {
+    currentChatId = chat.id;
+    showView("chat");
+    setText("chat-title", chat.title);
+    const list = $("chat-messages");
+    clear(list);
+    for (const m of chat.messages || []) list.appendChild(messageItem(m));
+    show("chat-empty", !(chat.messages || []).length);
+    scrollConversation();
+  }
+
+  function scrollConversation() {
+    const c = document.querySelector(".conversation");
+    if (c) c.scrollTop = c.scrollHeight;
+  }
+
+  async function openChat(id) {
+    const r = await getJSON("/api/chats/" + id);
+    if (!r.ok) { composerHint(r.data.error || "Could not open that chat.", "error"); return; }
+    setComposer(r.data);
+    renderChat(r.data.chat);
+    loadChats();
+  }
+
+  async function newChat(title) {
+    const d = await post("/api/chats", title ? { title: title } : {});
+    if (!d) return null;
+    setComposer(d);
+    renderChat(d.chat);
+    loadChats();
+    return d.chat.id;
+  }
+
+  async function sendMessage(text) {
+    text = (text || "").trim();
+    if (!text || sending) return;
+    if (!chatStatus.model_configured) { setComposer(chatStatus); return; }
+    if (!currentChatId || $("chat-view").hidden) {
+      if (!(await newChat(text.slice(0, 60)))) return;
+    }
+    sending = true;
+    setComposer(chatStatus);
+    show("chat-empty", false);
+    const pending = messageItem({ role: "user", content: text });
+    $("chat-messages").appendChild(pending);
+    const thinking = el("li", "msg msg-pending", "MAYA is thinking...");
+    $("chat-messages").appendChild(thinking);
+    scrollConversation();
+    const box = $("prompt");
+    if (box) box.value = "";
+    let r;
+    try {
+      r = await fetch("/api/chats/" + currentChatId + "/messages", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf || "" },
+        body: JSON.stringify({ content: text }),
+      });
+    } catch (e) { r = null; }
+    thinking.remove();
+    sending = false;
+    let data = {};
+    try { data = r ? await r.json() : {}; } catch (e) { data = {}; }
+    if (!r || !r.ok) {
+      pending.classList.add("is-failed");
+      if (box && !box.value) box.value = text;  // keep what the user typed so they can retry
+      setComposer(chatStatus);
+      composerHint(typeof data.error === "string" ? data.error : "Could not reach MAYA.", "error");
+      return;
+    }
+    pending.replaceWith(messageItem(data.user_message));  // shows the stored (redacted) text
+    $("chat-messages").appendChild(messageItem(data.reply));
+    setComposer(chatStatus);
+    scrollConversation();
+    loadChats();
+  }
+
+  async function startChatWith(prompt) {
+    if (!chatStatus.model_configured) { setComposer(chatStatus); return; }
+    if (await newChat(prompt.slice(0, 60))) await sendMessage(prompt);
+  }
+
+  async function approveAll() {
+    if (!currentRunId) return;
+    const name = $("approver") ? $("approver").value : "";
+    const d = await post("/api/runs/" + currentRunId + "/approve-all", { approver: name });
+    if (d) { renderFull(d); say("All open proposals approved by " + name.trim() + "; each approval is in the audit log.", false); }
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
@@ -690,8 +856,21 @@
     onClick("sidebar-open", () => setSidebar(true));
     onClick("sidebar-close", () => setSidebar(false));
     onClick("scrim", () => setSidebar(false));
-    onClick("new-chat", () => { stopPolling(); show("asset-view", false); show("home", true); chatNotReady(); });
-    for (const card of document.querySelectorAll(".suggestion")) card.addEventListener("click", chatNotReady);
+    onClick("new-chat", () => { setSidebar(false); if (!PREVIEW) newChat(); });
+    for (const card of document.querySelectorAll(".suggestion")) {
+      card.addEventListener("click", () => startChatWith(card.getAttribute("data-prompt") || ""));
+    }
+    const composer = $("composer");
+    if (composer) {
+      composer.addEventListener("submit", (e) => { e.preventDefault(); sendMessage($("prompt").value); });
+      $("prompt").addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage($("prompt").value); }
+      });
+      $("prompt").addEventListener("input", () => {
+        const send = document.querySelector("#composer .send");
+        if (send) send.disabled = !(chatStatus.model_configured && !sending && $("prompt").value.trim());
+      });
+    }
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") setSidebar(false); });
 
     let session;

@@ -49,6 +49,8 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("findings-technical", "/__preview/chat.html?view=finished&role=technical&scroll=findings-panel"),
     ("proposals", "/__preview/chat.html?view=finished&scroll=proposals-panel"),
     ("retest-audit", "/__preview/chat.html?view=finished&scroll=retest-panel"),
+    ("chat", "/__preview/chat.html?view=chat"),
+    ("chat-nokey", "/__preview/chat.html?view=chat-nokey"),
 ]
 LIGHT = [("signin", "/signin"), ("shell", "/__preview/chat.html"), ("result-finished", "/__preview/chat.html?view=finished")]
 CANDIDATES = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),

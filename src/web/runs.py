@@ -110,6 +110,20 @@ class RunManager:
             return HttpClient(store=store)
         return HttpClient(verified=run.verified, store=store, transport=self.app.http_transport)
 
+    def findings_for_user(self, user_id: int, labels: dict[str, str]) -> list[dict]:
+        """This user's verified findings: the latest completed scan of each of their assets (labels: asset id ->
+        label). Nothing from any other user's runs is ever included."""
+        latest: dict[str, Run] = {}
+        for r in self.runs.values():
+            if r.user_id == user_id and r.result and r.asset_id in labels:
+                if r.asset_id not in latest or r.started_at > latest[r.asset_id].started_at:
+                    latest[r.asset_id] = r
+        items = []
+        for asset_id, r in latest.items():
+            for f in r.result["findings"]:
+                items.append({**f, "asset": labels[asset_id]})
+        return sorted(items, key=lambda i: (SEVERITY_ORDER.index(i["severity"]), i["id"]))
+
     def usage_for(self, user_id: int) -> dict:
         totals = {"prompt_tokens": 0, "completion_tokens": 0, "reasoning_tokens": 0, "total_tokens": 0}
         mine = [r for r in self.runs.values() if r.user_id == user_id]
@@ -134,7 +148,9 @@ class RunManager:
                     final = self._model_run(run, provider, client, base, store)
                 else:
                     final = self._deterministic_run(run, client, base, store)
-                run.proposals = {p.id: p for p in build_proposals(dict(run.findings))}
+                ordered = sorted(build_proposals(dict(run.findings)),  # critical first, then check id
+                                 key=lambda p: (SEVERITY_ORDER.index(rule(p.check_id).severity), p.check_id))
+                run.proposals = {p.id: p for p in ordered}
                 run.result["fix_first"] = run.result["findings"][:3]
                 run.status = final  # published last, so a finished run always has its proposals
             finally:

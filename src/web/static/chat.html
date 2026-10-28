@@ -19,7 +19,8 @@
 <button id="new-chat" class="btn btn-secondary new-chat" type="button">&#65291; New chat</button>
 <nav class="side-lists" aria-label="History">
 <h3 class="side-heading">Chats</h3>
-<p class="side-empty">No chats yet</p>
+<ul id="chats-list" class="side-list"></ul>
+<p id="chats-empty" class="side-empty">No chats yet</p>
 <h3 class="side-heading">Connected assets</h3>
 <ul id="assets-list" class="side-list"></ul>
 <p id="assets-empty" class="side-empty">Nothing connected yet</p>
@@ -51,12 +52,17 @@
 <span class="chip">Fixes need your approval</span>
 </div>
 <div class="suggestions">
-<button class="suggestion" type="button"><span class="suggestion-title">Check my website's security</span><span class="suggestion-desc">Run read-only checks on a site you own.</span></button>
-<button class="suggestion" type="button"><span class="suggestion-title">Explain a vulnerability simply</span><span class="suggestion-desc">Plain-language answers, no jargon.</span></button>
-<button class="suggestion" type="button"><span class="suggestion-title">What should I fix first?</span><span class="suggestion-desc">Prioritize findings by severity.</span></button>
-<button class="suggestion" type="button"><span class="suggestion-title">How does MAYA stay safe?</span><span class="suggestion-desc">What it does and never does.</span></button>
+<button class="suggestion" type="button" data-prompt="How can MAYA check my website's security, and what will it look at?"><span class="suggestion-title">Check my website's security</span><span class="suggestion-desc">Run read-only checks on a site you own.</span></button>
+<button class="suggestion" type="button" data-prompt="Explain what a missing Content-Security-Policy header means, in simple words."><span class="suggestion-title">Explain a vulnerability simply</span><span class="suggestion-desc">Plain-language answers, no jargon.</span></button>
+<button class="suggestion" type="button" data-prompt="Based on my verified findings, what should I fix first?"><span class="suggestion-title">What should I fix first?</span><span class="suggestion-desc">Prioritize findings by severity.</span></button>
+<button class="suggestion" type="button" data-prompt="What does MAYA do and never do when it checks my site?"><span class="suggestion-title">How does MAYA stay safe?</span><span class="suggestion-desc">What it does and never does.</span></button>
 </div>
 </div>
+<section id="chat-view" class="chat-view" hidden aria-label="Chat">
+<h1 id="chat-title" class="chat-title"></h1>
+<ol id="chat-messages" class="chat-messages" aria-live="polite"></ol>
+<p id="chat-empty" class="side-empty">Ask MAYA anything about web security. It answers about your own sites only from verified findings.</p>
+</section>
 <section id="asset-view" class="asset-view" hidden aria-live="polite">
 <p id="demo-banner" class="banner" hidden>DEMO: these results come from MAYA's deliberately vulnerable demo app on loopback, not a real site.</p>
 <div class="asset-head">
@@ -87,8 +93,11 @@
 </section>
 <section id="proposals-panel" class="panel" hidden>
 <div class="panel-head"><h2>Fix proposals</h2><span class="panel-meta">fixed templates; nothing changes without approval</span></div>
+<div class="approver-row">
 <div class="field approver-field"><label for="approver">Approver name (recorded in the audit log)</label>
 <input id="approver" name="approver" type="text" autocomplete="name" maxlength="80" placeholder="Your name"></div>
+<button id="approve-all-btn" class="btn btn-secondary" type="button" disabled>Approve all</button>
+</div>
 <div id="proposals-list" class="proposal-list"></div>
 <div class="actions">
 <button id="apply-btn" class="btn btn-primary" type="button" disabled>Apply approved fixes</button>
@@ -132,10 +141,10 @@
 </section>
 <footer class="composer-wrap">
 <form id="composer" class="composer" aria-label="Message composer">
-<textarea id="prompt" rows="1" placeholder="Message MAYA..." aria-label="Message" aria-describedby="composer-hint" disabled></textarea>
+<textarea id="prompt" rows="1" placeholder="Message MAYA..." aria-label="Message" aria-describedby="composer-hint" maxlength="2000" disabled></textarea>
 <button class="send" type="submit" aria-label="Send" disabled>&#8593;</button>
 </form>
-<p id="composer-hint" class="composer-hint">Chat coming next. MAYA only runs read-only checks on sites you own.</p>
+<p id="composer-hint" class="composer-hint">Checking whether a model is configured... MAYA only runs read-only checks on sites you own.</p>
 </footer>
 </main>
 </div>

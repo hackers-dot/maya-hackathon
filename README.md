@@ -45,6 +45,11 @@ All code in this repository was written during the Meta Global AI Developer Hack
   - The trace is grouped by model step. Each finding opens to explain itself for an Owner, Developer or Technical reader (fixed templates, OWASP "mapped to" label, code evidence), plus a "Fix first" top 3.
   - Fix proposals show nginx, Apache and Python snippets with copy buttons, risk, rollback and status. Approve needs a name; Apply works only on the loopback demo app and only for approved fixes (checked again by the existing approval gate); Re-test shows resolved / still present / new and FIXED.
   - An audit panel shows the verified hash chain and the latest entries, plus a token panel. Each user has their own demo app and audit log.
+- **2026-10-28 (Web 4):** Chat, "approve all" and sorted fix proposals.
+  - Chat for Individual and Company users, stored per user. It uses the existing model client (low reasoning effort, 1,200 max tokens) with a safety-first system prompt: simple English or Hindi/Hinglish, no exploit code, no help scanning sites you don't own.
+  - For companies, the model gets only that user's own verified findings and must cite their ids. Replies are labelled "unverified model text" unless they only restate findings, and show the model and token counts.
+  - Limits: 2,000 characters per message, 20 messages a minute, a daily chat token budget, and only the last 10 messages sent. Pasted secrets are masked. Without a model key the composer says "Model not configured" and never fakes a reply.
+  - Fix proposals are sorted critical first, and "Approve all" still audits each approval separately.
 
 ## License
 

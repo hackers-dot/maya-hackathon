@@ -187,9 +187,13 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
         rep.check(status == 409, "apply refused before any approval", f"HTTP {status} {data.get('error')}")
         status, _, data = b.post(f"/api/runs/{run_id}/proposals/{props[0]['id']}/approve", {"approver": "  "})
         rep.check(status == 400, "approval without an approver name refused", f"HTTP {status}")
-        codes = [b.post(f"/api/runs/{run_id}/proposals/{p['id']}/approve", {"approver": "flow-check"})[0]
-                 for p in props]
-        rep.check(set(codes) == {200}, "all proposals approved by 'flow-check'", f"{len(codes)} approvals")
+        sev = {f["check"]: f["severity"] for f in result.get("findings", [])}
+        keys = [(SEVERITY_ORDER.index(sev[p["check_id"]]), p["check_id"]) for p in props]
+        rep.check(keys == sorted(keys), "proposals sorted by severity, then check id",
+                  " > ".join(p["check_id"] for p in props[:3]))
+        status, _, data = b.post(f"/api/runs/{run_id}/approve-all", {"approver": "flow-check"})
+        rep.check(status == 200 and {p["status"] for p in data.get("proposals", [])} == {"APPROVED"},
+                  "approve all (each approval audited individually)", f"HTTP {status} {len(props)} proposals")
         status, _, data = b.post(f"/api/runs/{run_id}/apply", {})
         applied = {p["status"] for p in data.get("proposals", [])}
         rep.check(status == 200 and applied == {"APPLIED"}, "approved fixes applied to the loopback demo app",
@@ -200,8 +204,10 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
                   "re-test: FIXED", f"resolved={len(rt.get('resolved', []))} still={len(rt.get('still_present', []))}")
         st, hd, raw = b.request("GET", "/api/audit")
         audit = json.loads(raw)
-        rep.check(st == 200 and audit.get("intact") is True and audit["entries"][0]["event"] == "retested",
-                  "audit log hash chain verified", f"{audit.get('count')} entries")
+        rep.check(st == 200 and audit.get("intact") is True and audit["entries"][0]["event"] == "retested" and
+                  audit.get("count") == 1 + len(props) + 3,
+                  "audit log hash chain verified (1 refusal + one entry per approval + apply/health/retest)",
+                  f"{audit.get('count')} entries")
         st, _, raw = b.request("GET", "/api/usage")
         rep.check(st == 200 and json.loads(raw).get("runs") == 1, "token usage panel data", raw.decode()[:80])
     else:
@@ -221,7 +227,26 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
     rep.check(status == 200, "sign up (individual)", f"HTTP {status}")
     status, _, data = b2.post("/api/profile", {"account_type": "individual"})
     rep.check(data.get("next") == "/chat", "choose Individual -> chat", f"HTTP {status} next={data.get('next')}")
-    page_ok(b2, rep, "/chat", "Chat coming next")
+    page_ok(b2, rep, "/chat", 'id="chats-list"')
+
+    # --- Web 4: chat (this check's server has no model, so chat must refuse rather than fake a reply) ---
+    st, _, raw = b2.request("GET", "/api/chats")
+    status_body = json.loads(raw) if st == 200 else {}
+    rep.check(st == 200 and status_body.get("model_configured") is False, "chat status: model not configured",
+              f"HTTP {st} model={status_body.get('model')}")
+    status, _, data = b2.post("/api/chats", {})
+    chat_id = (data.get("chat") or {}).get("id")
+    rep.check(status == 200 and chat_id, "new chat created", f"HTTP {status}")
+    status, _, data = b2.post(f"/api/chats/{chat_id}/messages", {"content": "What is a CSP header?"})
+    rep.check(status == 409 and str(data.get("error", "")).startswith("model not configured"),
+              "message refused without a model (no fake reply)", f"HTTP {status} {data.get('error')}")
+    st, _, raw = b2.request("GET", f"/api/chats/{chat_id}")
+    rep.check(st == 200 and json.loads(raw)["chat"]["messages"] == [], "nothing stored for the refused message",
+              f"HTTP {st}")
+    status, _, data = b2.post(f"/api/chats/{chat_id}/messages", {"content": "x" * 2001})
+    rep.check(status in (400, 409), "over-long message refused", f"HTTP {status}")
+    st, _, _ = b.request("GET", f"/api/chats/{chat_id}")
+    rep.check(st == 404, "another user's chat is not found", f"HTTP {st}")
     if run_id:
         status, _, _ = b2.request("GET", f"/api/runs/{run_id}")
         rep.check(status == 404, "another user's run is not found", f"HTTP {status}")

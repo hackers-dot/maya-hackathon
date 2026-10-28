@@ -232,12 +232,16 @@ def test_local_storage_only_inside_try_catch():
 
 
 def test_chat_is_not_faked():
+    """Web 4: chat is real now, but the page never fakes it: the composer starts disabled and only the server's
+    model_configured flag enables it; replies come only from the server."""
     page = (STATIC_DIR / "chat.html").read_text(encoding="utf-8")
-    assert '<textarea id="prompt"' in page and "disabled></textarea>" in page
+    assert '<textarea id="prompt"' in page and 'maxlength="2000" disabled></textarea>' in page
     assert 'class="send" type="submit" aria-label="Send" disabled' in page
-    assert "Chat coming next" in page
     js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
-    assert "fetch(\"/api/chat" not in js and "/api/chat" not in js  # no chat endpoint, no generated replies
+    assert "if (box) box.disabled = !status.model_configured;" in js
+    assert "Model not configured: chat needs a model key on the server. No replies are generated." in js
+    # the only assistant messages the page renders are ones the server returned
+    assert 'messageItem(data.reply)' in js and 'role: "assistant"' not in js
 
 
 def test_static_scanner_catches_bad_patterns(tmp_path):
@@ -293,7 +297,7 @@ def test_individual_and_no_lead_to_chat_placeholder(web, steps):
         r = post(client, path, body)
     assert r.json()["next"] == "/chat"
     page = client.get("/chat")
-    assert page.status_code == 200 and "Chat coming next" in page.text
+    assert page.status_code == 200 and 'id="composer"' in page.text and 'id="chats-list"' in page.text
 
 
 def test_out_of_order_steps_refused(web):

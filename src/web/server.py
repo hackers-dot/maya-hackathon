@@ -15,6 +15,8 @@ from urllib.parse import urlsplit
 import threading
 
 from src.web.assets import AssetError, Assets, public_asset
+from src.web.chat import (CHAT_TOKEN_CAP, LABEL_UNVERIFIED, MAX_CHARS, MAX_TOKENS, ChatError, ChatStore,
+                          build_messages, clean_user_text, findings_context, label_reply)
 from src.web.auth import DEFAULT_DB, SESSION_TTL, Accounts, AuthError, RateLimited, Sessions
 from src.web.runs import RunBusy, RunManager, findings_view, proposal_view, retest_view, run_view
 
@@ -47,7 +49,9 @@ PAGES = {
     "/chat": ("chat.html", True),
 }
 ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|scan)$")
-RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest)$")
+RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest|approve-all)$")
+CHAT_PATH = re.compile(r"^/api/chats/([0-9a-f]{16})$")
+CHAT_SEND = re.compile(r"^/api/chats/([0-9a-f]{16})/messages$")
 APPROVE = re.compile(r"^/api/runs/([0-9a-f]{24})/proposals/(fix-[a-z_]{3,60})/approve$")
 AUDIT_ENTRIES_SHOWN = 12
 RUN_PATH = re.compile(r"^/api/runs/([0-9a-f]{24})(/trace)?$")
@@ -150,8 +154,28 @@ def _preview_sample() -> dict:
            "model": "meta-models/muse-spark-open-1026", "demo": True, "error": None, "steps": len(steps),
            "can_apply": True}
     extras = _preview_extras(findings)
+    chat = {"id": "2" * 16, "title": "What should I fix first?", "messages": [
+        {"role": "user", "content": "Based on my verified findings, what should I fix first?"},
+        {"role": "assistant", "content":
+            "Start with the exposed configuration file [exposed_env_file:/.env]: anyone can download it, so block "
+            "it and rotate the keys it held.\nNext, remove the downloadable database backup "
+            "[exposed_backup_file:/db.sql].\nAfter that, add a Content-Security-Policy header; it limits what an "
+            "injected script could do.",
+         "meta": {"model": "meta-models/muse-spark-open-1026", "label": "unverified model text",
+                  "cited": ["exposed_backup_file:/db.sql", "exposed_env_file:/.env"], "cited_unknown": [],
+                  "tokens": {"prompt": 912, "completion": 188, "reasoning": 120, "total": 1100}}},
+        {"role": "user", "content": "Kya MAYA kisi aur ki website scan kar sakta hai?"},
+        {"role": "assistant", "content":
+            "Nahi. MAYA sirf un websites ko check karta hai jo aapki hain aur jinki ownership verify ho chuki hai. "
+            "Kisi aur ki site scan karna galat hai; uske liye owner ki likhit permission chahiye.",
+         "meta": {"model": "meta-models/muse-spark-open-1026", "label": "unverified model text", "cited": [],
+                  "cited_unknown": [], "tokens": {"prompt": 1040, "completion": 96, "reasoning": 70, "total": 1136}}},
+    ]}
     return {
         "extras": extras,
+        "chat": {"chat": chat, "list": [{"id": chat["id"], "title": chat["title"]},
+                                        {"id": "3" * 16, "title": "Explain a missing CSP header"}],
+                 "status": {"model_configured": True, "model": "meta-models/muse-spark-open-1026"}},
         "assets": [
             {"id": "0" * 16, "kind": "demo", "label": "Demo app (loopback, no verification needed)", "origin": None,
              "status": "loopback", "reason": None, "scannable": True, "last_run": "0" * 24},
@@ -197,7 +221,8 @@ def default_provider_factory():
 
 class App:
     def __init__(self, data_dir: Path | None, session_ttl: float, clock, ui_preview: bool = False,
-                 provider_factory=None, http_transport=None):
+                 provider_factory=None, http_transport=None, chat_provider_factory=None,
+                 chat_token_cap: int | None = None):
         self.data_dir = Path(data_dir) if data_dir else DEFAULT_DB.parent
         self.data_dir.mkdir(parents=True, exist_ok=True)
         db = self.data_dir / "web.db"
@@ -208,6 +233,9 @@ class App:
         self.clock = clock
         self.ui_preview = ui_preview
         self.provider_factory = provider_factory or default_provider_factory
+        self.chat_provider_factory = chat_provider_factory or self.provider_factory
+        self.chats = ChatStore(db, clock)
+        self.chat_token_cap = chat_token_cap or CHAT_TOKEN_CAP
         self.http_transport = http_transport  # tests inject a fake site for ownership checks; None = real HTTP
         self._demos: dict[int, object] = {}   # user id -> that user's own demo app (fixes never leak between users)
         self._gates: dict[int, object] = {}   # user id -> ApprovalGate with that user's audit log + control file
@@ -329,15 +357,26 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _get_api(self, path: str, user) -> bool:
         """Signed-in JSON reads. Returns False if the path is not one of them."""
-        if path in ("/api/assets", "/api/audit", "/api/usage"):
+        if path in ("/api/assets", "/api/audit", "/api/usage", "/api/chats"):
             if user is None:
                 raise Reply(401, "please sign in")
             if path == "/api/assets":
                 self._json(200, {"assets": self._assets_view(user)})
             elif path == "/api/audit":
                 self._json(200, self._audit_view(user))
+            elif path == "/api/chats":
+                self._json(200, {"chats": self.app.chats.list(user["id"]), **self._chat_status(user)})
             else:
                 self._json(200, self.app.runs.usage_for(user["id"]))
+            return True
+        chat_m = CHAT_PATH.match(path)
+        if chat_m:
+            if user is None:
+                raise Reply(401, "please sign in")
+            chat = self.app.chats.get(user["id"], chat_m.group(1))  # another user's chat is simply "not found"
+            if chat is None:
+                raise Reply(404, "not found")
+            self._json(200, {"chat": chat, **self._chat_status(user)})
             return True
         m = RUN_PATH.match(path)
         if not m:
@@ -444,10 +483,13 @@ class WebHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         action = ASSET_ACTION.match(path)
         run_action, approve = RUN_ACTION.match(path), APPROVE.match(path)
-        if path not in self.POSTS and path != "/api/assets" and not (action or run_action or approve):
-            return self._json(404, {"error": "not found"})
+        chat_send = CHAT_SEND.match(path)
+        known = (path in self.POSTS or path in ("/api/assets", "/api/chats")
+                 or bool(action or run_action or approve or chat_send))
         try:
-            raw = self._read_body()  # always drain first, so an early refusal does not reset the connection
+            raw = self._read_body()  # always drain first, so an early refusal (even a 404) never resets the connection
+            if not known:
+                raise Reply(404, "not found")
             session = self._session()
             if not self.app.sessions.csrf_ok(session, self.headers.get("X-CSRF-Token")):
                 raise Reply(403, "missing or invalid CSRF token; reload the page")
@@ -461,11 +503,17 @@ class WebHandler(BaseHTTPRequestHandler):
                     m.group(2) if approve else None)
             elif path == "/api/assets":
                 status, payload, headers = self._post_assets(session, body)
+            elif path == "/api/chats":
+                status, payload, headers = self._post_new_chat(session, body)
+            elif chat_send:
+                status, payload, headers = self._post_chat_message(session, chat_send.group(1), body)
             else:
                 status, payload, headers = getattr(self, "_post_" + path.rsplit("/", 1)[1])(session, body)
             self._json(status, payload, headers)
         except Reply as r:
             self._json(r.status, {"error": r.error})
+        except Exception:  # noqa: BLE001 - never drop the connection; never leak internals
+            self._json(500, {"error": "internal error"})
 
     def _post_assets(self, session, body):
         user = self._require_user(session)
@@ -479,6 +527,69 @@ class WebHandler(BaseHTTPRequestHandler):
             raise Reply(400, str(e)) from None
         return 200, {"asset": public_asset(asset, self.app.runs.last_for_asset(user["id"], asset["id"]))}, None
 
+    # --- chat ---
+    def _chat_status(self, user) -> dict:
+        provider, model = self.app.chat_provider_factory()
+        return {"model_configured": provider is not None, "model": model if provider else None,
+                "max_chars": MAX_CHARS}
+
+    def _user_findings(self, user) -> list[dict]:
+        labels = {a["id"]: ("MAYA demo app (loopback)" if a["kind"] == "demo" else a["host"])
+                  for a in self.app.assets.list(user["id"])}
+        return self.app.runs.findings_for_user(user["id"], labels)
+
+    def _post_new_chat(self, session, body):
+        user = self._require_user(session)
+        title = body.get("title")
+        chat = self.app.chats.create(user["id"], title if isinstance(title, str) and title.strip() else "New chat")
+        return 200, {"chat": {**chat, "messages": []}, **self._chat_status(user)}, None
+
+    def _post_chat_message(self, session, chat_id: str, body):
+        from src.budget import BudgetExceeded, TokenBudget
+        from src.provider import ProviderError
+        user = self._require_user(session)
+        chat = self.app.chats.get(user["id"], chat_id)  # another user's chat is simply "not found"
+        if chat is None:
+            raise Reply(404, "not found")
+        provider, model = self.app.chat_provider_factory()
+        if provider is None:
+            raise Reply(409, "model not configured: chat needs a model key on the server")
+        try:
+            text = clean_user_text(body.get("content"))
+        except ChatError as e:
+            raise Reply(e.status, str(e)) from None
+        if not self.app.chats.allow_message(user["id"]):
+            raise Reply(429, "too many messages; wait a minute and try again")
+        used = self.app.chats.tokens_used(user["id"])
+        if used >= self.app.chat_token_cap:
+            raise Reply(429, "chat token budget reached for today")
+        title = text[:60] if not chat["messages"] else None
+        user_msg = self.app.chats.add(user["id"], chat_id, "user", text, title=title)
+        findings = self._user_findings(user)
+        messages = build_messages(findings_context(findings), chat["messages"] + [user_msg])
+        try:
+            reply = provider.chat(messages, max_tokens=MAX_TOKENS, reasoning_effort="low")
+        except ProviderError as e:  # already key-scrubbed by the provider
+            raise Reply(502, f"model call failed: {e}") from None
+        usage = reply.usage or {}
+        budget = TokenBudget(f"chat-{user['id']}", cap=max(1, self.app.chat_token_cap - used),
+                             path=self.app.data_dir / "usage.jsonl")
+        try:
+            budget.add(usage)  # recorded even when this reply crosses the cap; the next message is refused
+        except (BudgetExceeded, ValueError, TypeError):
+            pass  # over the cap, or a malformed usage report from the provider: the reply is still returned
+        answer = reply.answer or "(the model returned no answer)"
+        tokens = {"prompt": usage.get("prompt_tokens", 0), "completion": usage.get("completion_tokens", 0),
+                  "reasoning": (usage.get("completion_tokens_details") or {}).get("reasoning_tokens", 0),
+                  "total": usage.get("total_tokens", 0)}
+        meta = {"model": model, "tokens": tokens, **label_reply(answer, {f["id"] for f in findings})}
+        if not reply.answer:
+            meta["label"] = LABEL_UNVERIFIED
+        assistant = self.app.chats.add(user["id"], chat_id, "assistant", answer, meta=meta,
+                                       tokens=int(tokens["total"] or 0))
+        return 200, {"user_message": user_msg, "reply": assistant, "chat_id": chat_id,
+                     "budget": {"used": used + int(tokens["total"] or 0), "cap": self.app.chat_token_cap}}, None
+
     def _post_run_action(self, session, run_id: str, action: str, body: dict, proposal_id: str | None):
         """approve / apply / retest. All gating is done by the existing ApprovalGate and retest code."""
         from src.approval import ApplyRefused
@@ -490,7 +601,16 @@ class WebHandler(BaseHTTPRequestHandler):
         if run.status == "running" or run.base is None:
             raise Reply(409, "wait for the scan to finish")
         gate = self.app.gate(user["id"])
-        if action == "approve":
+        if action == "approve-all":
+            pending = [p for p in run.proposals.values() if p.status == "PROPOSED"]
+            if not pending:
+                raise Reply(409, "nothing left to approve")
+            for p in pending:  # each approval goes through the gate and is audited on its own
+                try:
+                    gate.approve(p, body.get("approver"))
+                except ValueError as e:
+                    raise Reply(400 if "approver" in str(e) else 409, str(e)) from None
+        elif action == "approve":
             proposal = run.proposals.get(proposal_id)
             if proposal is None:
                 raise Reply(404, "not found")
@@ -645,11 +765,13 @@ class WebHandler(BaseHTTPRequestHandler):
 
 
 def make_server(port: int = DEFAULT_PORT, host: str = HOST, data_dir=None, session_ttl: float = SESSION_TTL,
-                clock=None, ui_preview: bool = False, provider_factory=None, http_transport=None) -> MayaServer:
+                clock=None, ui_preview: bool = False, provider_factory=None, http_transport=None,
+                chat_provider_factory=None, chat_token_cap: int | None = None) -> MayaServer:
     if host != HOST:
         raise ValueError(f"MAYA web binds to {HOST} only; refused {host!r}")
     app = App(data_dir, session_ttl, clock or time.time, ui_preview=ui_preview is True,
-              provider_factory=provider_factory, http_transport=http_transport)
+              provider_factory=provider_factory, http_transport=http_transport,
+              chat_provider_factory=chat_provider_factory, chat_token_cap=chat_token_cap)
     handler = type("Handler", (WebHandler,), {"app": app})
     server = MayaServer((HOST, port), handler)
     server.app = app

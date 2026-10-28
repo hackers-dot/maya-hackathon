@@ -249,6 +249,29 @@ See `src/models.py`:
   - The token panel sums that user's scans (cap 40,000 per scan).
   - Another user's run, proposal, re-test, audit and usage are never reachable (404, or that user's own empty data).
 
+### Web 4: chat, approve all, sorted proposals
+
+- **Fix proposals** are sorted by severity (critical first, from the code table), then by check id.
+- **"Approve all"** needs the approver name and approves every PROPOSED proposal through `ApprovalGate.approve`, one at a time, so each approval gets its own audit entry. An empty name is refused (400), and nothing is approved twice (409).
+- **Chat (`src/web/chat.py`),** for Individual and Company users.
+  - **Storage and access:** chats and messages are stored per user in `web.db`. `GET/POST /api/chats` and `GET /api/chats/<id>`, `POST /api/chats/<id>/messages`. Another user's chat id behaves like a missing one (404); signed-out requests get 401. Every POST needs the CSRF token.
+  - **Limits:** 2,000 characters per message, 20 messages per rolling minute per user (429), and a per-user chat token budget over a rolling 24 hours (default 60,000; 429 when reached). The reply that crosses the budget is still returned, as with scans.
+  - **Model call:** through the existing provider with `reasoning_effort=low` and `max_tokens=1200`. Usage, including reasoning tokens, is also recorded through `TokenBudget` (`run_id` `chat-<user>`) in `data/usage.jsonl`.
+  - **What the model sees:** a fixed system prompt, then a compact list of this user's own verified findings (the latest completed scan of each of their assets: id, severity, check, location, redacted evidence line, at most 30), then at most the last 10 messages. The system prompt says:
+    - MAYA is a cybersecurity assistant that explains simply, in English or Hindi/Hinglish to match the user;
+    - never exploit code, attack steps against systems the user does not own, or help scanning sites the user does not own; refuse politely and explain;
+    - no claims about the user's systems except from the listed findings, which must be cited by id.
+
+    A user with no scans gets "VERIFIED FINDINGS: none …".
+  - **Secrets:** user text passes through `redact_text` before it is stored or sent, so pasted keys and passwords are masked.
+  - **Reply labels:** a reply is "restates verified findings" only if every sentence cites one of the user's real finding ids. Otherwise, and whenever it cites an id that is not theirs, it is "unverified model text", and unknown ids are listed. Under each reply the UI shows the label, "Model that ran" and tokens (reasoning separate). All text is rendered with `textContent`.
+  - **Without a model key:** `model_configured` is false, the composer stays disabled with "Model not configured … No replies are generated", and sending returns 409 with nothing stored.
+  - The send button is active only with a model and text. Suggestion cards start a chat with their prompt.
+- **Robustness found by the Web 4 tests:**
+  - an unknown POST path now also drains the body before its 404 (Windows connection resets);
+  - any unexpected handler error returns a plain `500 internal error` instead of dropping the connection;
+  - the sentence splitter no longer treats the dot in `/.env` as a sentence end.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

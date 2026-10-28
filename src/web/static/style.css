@@ -417,6 +417,28 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .audit-details { color: var(--muted); overflow-wrap: anywhere; }
 .audit-hash { font: 11.5px ui-monospace, Consolas, monospace; color: var(--faint); }
 
+/* ---------- Web 4: chat ---------- */
+.chat-view { display: grid; gap: 14px; }
+.chat-title { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+.chat-messages { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.msg { display: grid; gap: 6px; max-width: 100%; min-width: 0; }
+.msg-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.msg-user { justify-items: end; }
+.msg-user .msg-body {
+  background: var(--panel-3); border: 1px solid var(--border); border-radius: 18px 18px 4px 18px;
+  padding: 10px 14px; max-width: min(560px, 88%);
+}
+.msg-user.is-failed .msg-body { border-color: var(--danger); opacity: 0.8; }
+.msg-assistant .msg-body { padding: 2px 2px; }
+.msg-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; color: var(--faint); font-size: 12px; }
+.msg-cites { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.msg-cites.is-warning { color: var(--danger); }
+.msg-pending { color: var(--faint); font-style: italic; }
+.composer-hint.is-error { color: var(--danger); }
+.asset-item.is-current { background: var(--panel-2); }
+.approver-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.approver-row .approver-field { margin-bottom: 0; flex: 1 1 220px; }
+
 /* ---------- polish ---------- */
 .mark { background: linear-gradient(135deg, #7c3aed 0%, #5b3df5 40%, #1477d4 100%); box-shadow: 0 4px 14px rgba(91, 61, 245, 0.35); }
 .wordmark { background-image: linear-gradient(120deg, #a78bfa 0%, #818cf8 45%, #38bdf8 100%); }
