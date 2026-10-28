@@ -378,6 +378,18 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
     status, _, _ = b2.request("GET", f"/api/runs/{code_run}")
     rep.check(status == 404, "another user's upload result is not found", f"HTTP {status}")
 
+    # --- Web 10: GitHub connector and lookalike watch (refusals only: this server has no faked network) ---
+    for bad in ("https://gitlab.com/demo-org/demo-repo", "https://user@github.com/demo-org/demo-repo",
+                "https://github.com/demo-org/demo-repo/blob/main/app.py", "https://github.com/../demo-repo"):
+        status, _, data = b.post("/api/connectors/github", {"url": bad})
+        rep.check(status == 400, f"GitHub URL refused before any request: {bad}", f"HTTP {status}")
+    status, _, data = b.post("/api/lookalike", {"domain": "someone-else.example"})
+    rep.check(status == 400 and "your verified websites or official domains" in str(data.get("error")),
+              "lookalike watch only for the user's own domains", f"HTTP {status}")
+    status, _, data = b2.post("/api/lookalike", {"domain": "shopexample.com"})
+    rep.check(status == 409 and "consent" in str(data.get("error")),
+              "lookalike watch needs a consented company account (individual user refused)", f"HTTP {status}")
+
     # --- Web 8: suspicious message check (this server has no model key) ---
     status, _, data = b.post("/api/official", {"domains": ["shopexample.com"], "numbers": ["+1 555 010 0100"]})
     rep.check(status == 200 and data.get("domains") == ["sho...om"] and data.get("numbers") == ["+15...00"],

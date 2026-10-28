@@ -28,7 +28,9 @@ def test_config_has_no_secrets():
                    "model": "meta-models/muse-spark-open-1026",
                    "api_key_env": "BASETEN_API_KEY",
                    "reasoning_effort": "low",
-                   "max_tokens": "1500"}
+                   "max_tokens": "1500",
+                   # optional second provider for scripts/compare_models.py: empty, and never a key
+                   "second_base_url": "", "second_model": "", "second_api_key_env": ""}
 
 
 def test_error_when_key_unset(monkeypatch):

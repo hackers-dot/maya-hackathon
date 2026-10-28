@@ -38,10 +38,11 @@ def safe_name(name: str) -> bool:
     return ".." not in name.split("/")
 
 
-def read_zip(data: bytes) -> tuple[list[tuple[str, str]], dict]:
-    """[(path, text)] for every text member, plus counts. Raises UploadRefused for an unsafe archive."""
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise UploadRefused("the ZIP is larger than 10 MB")
+def read_zip(data: bytes, max_bytes: int = MAX_UPLOAD_BYTES) -> tuple[list[tuple[str, str]], dict]:
+    """[(path, text)] for every text member, plus counts. Raises UploadRefused for an unsafe archive.
+    max_bytes: 10 MB for uploads, 25 MB for GitHub downloads; every other limit is the same."""
+    if len(data) > max_bytes:
+        raise UploadRefused(f"the ZIP is larger than {max_bytes // (1024 * 1024)} MB")
     try:
         z = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:

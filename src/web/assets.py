@@ -91,7 +91,7 @@ class Assets:
 
     def add_upload(self, user_id: int, kind: str, name: str) -> dict:
         """A code ZIP or log file upload. Only its name and kind are kept; the content never is."""
-        assert kind in ("code", "logs", "image")
+        assert kind in ("code", "logs", "image", "watch")
         asset = {"id": secrets.token_hex(8), "user_id": user_id, "kind": kind,
                  "origin": f"upload:{kind}:{secrets.token_hex(8)}", "host": name, "token": None,
                  "status": "uploaded", "reason": None, "created_at": self.clock(), "verified_at": None}
@@ -169,7 +169,7 @@ def public_asset(asset: dict, last_run: str | None = None) -> dict:
     out = {"id": asset["id"], "kind": asset["kind"], "label": DEMO_LABEL if demo else asset["host"],
            "origin": None if demo else asset["origin"], "status": asset["status"], "reason": asset["reason"],
            "scannable": asset["status"] in ("verified", "loopback"), "last_run": last_run}
-    if asset["kind"] in ("code", "logs", "image"):
+    if asset["kind"] in ("code", "logs", "image", "watch"):
         out["label"] = asset["host"]
         out["origin"] = None
     elif not demo:

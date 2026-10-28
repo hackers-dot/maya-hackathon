@@ -112,6 +112,12 @@ Demo flow:
   - "Copy as GitHub issue" per finding and "Download all as issues.md": fix snippets, rollback and the acceptance criterion "re-test shows FIXED", with secrets kept masked. A printable report can be saved as PDF from the browser.
   - A third ownership method: a DNS TXT record (`_maya-verify.<domain>` = `maya-verify=<token>`), looked up through the DNS-over-HTTPS resolver, so the domain name is sent to cloudflare-dns.com.
   - Offline eval not regenerated: finding and claim counts are unchanged (checked row by row).
+- **2026-10-28 (Web 10):** GitHub connector, lookalike watch, model comparison.
+  - "GitHub repo": paste a public repository address. MAYA downloads its ZIP from codeload.github.com (no token, at most 25 MB, redirects only to codeload), checks it in memory with the same code checks as a ZIP upload, and never writes or runs it. The repository name is sent to GitHub. One fetch per 10 seconds.
+  - "Lookalike watch" for your own domain: up to 40 lookalike names (typos, look-alike characters including punycode, hyphens, other endings, your name plus words like "support" or "login"). The top 25 are looked up only through cloudflare-dns.com and crt.sh (the names are sent there); MAYA never contacts the lookalike domains themselves.
+  - Findings: recent certificate (high), DNS records (medium), no records (info). Failed lookups stay "unknown", and shared IPs or nameservers are grouped without claiming who runs them. Registrar and hosting note drafts need a named approval, and an optional model summary is verified like scans.
+  - `scripts/compare_models.py` compares a second model provider, once one is configured in `config.yaml`. It makes real model calls and has not been run live.
+  - Offline eval not regenerated: finding and claim counts are unchanged (checked row by row).
 
 ## License
 

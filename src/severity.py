@@ -124,6 +124,15 @@ TABLE: dict[str, Rule] = {
     "msg_urgency_language": Rule("low",
         "The message uses urgent wording, which pushes readers to act before checking.",
         "Tell customers how you really contact them, and that you never rush payments."),
+    "lookalike_recent_certificate": Rule("high",
+        "A domain that resembles yours has DNS records and a certificate issued recently, so it can serve pages over HTTPS that look like yours.",
+        "Check who registered it; report it to the registrar with MAYA's note draft, and tell customers which domains are yours."),
+    "lookalike_has_dns": Rule("medium",
+        "A domain that resembles yours has DNS records, so it is registered and may be in use.",
+        "Check who registered it and keep watching; report it if it uses your brand."),
+    "lookalike_no_dns": Rule("info",
+        "A domain that resembles yours has no DNS records today.",
+        "No action needed now; consider registering important variants yourself."),
 }
 
 

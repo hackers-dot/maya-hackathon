@@ -274,7 +274,7 @@ TEMPLATES = {
         "Subject: Domain {domain} uses our brand without permission\n\n"
         "Hello,\n\nWe are [your business name], owner of {official}. The domain {domain} {relation} and appears in a "
         "message that claims to come from us. We did not create or authorise it.\n\n"
-        "Evidence: screenshot SHA-256 {image_sha256}, captured {date}. MAYA evidence pack available on request.\n\n"
+        "Evidence: {evidence}, captured {date}. MAYA evidence pack available on request.\n\n"
         "Please review this domain under your abuse policy.\n\n[your name]\n[your role]\n[contact details]"),
     "platform": (
         "To: [platform's report form or trust & safety contact]\n"
@@ -282,13 +282,36 @@ TEMPLATES = {
         "Hello,\n\nWe are [your business name], owner of {official}. A message or ad on your platform claims to come "
         "from us and points to {domain}, which {relation}. We did not create or authorise it.\n\n"
         "Where it appeared: [link or location of the post or ad]\n"
-        "Evidence: screenshot SHA-256 {image_sha256}, captured {date}.\n\n"
+        "Evidence: {evidence}, captured {date}.\n\n"
         "Please review it under your policies.\n\n[your name]\n[your role]\n[contact details]"),
 }
 
 
-def draft_note(template: str, domain: str, official: str | None, verdict: str, image_sha256: str, date: str) -> str:
+LOOKALIKE_TEMPLATES = {
+    "registrar": (
+        "To: [registrar abuse contact for {domain}]\n"
+        "Subject: Domain {domain} resembles our domain {official}\n\n"
+        "Hello,\n\nWe are [your business name], owner of {official}. The domain {domain} {relation} and {status}. "
+        "We did not register it and have not authorised its use of our name.\n\n"
+        "Evidence: {evidence}, captured {date}. MAYA evidence pack available on request.\n\n"
+        "Please review this domain under your abuse policy.\n\n[your name]\n[your role]\n[contact details]"),
+    "hosting": (
+        "To: [hosting provider abuse contact for {domain}]\n"
+        "Subject: Site at {domain} may use our brand without permission\n\n"
+        "Hello,\n\nWe are [your business name], owner of {official}. The domain {domain} {relation} and {status}. "
+        "If it serves content that presents itself as us, we did not authorise it.\n\n"
+        "Evidence: {evidence}, captured {date}.\n\n"
+        "Please review it under your acceptable-use policy.\n\n[your name]\n[your role]\n[contact details]"),
+}
+
+
+def draft_note(template: str, domain: str, official: str | None, verdict: str, evidence: str, date: str,
+               source: str = "message", status: str = "") -> str:
+    """Fixed template text. source "message" (screenshot) or "lookalike" (watch run); nothing is ever sent."""
     # the note speaks for the business ("our domain"), unlike MAYA's own verdict labels ("your domain")
     relation = f"resembles our domain {official}" if verdict == RESEMBLES else "is not one of our domains"
-    return TEMPLATES[template].format(domain=domain, official=official or "[your official domain]",
-                                      relation=relation, image_sha256=image_sha256, date=date)
+    templates = LOOKALIKE_TEMPLATES if source == "lookalike" else TEMPLATES
+    return templates[template].format(domain=domain, official=official or "[your official domain]",
+                                      relation=relation, evidence=evidence, date=date,
+                                      status=status.replace("resembles your domain and ", "")
+                                      or "is registered")

@@ -220,7 +220,8 @@
       const li = el("li");
       const btn = el("button", "asset-item");
       btn.type = "button";
-      const prefix = a.kind === "code" ? "Code: " : a.kind === "logs" ? "Logs: " : a.kind === "image" ? "Message: " : "";
+      const prefix = a.kind === "code" ? "Code: " : a.kind === "logs" ? "Logs: " : a.kind === "image" ? "Message: "
+        : a.kind === "watch" ? "Watch: " : "";
       btn.appendChild(el("span", "asset-name", a.kind === "demo" ? "Demo app (loopback)" : prefix + a.label));
       const s = STATUS[a.status] || [a.status, ""];
       btn.appendChild(el("span", "chip chip-" + s[1], s[0]));
@@ -700,7 +701,7 @@
   function renderResult(run, result) {
     if (!result) return;
     show("result-panel", true);
-    const upload = run.mode === "code" || run.mode === "logs";
+    const upload = run.mode === "code" || run.mode === "logs" || run.mode === "lookalike";
     setText("result-model", result.summary_model ? result.summary_model + (run.mode === "message"
       ? " (read the image; code decided the verdicts)" : " (optional summary)")
       : run.mode === "model" ? run.model : upload ? "none (findings come from code checks)" : "none (no model key configured)");
@@ -735,15 +736,17 @@
       list.appendChild(li);
     }
     renderChecks(result.checks);
-    renderGroups(result.groups);
+    renderGroups(result.groups, run.mode);
     renderItems(run, result);
+    renderCandidates(run, result);
     const noClaims = !(result.claims || []).length;
     show("claims-empty", noClaims);
     setText("claims-empty", run.mode === "message"
       ? "The model only read the image; MAYA's code decided every verdict below (see Read from the image)."
       : run.mode === "model" || result.summary_model
       ? (result.model_finished ? "The model made no verified claims." : "The model did not finish; findings above are from code checks.")
-      : run.mode === "logs" ? "Optional: press \"Summarize with model\" for a verified summary."
+      : run.mode === "logs" || run.mode === "lookalike"
+        ? "Optional: press \"Summarize with model\" for a verified summary."
         : run.mode === "code" ? "Code uploads use no model; findings above are from code checks."
           : "No model in deterministic mode; findings above are from code checks.");
     const dropped = $("dropped-list");
@@ -787,7 +790,8 @@
     findingCards.clear();
     traceNext = 0;
     for (const id of ["run-panel", "findings-panel", "result-panel", "fixfirst-panel", "proposals-panel",
-      "retest-panel", "downloads-panel", "items-panel", "notes-panel", "diff-panel", "score-badge", "score-note",
+      "retest-panel", "downloads-panel", "items-panel", "notes-panel", "candidates-panel", "diff-panel", "score-badge",
+      "score-note",
       "demo-banner"]) show(id, false);
     show("trace-empty", true);
   }
@@ -838,10 +842,14 @@
     setText("mode-label", "");
     const btn = $("scan-btn");
     if (btn) btn.disabled = !asset.scannable;
-    const upload = asset.kind === "code" || asset.kind === "logs" || asset.kind === "image";
+    const upload = asset.kind === "code" || asset.kind === "logs" || asset.kind === "image" || asset.kind === "watch";
     show("scan-btn", !upload);
-    show("summarize-btn", asset.kind === "logs");
-    if (upload) setText("av-hint", "Uploaded file: checked once when uploaded. Upload it again to re-check.");
+    show("summarize-btn", asset.kind === "logs" || asset.kind === "watch");
+    if (upload) setText("av-hint", asset.kind === "watch"
+      ? "Lookalike watch: names were looked up once. Start a new watch to check again."
+      : asset.label && asset.label.indexOf("github.com/") === 0
+        ? "From GitHub: checked once when fetched. Fetch it again to re-check."
+        : "Uploaded file: checked once when uploaded. Upload it again to re-check.");
     show("reset-demo-btn", asset.kind === "demo");
     if (btn) btn.textContent = asset.last_run ? "Re-scan" : "Run security scan";
     setResetEnabled(true);
@@ -971,8 +979,9 @@
   function renderItems(run, result) {
     const isMsg = run.mode === "message";
     show("items-panel", isMsg);
-    show("notes-panel", isMsg);
+    show("notes-panel", isMsg || run.mode === "lookalike");
     if (!isMsg) return;
+    setText("note-platform", "Draft platform note");
     const list = $("items-list");
     clear(list);
     const select = $("note-domain");
@@ -1045,7 +1054,9 @@
   async function draftNote(template) {
     const select = $("note-domain");
     if (!currentRunId || !select || !select.value || PREVIEW) return;
-    const d = await post("/api/runs/" + currentRunId + "/notes", { template: template, domain: select.value });
+    const watchRun = $("candidates-panel") && !$("candidates-panel").hidden;
+    const t = watchRun && template === "platform" ? "hosting" : template;
+    const d = await post("/api/runs/" + currentRunId + "/notes", { template: t, domain: select.value });
     if (d) renderResult(d.run, d.result);
   }
 
@@ -1053,6 +1064,84 @@
     if (!currentRunId || PREVIEW) return;
     const d = await post("/api/runs/" + currentRunId + "/notes/" + id + "/approve", { approver: $("note-approver").value });
     if (d) { renderResult(d.run, d.result); refreshSidePanels(); }
+  }
+
+  // ---------- GitHub connector and lookalike watch ----------
+  function openSimpleView(view) {
+    stopPolling();
+    showView(view);
+    setText("github-message", "");
+    setText("watch-message", "");
+  }
+
+  async function fetchGithub() {
+    const input = $("github-url");
+    const b = $("github-btn");
+    if (!input || !input.value.trim() || PREVIEW) return;
+    b.disabled = true;
+    setText("github-message", "Downloading the public repository ZIP from GitHub and checking it in memory...");
+    const d = await post("/api/connectors/github", { url: input.value.trim() });
+    b.disabled = false;
+    if (!d) { setText("github-message", "Not fetched. See the message above."); return; }
+    const assets = await getJSON("/api/assets");
+    if (assets.ok) renderAssetList(assets.data.assets);
+    selectAsset(d.asset);
+  }
+
+  async function startWatch() {
+    const input = $("watch-domain");
+    const b = $("watch-btn");
+    if (!input || !input.value.trim() || PREVIEW) return;
+    b.disabled = true;
+    const d = await post("/api/lookalike", { domain: input.value.trim() });
+    b.disabled = false;
+    if (!d) { setText("watch-message", "Not started. See the message above."); return; }
+    const assets = await getJSON("/api/assets");
+    if (assets.ok) renderAssetList(assets.data.assets);
+    selectAsset(d.asset);
+  }
+
+  const STATUS_CHIP = { "resembles your domain and a recent certificate was issued": "failed",
+    "resembles your domain and has DNS records": "pending", "resembles your domain, no DNS records found": "ok",
+    "lookup failed (unknown)": "" };
+
+  function renderCandidates(run, result) {
+    const isWatch = run.mode === "lookalike";
+    show("candidates-panel", isWatch);
+    if (!isWatch) return;
+    const list = $("candidates-list");
+    clear(list);
+    const items = result.items || [];
+    const up = result.upload || {};
+    setText("candidates-meta", items.length + " generated for " + (up.official || "") + ", " + (up.looked_up || 0) +
+      " looked up");
+    const select = $("note-domain");
+    if (select) clear(select);
+    const order = (i) => i.status && i.status.indexOf("recent certificate") >= 0 ? 0
+      : i.status && i.status.indexOf("has DNS records") >= 0 ? 1 : i.status === "lookup failed (unknown)" ? 2 : 3;
+    for (const it of items.slice().sort((a, b) => order(a) - order(b) || (a.domain < b.domain ? -1 : 1))) {
+      const li = el("li", "item");
+      const head = el("div", "item-head");
+      head.appendChild(el("code", "", it.domain));
+      head.appendChild(el("span", "item-kind", it.kind));
+      head.appendChild(el("span", "chip chip-" + (STATUS_CHIP[it.status] === undefined ? "" : STATUS_CHIP[it.status]),
+        it.status));
+      li.appendChild(head);
+      if ((it.a || []).length || (it.ns || []).length) {
+        li.appendChild(el("span", "muted", "A " + ((it.a || []).join(", ") || "-") + " · NS " +
+          ((it.ns || []).join(", ") || "-")));
+      }
+      list.appendChild(li);
+      if (select && /has DNS records|recent certificate/.test(it.status || "")) {
+        const o = el("option", "", it.domain);
+        o.value = it.domain;
+        select.appendChild(o);
+      }
+    }
+    show("notes-panel", true);
+    setText("note-platform", "Draft hosting-provider note");
+    for (const id of ["note-registrar", "note-platform"]) { const b = $(id); if (b) b.disabled = !(select && select.options.length); }
+    renderNotes(result.notes || []);
   }
 
   async function disconnectAsset() {
@@ -1099,17 +1188,19 @@
     loadChats();
   }
 
-  function renderGroups(groups) {
+  function renderGroups(groups, mode) {
     const list = $("groups-list");
     if (!list) return;
     clear(list);
     const items = groups || [];
+    const watch = mode === "lookalike";
+    setText("groups-heading", watch ? "Shared infrastructure" : "By source address");
     show("groups-heading", items.length > 0);
     show("groups-list", items.length > 0);
     for (const g of items) {
       const li = el("li");
       li.appendChild(el("code", "", g.source));
-      li.appendChild(el("span", "muted", " " + g.label + ": " + g.findings.length + " finding(s) (" +
+      li.appendChild(el("span", "muted", " " + g.label + ": " + g.findings.length + (watch ? " domain(s) (" : " finding(s) (") +
         g.findings.join(", ") + ")"));
       list.appendChild(li);
     }
@@ -1139,6 +1230,10 @@
     onClick("conn-code", () => { setSidebar(false); openUpload("code"); });
     onClick("conn-logs", () => { setSidebar(false); openUpload("logs"); });
     onClick("conn-msg", () => { setSidebar(false); openUpload("image"); });
+    onClick("conn-github", () => { setSidebar(false); openSimpleView("github"); });
+    onClick("conn-watch", () => { setSidebar(false); openSimpleView("watch"); });
+    onClick("github-btn", fetchGithub);
+    onClick("watch-btn", startWatch);
     onClick("official-save", saveOfficial);
     onClick("note-registrar", () => draftNote("registrar"));
     onClick("note-platform", () => draftNote("platform"));
@@ -1172,8 +1267,9 @@
         renderChatList(r.data.chat.list);  // after opening, so the open chat is highlighted (as loadChats does)
       }
       if (view === "upload-code" || view === "upload-logs" || view === "upload-image") openUpload(view.slice(7));
+      if (view === "github" || view === "watch") openSimpleView(view);
       if (view === "data") openData();
-      if (view === "logs" || view === "message") {
+      if (view === "logs" || view === "message" || view === "lookalike") {
         const s = r.data[view];
         selectAsset(s.asset);
         appendSteps(s.steps);
@@ -1226,6 +1322,8 @@
     show("asset-view", view === "asset");
     show("upload-view", view === "upload");
     show("data-view", view === "data");
+    show("github-view", view === "github");
+    show("watch-view", view === "watch");
     if (view !== "asset") stopPolling();
   }
 

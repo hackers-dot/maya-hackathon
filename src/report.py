@@ -56,6 +56,10 @@ OWASP = {  # check -> (code, name); None = outside the OWASP Top 10
     "msg_phone_not_in_list": None,
     "msg_payment_request": None,
     "msg_urgency_language": None,
+    # lookalike watch: observed registrations, not a weakness in the app
+    "lookalike_recent_certificate": None,
+    "lookalike_has_dns": None,
+    "lookalike_no_dns": None,
 }
 
 
@@ -292,6 +296,24 @@ TEXT = {
         "Like a caller who says the offer ends in five minutes.",
         "The model read one or more urgency phrases in the image; code only counts them.",
         "Tell customers how you really contact them, and that you never rush payments."),
+    "lookalike_recent_certificate": Text(
+        "Lookalike domain with a recent certificate",
+        "A domain that looks like yours is registered and recently got a certificate.",
+        "Like a new shop across the street using almost your name and a freshly printed sign.",
+        "DNS-over-HTTPS shows A/NS records and crt.sh lists a certificate issued in the last 90 days.",
+        "Check the owner; report it to the registrar (MAYA can draft the note) and tell customers your real domains."),
+    "lookalike_has_dns": Text(
+        "Lookalike domain has DNS records",
+        "A domain that looks like yours is registered and may be in use.",
+        "Like a shop name almost like yours appearing in the business register.",
+        "DNS-over-HTTPS shows A or NS records for the generated name.",
+        "Check who registered it, keep watching, and report it if it uses your brand."),
+    "lookalike_no_dns": Text(
+        "Lookalike domain without DNS records",
+        "A domain that looks like yours does not appear to be in use today.",
+        "Like an empty plot next to your shop with no sign yet.",
+        "DNS-over-HTTPS returns no A or NS records for the generated name.",
+        "No action needed now; consider registering important variants yourself."),
 }
 
 DEMO_BANNER = "DEMO: findings below come from MAYA's deliberately vulnerable demo app on loopback, not a real site."

@@ -31,7 +31,8 @@ CAPTURE_TOOL = "maya HttpClient (GET/HEAD, scope-checked)"
 TOOL_FOR_METHOD = {"FILE": "maya code connector (ZIP read in memory, nothing executed)",
                    "LOG": "maya log parser (uploaded log, read only)",
                    "TLS": "maya TLS check (one handshake, scope-checked)",
-                   "IMAGE": "maya suspicious-message check (model extraction, code verdicts)"}
+                   "IMAGE": "maya suspicious-message check (model extraction, code verdicts)",
+                   "LOOKALIKE": "maya lookalike watch (DNS-over-HTTPS and crt.sh lookups only)"}
 PACK_TOOL = "maya evidence_pack"
 NO_ISSUES = "No issues detected in the checks run."
 SEALED_FILES = {"manifest.json", "custody_log.jsonl"}  # not listed in the manifest (the log seals the manifest)

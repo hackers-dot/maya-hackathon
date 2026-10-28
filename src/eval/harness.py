@@ -238,8 +238,12 @@ def run_case(case: dict, level: str, data_dir: Path, verifier=verify, provider=N
         "notes_dropped": sum(1 for v in claims["verified"] if v.get("note_dropped")),
         "report_produced": produced, "model_finished": result.final_answer_valid,
         "stop_reason": result.stop_reason, "tokens": budget.run["total_tokens"],
+        "reasoning_tokens": budget.run.get("reasoning_tokens", 0),
         "seconds": round(time.perf_counter() - t0, 2), "model_seconds": round(sum(timed.latencies), 2),
         "model_calls": len(timed.latencies),
+        # tool-call format problems: calls the registry rejected (bad name/arguments), calls that errored,
+        # and calls deferred past the per-step limit
+        "tool_problems": {k: sum(1 for e in registry.log if e["status"] == k) for k in ("rejected", "error", "deferred")},
     }
 
 

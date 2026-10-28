@@ -366,6 +366,31 @@ See `src/models.py`:
   - Success adds the host to `verified_targets.json` with method `dns_txt`, like the other methods.
   - `POST /api/assets/<id>/verify-dns`; the connect card shows the exact record and says the domain name is sent to the DoH provider.
 
+### Web 10: GitHub connector, lookalike watch, model comparison
+
+- **GitHub connector (`src/github_fetch.py`).** Public repositories only, no token, read-only.
+  - Accepted: `https://github.com/<owner>/<repo>` with an optional `/tree/<branch>`, matched by a strict regex. Anything with userinfo, a port, a query, a fragment, another or numeric host, or `..` is refused before any request.
+  - The page shows the bare form `github.com/owner/repo` (static pages carry no `https://` literals), and the endpoint adds `https://` before the same strict check.
+  - The ZIP comes from `codeload.github.com/<owner>/<repo>/zip/HEAD` (or `refs/heads/<branch>`): GET, 5 s connect / 30 s total, redirects only to codeload.github.com, at most 25 MB with reading stopped at the cap.
+  - The bytes go to the existing in-memory scanner (`read_zip(..., max_bytes=25 MB)`): never extracted to disk, never executed. One fetch per 10 s per user, counted even when it fails.
+  - The result is a `code` asset and run, so findings, report, pack, chat and export work as for a ZIP upload. The repository name is sent to GitHub, and the card says so. These two fixed hosts are, like the DoH resolver, not scan targets.
+  - **Not verified live:** the `zip/HEAD` path for the default branch; the faked tests cover the code paths only.
+- **Lookalike watch (`src/lookalike.py`).** Passive only.
+  - The generator builds strings only: typos (omission, swap, duplicate, keyboard-adjacent), homoglyphs (ASCII and Cyrillic in punycode form, as their own kind), hyphenation, TLD swap, brand plus keyword (support, care, refund, pay, login, offer), and the subdomain trick (`brand.tld-login.com`). A fixed round-robin over the kinds picks at most 40; they are sorted and de-duplicated.
+  - **Lookups:** the top 25 get A and NS lookups at cloudflare-dns.com. Names that have records also get certificate-transparency entries from crt.sh. GET only, no redirects, 10 s timeout, 2 retries (errors, 429, 5xx), at most one request per second. `Lookups._get` refuses any host but those two, so no candidate domain is ever contacted.
+  - A failed lookup is "lookup failed (unknown)" and produces no finding.
+  - Findings (fixed table): a recent certificate within 90 days (high); DNS records (medium); no DNS records (info).
+  - **Evidence:** the parsed answers plus short raw snippets, kept within the store's 2 KB body limit.
+  - **Groups:** candidates that share an IP or nameserver are grouped as "shares infrastructure (IP/NS); shared hosting is common; this does not identify an operator".
+  - **Report notes:** registrar and hosting-provider templates; DRAFT becomes READY only through `approve_note`.
+  - **Optional model step:** the existing summary endpoint (claim type `lookalike_domain`), verified against the stored lookups.
+  - The watch runs in the background with a live trace; the domain must be one of the user's verified sites or confirmed official domains.
+  - `scripts/lookalike_live.py` does the same from the command line; `--dry-run` uses faked answers.
+- **Model comparison (`scripts/compare_models.py`).** `config.yaml` has three flat, empty keys: `second_base_url`, `second_model`, `second_api_key_env` (the NAME of an environment variable).
+  - The script runs the same scan with the same caps against each provider and prints one table: findings by code, claims kept and dropped, fake claims in report, tokens (reasoning separate), model latency, stop reason, and tool-call problems (rejected / error / deferred, now also returned by `run_case`).
+  - It refuses before any network use if the second provider is not configured or a key variable is unset, and never prints a key.
+  - Tests use faked transports only; it has not been run live.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

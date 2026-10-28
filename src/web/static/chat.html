@@ -32,6 +32,8 @@
 <li><button id="conn-code" class="connector" type="button"><span>Source code ZIP</span><span class="chip chip-ok">works</span></button></li>
 <li><button id="conn-logs" class="connector" type="button"><span>Logs</span><span class="chip chip-ok">works</span></button></li>
 <li><button id="conn-msg" class="connector" type="button"><span>Suspicious message</span><span class="chip chip-ok">works</span></button></li>
+<li><button id="conn-github" class="connector" type="button"><span>GitHub repo</span><span class="chip chip-ok">works</span></button></li>
+<li><button id="conn-watch" class="connector" type="button"><span>Lookalike watch</span><span class="chip chip-ok">works</span></button></li>
 <li class="connector connector-soon"><span>API</span><span class="chip">coming soon</span></li>
 <li class="connector connector-soon"><span>Mobile</span><span class="chip">coming soon</span></li>
 <li class="connector connector-soon"><span>Cloud</span><span class="chip">coming soon</span></li>
@@ -94,6 +96,23 @@
 </div>
 <div class="actions"><button id="up-btn" class="btn btn-primary" type="button" disabled>Upload and check</button></div>
 <p id="up-message" class="message" role="status"></p>
+</section>
+<section id="github-view" class="asset-view" hidden aria-live="polite">
+<h1 class="title">Source code from GitHub</h1>
+<p class="hint">Paste the address of a PUBLIC repository: github.com/owner/repo, or github.com/owner/repo/tree/branch for one branch. MAYA downloads the repository ZIP from codeload.github.com (no token, read-only, at most 25 MB), reads it in memory and never runs it. The repository name is sent to GitHub. One fetch per 10 seconds.</p>
+<div class="field"><label for="github-url">Repository address</label>
+<input id="github-url" type="url" inputmode="url" autocomplete="off" maxlength="300" placeholder="github.com/owner/repo"></div>
+<div class="actions"><button id="github-btn" class="btn btn-primary" type="button">Fetch and check</button></div>
+<p id="github-message" class="message" role="status"></p>
+</section>
+<section id="watch-view" class="asset-view" hidden aria-live="polite">
+<h1 class="title">Watch for lookalike domains</h1>
+<p class="hint">Enter one of your own domains (a verified website or a domain on your official list). MAYA builds up to 40 lookalike names (typos, look-alike characters, hyphens, other endings, your name plus words like "support" or "login") and checks the top 25.</p>
+<p class="hint">Passive only: MAYA never visits these domains. The candidate names are sent to cloudflare-dns.com (DNS records) and crt.sh (certificate records), at most one request per second.</p>
+<div class="field"><label for="watch-domain">Your domain</label>
+<input id="watch-domain" type="text" autocomplete="off" maxlength="253" placeholder="your-shop.example"></div>
+<div class="actions"><button id="watch-btn" class="btn btn-primary" type="button">Start the watch</button></div>
+<p id="watch-message" class="message" role="status"></p>
 </section>
 <section id="data-view" class="asset-view" hidden aria-live="polite">
 <h1 class="title">Your data</h1>
@@ -168,6 +187,11 @@
 <div class="diff-col"><h3 class="sub-heading">New</h3><ul id="retest-new" class="diff-list"></ul></div>
 </div>
 </section>
+<section id="candidates-panel" class="panel" hidden>
+<div class="panel-head"><h2>Lookalike candidates</h2><span id="candidates-meta" class="panel-meta"></span></div>
+<ul id="candidates-list" class="item-list"></ul>
+<p class="hint">Names only: MAYA asked cloudflare-dns.com and crt.sh about them and never contacted the domains.</p>
+</section>
 <section id="items-panel" class="panel" hidden>
 <div class="panel-head"><h2>Read from the image</h2><span class="panel-meta">model text (unverified), code verdict</span></div>
 <ul id="items-list" class="item-list"></ul>
@@ -241,6 +265,7 @@
 <p id="quality-summary" class="quality-summary"></p>
 <ul id="quality-cases" class="quality-cases"></ul>
 <p id="quality-live" class="hint"></p>
+<p class="hint">Compare two models: set second_base_url, second_model and second_api_key_env in config.yaml, then run scripts/compare_models.py (it makes real model calls; same caps for both).</p>
 </section>
 </section>
 </div>

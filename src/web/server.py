@@ -301,9 +301,58 @@ def _preview_message() -> dict:
                        "checks": [{"check": c, "status": "ran"} for c in MESSAGE_CHECKS]}}
 
 
+def _preview_lookalike() -> dict:
+    """A lookalike-watch result for screenshots: the real generator and watch() over an in-memory fake transport
+    (fictional brand, documentation IPs). No network."""
+    from datetime import datetime, timezone
+
+    import httpx
+    from src.brand_check import draft_note
+    from src.lookalike import LOOKALIKE_CHECKS, Lookups, watch
+    registered = {"demoshop-care.example": "192.0.2.10", "demoshop.com": "198.51.100.7", "d3moshop.example": "192.0.2.10"}
+
+    def handler(req):
+        if req.url.host == "crt.sh":
+            q = req.url.params["q"]
+            return httpx.Response(200, json=[{"id": 1001, "not_before": "2026-10-20T09:00:00",
+                                              "issuer_name": "C=XX, O=Example CA"}] if q == "demoshop-care.example" else [])
+        name, rtype = req.url.params["name"], req.url.params["type"]
+        if name in registered:
+            ans = [{"type": 1, "data": registered[name]}] if rtype == "A" else [{"type": 2, "data": "ns1.hosting.example."}]
+            return httpx.Response(200, json={"Status": 0, "Answer": ans})
+        return httpx.Response(200, json={"Status": 3})
+    lookups = Lookups(transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    try:
+        findings, items, groups = watch("demoshop.example", lookups, now=datetime(2026, 10, 28, tzinfo=timezone.utc))
+    finally:
+        lookups.close()
+    view = findings_view({f.id: f for f in findings}, None)
+    note = {"id": "note-0000bbbb", "template": "registrar", "domain": "demoshop-care.example", "status": "DRAFT",
+            "approved_by": None, "approved_at": None,
+            "text": draft_note("registrar", "demoshop-care.example", "demoshop.example", "resembles your domain",
+                               "DNS and certificate-transparency lookups recorded by MAYA (run 3333...)", "2026-10-28",
+                               source="lookalike", status="resembles your domain and a recent certificate was issued")}
+    run = {"id": "3" * 24, "asset_id": "3" * 16, "mode": "lookalike", "mode_label": "Lookalike domain watch: "
+           "DNS-over-HTTPS and crt.sh lookups only (passive)", "model": "none", "demo": False, "error": None,
+           "started_at": 1_800_000_000, "finished_at": 1_800_000_000, "steps": 25, "can_apply": False,
+           "status": "finished"}
+    return {"asset": {"id": "3" * 16, "kind": "watch", "label": "lookalikes of demoshop.example", "origin": None,
+                      "status": "uploaded", "reason": None, "scannable": False, "last_run": None},
+            "run": run, "steps": [{"step": 1, "tool": "lookup", "args": "d3moshop.example",
+                                   "result_summary": "resembles your domain and has DNS records",
+                                   "tokens": {"prompt": 0, "completion": 0, "reasoning": 0}, "latency": 0.0}],
+            "result": {"findings": view, "fix_first": view[:3], "claims": [], "order_note": "", "dropped": [],
+                       "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "reasoning_tokens": 0},
+                       "model_finished": False, "stop_reason": "lookalike", "items": items, "groups": groups,
+                       "notes": [note], "checks": [{"check": c, "status": "ran"} for c in LOOKALIKE_CHECKS],
+                       "upload": {"name": "lookalikes of demoshop.example", "official": "demoshop.example",
+                                  "candidates": len(items), "looked_up": 25, "requests": lookups.requests}}}
+
+
 PREVIEW_SAMPLE = _preview_sample()
 PREVIEW_SAMPLE["logs"] = _preview_logs()
 PREVIEW_SAMPLE["message"] = _preview_message()
+PREVIEW_SAMPLE["lookalike"] = _preview_lookalike()
 
 
 def default_provider_factory():
@@ -336,8 +385,10 @@ def eval_view(path: Path) -> dict:
 class App:
     def __init__(self, data_dir: Path | None, session_ttl: float, clock, ui_preview: bool = False,
                  provider_factory=None, http_transport=None, chat_provider_factory=None,
-                 chat_token_cap: int | None = None, eval_path=None):
+                 chat_token_cap: int | None = None, eval_path=None, lookalike_sleep=None):
         self.data_dir = Path(data_dir) if data_dir else DEFAULT_DB.parent
+        self.lookalike_sleep = lookalike_sleep or time.sleep  # tests skip the 1 request/s wait
+        self.github_last: dict[int, float] = {}  # user id -> time of the last GitHub fetch (1 per 10 s)
         self.eval_path = Path(eval_path) if eval_path else EVAL_SUMMARY  # written by src/eval/harness.py
         self.data_dir.mkdir(parents=True, exist_ok=True)
         db = self.data_dir / "web.db"
@@ -701,7 +752,7 @@ class WebHandler(BaseHTTPRequestHandler):
 
     # --- POST (all state-changing) ---
     POSTS = {"/api/signup", "/api/signin", "/api/signout", "/api/profile", "/api/asset", "/api/connect",
-             "/api/consent", "/api/data/delete", "/api/official"}
+             "/api/consent", "/api/data/delete", "/api/official", "/api/connectors/github", "/api/lookalike"}
 
     def do_POST(self):
         if not self._host_ok():
@@ -971,6 +1022,66 @@ class WebHandler(BaseHTTPRequestHandler):
                 "verified_assets": sorted(a["host"] for a in self.app.assets.list(user["id"])
                                           if a["kind"] == "website" and a["status"] == "verified")}
 
+    def _consented(self, session) -> dict:
+        user = self._require_user(session)
+        if not (user["account_type"] == "company" and user["connect"] and user["consent_at"]):
+            raise Reply(409, "give consent before connecting anything")
+        return user
+
+    def _post_github(self, session, body):
+        """Public GitHub repo -> in-memory ZIP scan. The repo name is sent to GitHub; nothing touches the disk."""
+        from src.code_scan import CODE_CHECKS, UploadRefused, read_zip, scan_upload
+        from src.github_fetch import MAX_BYTES, GitHubError, fetch_zip, parse_github_url
+        user = self._consented(session)
+        url = body.get("url")
+        if isinstance(url, str) and url.startswith("github.com/"):  # the form the page shows; same strict check after
+            url = "https://" + url
+        try:
+            owner, repo, branch = parse_github_url(url)
+        except GitHubError as e:
+            raise Reply(400, str(e)) from None
+        if self.app.runs.active_for(user["id"]):
+            raise Reply(409, "wait for the running scan to finish")
+        now = self.app.clock()
+        last = self.app.github_last.get(user["id"])
+        if last is not None and now - last < 10:
+            raise Reply(429, "one GitHub fetch per 10 seconds; try again shortly")
+        self.app.github_last[user["id"]] = now  # counted even if the fetch fails
+        try:
+            data = fetch_zip(owner, repo, branch, transport=self.app.http_transport)
+            files, counts = read_zip(data, max_bytes=MAX_BYTES)
+        except GitHubError as e:
+            raise Reply(400 if "not found" in str(e) or "larger" in str(e) or "refused" in str(e) else 502,
+                        str(e)) from None
+        except UploadRefused as e:
+            raise Reply(400, f"ZIP refused: {e}") from None
+        name = f"github.com/{owner}/{repo}" + (f"@{branch}" if branch else "")
+        store = self._store(user)
+        asset = self.app.assets.add_upload(user["id"], "code", name)
+        findings = scan_upload(files, name, store)
+        extra = {"upload": {"name": name, "source": "github", **counts},
+                 "checks": [{"check": c, "status": "ran"} for c in CODE_CHECKS]}
+        run = self.app.runs.record_upload(user["id"], asset, "code", findings, store, extra)
+        return 200, {"asset": public_asset(asset, run.id), "run": run_view(run)}, None
+
+    def _post_lookalike(self, session, body):
+        """Start a lookalike watch for one of the user's own domains (verified website or official list)."""
+        from src.brand_check import normalise_domain
+        user = self._consented(session)
+        domain = normalise_domain(body.get("domain") or "") if isinstance(body.get("domain"), str) else None
+        own = {a["host"] for a in self.app.assets.list(user["id"])
+               if a["kind"] == "website" and a["status"] == "verified"}
+        own |= set(self.app.assets.official(user["id"])["domains"])
+        if not domain or domain not in own:
+            raise Reply(400, "choose one of your verified websites or official domains")
+        asset = self.app.assets.add_upload(user["id"], "watch", f"lookalikes of {domain}")
+        try:
+            run = self.app.runs.start_watch(user["id"], asset, domain)
+        except RunBusy as e:
+            self.app.assets.remove(user["id"], asset["id"])
+            raise Reply(409, str(e)) from None
+        return 200, {"asset": public_asset(asset, run.id), "run": run_view(run)}, None
+
     def _post_official(self, session, body):
         from src.brand_check import normalise_domain, normalise_phone
         user = self._require_user(session)
@@ -1043,8 +1154,8 @@ class WebHandler(BaseHTTPRequestHandler):
         return 200, {"asset": public_asset(asset, run.id), "run": run_view(run)}, None
 
     def _message_domain(self, run, body) -> dict:
-        if run.mode != "message":
-            raise Reply(409, "only for suspicious-message results")
+        if run.mode not in ("message", "lookalike") or run.status == "running":
+            raise Reply(409, "only for finished suspicious-message or lookalike-watch results")
         domain = body.get("domain")
         item = next((i for i in run.result["items"] if i.get("domain") and i["domain"] == domain), None)
         if item is None:
@@ -1073,18 +1184,26 @@ class WebHandler(BaseHTTPRequestHandler):
         """Draft a report note from a fixed template. Status DRAFT; only the approval gate makes it READY."""
         import secrets
         import time as _time
-        from src.brand_check import NOT_IN_LIST, RESEMBLES, TEMPLATES, draft_note
+        from src.brand_check import LOOKALIKE_TEMPLATES, NOT_IN_LIST, RESEMBLES, TEMPLATES, draft_note
+        from src.lookalike import STATUS
         item = self._message_domain(run, body)
         template = body.get("template")
-        if template not in TEMPLATES:
-            raise Reply(400, f"template must be one of: {', '.join(sorted(TEMPLATES))}")
+        lookalike = run.mode == "lookalike"
+        templates = LOOKALIKE_TEMPLATES if lookalike else TEMPLATES
+        if template not in templates:
+            raise Reply(400, f"template must be one of: {', '.join(sorted(templates))}")
         if item.get("verdict") not in (RESEMBLES, NOT_IN_LIST):
             raise Reply(409, "this domain matches your list; there is nothing to report")
+        if lookalike and not str(item.get("status", "")).startswith(tuple(STATUS.values())):
+            raise Reply(409, "there are no lookup results for this domain to report")
+        evidence = (f"DNS and certificate-transparency lookups recorded by MAYA (run {run.id})" if lookalike
+                    else f"screenshot SHA-256 {run.result['upload']['image_sha256']}")
+        official = run.result["upload"]["official"] if lookalike else item.get("resembles")
         note = {"id": f"note-{secrets.token_hex(4)}", "template": template, "domain": item["domain"],
                 "status": "DRAFT", "approved_by": None, "approved_at": None,
-                "text": draft_note(template, item["domain"], item.get("resembles"), item["verdict"],
-                                   run.result["upload"]["image_sha256"],
-                                   _time.strftime("%Y-%m-%d", _time.gmtime(run.started_at)))}
+                "text": draft_note(template, item["domain"], official, item["verdict"], evidence,
+                                   _time.strftime("%Y-%m-%d", _time.gmtime(run.started_at)),
+                                   source="lookalike" if lookalike else "message", status=item.get("status", ""))}
         run.result["notes"].append(note)
         return 200, self._run_full(run), None
 
@@ -1107,8 +1226,9 @@ class WebHandler(BaseHTTPRequestHandler):
         from src.budget import BudgetExceeded, TokenBudget
         from src.provider import ProviderError
         from src.web.runs import TOKEN_CAP
-        if run.mode != "logs":
-            raise Reply(409, "a model summary is available for log uploads only")
+        if run.mode not in ("logs", "lookalike") or run.status == "running":
+            raise Reply(409, "a model summary is available for finished log uploads and lookalike watches only")
+        claim_type = "log_activity" if run.mode == "logs" else "lookalike_domain"
         provider, model = self.app.provider_factory()
         if provider is None:
             raise Reply(409, "Model not configured: the optional summary needs a model key on the server")
@@ -1117,13 +1237,15 @@ class WebHandler(BaseHTTPRequestHandler):
                  for f in run.result["findings"]]
         messages = [
             {"role": "system", "content": (
-                "You summarize log findings for a site owner. Reply with ONLY a JSON object "
-                '{"claims": [{"finding_id": "...", "claim_type": "log_activity", "priority": 1, "note": "..."}]}. '
-                "Use only the finding ids listed. Do not quote log lines: code attaches the evidence. priority is "
+                f"You summarize {'log' if run.mode == 'logs' else 'lookalike-domain'} findings for a site owner. "
+                "Reply with ONLY a JSON object "
+                '{"claims": [{"finding_id": "...", "claim_type": "' + claim_type + '", "priority": 1, "note": "..."}]}. '
+                "Use only the finding ids listed. Do not quote evidence: code attaches it. priority is "
                 "the order to look at them, 1 = first, each number once. note is one plain sentence (max 160 "
-                "characters) that mentions only addresses or paths from that finding. Findings that share a source "
-                "address are not necessarily the same actor: never call anyone an attacker.")},
-            {"role": "user", "content": "Log findings:\n" + "\n".join(lines or ["(none)"])},
+                "characters) that mentions only addresses, domains or paths from that finding. Findings that share "
+                "a source address or hosting are not necessarily the same actor: never call anyone an attacker, and "
+                "never call a domain fake, a scam, fraudulent or malicious.")},
+            {"role": "user", "content": "Findings:\n" + "\n".join(lines or ["(none)"])},
         ]
         try:
             reply = provider.chat(messages, max_tokens=1200, reasoning_effort="low")
@@ -1278,12 +1400,14 @@ class WebHandler(BaseHTTPRequestHandler):
 
 def make_server(port: int = DEFAULT_PORT, host: str = HOST, data_dir=None, session_ttl: float = SESSION_TTL,
                 clock=None, ui_preview: bool = False, provider_factory=None, http_transport=None,
-                chat_provider_factory=None, chat_token_cap: int | None = None, eval_path=None) -> MayaServer:
+                chat_provider_factory=None, chat_token_cap: int | None = None, eval_path=None,
+                lookalike_sleep=None) -> MayaServer:
     if host != HOST:
         raise ValueError(f"MAYA web binds to {HOST} only; refused {host!r}")
     app = App(data_dir, session_ttl, clock or time.time, ui_preview=ui_preview is True,
               provider_factory=provider_factory, http_transport=http_transport,
-              chat_provider_factory=chat_provider_factory, chat_token_cap=chat_token_cap, eval_path=eval_path)
+              chat_provider_factory=chat_provider_factory, chat_token_cap=chat_token_cap, eval_path=eval_path,
+              lookalike_sleep=lookalike_sleep)
     handler = type("Handler", (WebHandler,), {"app": app})
     server = MayaServer((HOST, port), handler)
     server.app = app

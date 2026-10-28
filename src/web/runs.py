@@ -34,7 +34,8 @@ TOKEN_CAP = 40_000
 MODE_LABELS = {"model": "Model-guided scan", "deterministic": "Deterministic only (no model key configured)",
                "code": "Source code ZIP: read-only text checks (nothing executed)",
                "logs": "Log upload: pattern checks (heuristics, not a standard)",
-               "message": "Suspicious message: the model reads the image, code decides"}
+               "message": "Suspicious message: the model reads the image, code decides",
+               "lookalike": "Lookalike domain watch: DNS-over-HTTPS and crt.sh lookups only (passive)"}
 GOAL = ("Check the target web app for misconfigurations. Use run_check on relevant paths (for example /, /.env, "
         "/db.sql, /backup/), then give the final claims JSON.")
 
@@ -125,6 +126,44 @@ class RunManager:
             self.runs[run.id] = run
         threading.Thread(target=self._work, args=(run, asset, provider), daemon=True, name=f"run-{run.id}").start()
         return run
+
+    def start_watch(self, user_id: int, asset: dict, official: str) -> Run:
+        """Lookalike watch in the background (25 lookups at 1 per second take a while); one run per user."""
+        with self._lock:
+            if self.active_for(user_id):
+                raise RunBusy("a scan is already running; wait for it to finish")
+            run = Run(id=secrets.token_hex(12), user_id=user_id, asset_id=asset["id"], demo=False, mode="lookalike",
+                      model="none", started_at=self.app.clock())
+            self.runs[run.id] = run
+        threading.Thread(target=self._watch_work, args=(run, asset, official), daemon=True,
+                         name=f"watch-{run.id}").start()
+        return run
+
+    def _watch_work(self, run: Run, asset: dict, official: str):
+        from src.lookalike import LOOKALIKE_CHECKS, LOOKUP_TOP, Lookups, watch
+        store = EvidenceStore(self.app.data_dir / "evidence.db", owner=f"user-{int(run.user_id)}")
+        lookups = Lookups(transport=self.app.http_transport, sleep=self.app.lookalike_sleep)
+
+        def progress(i, item):
+            run.trace.append({"step": i, "tool": "lookup", "args": item["domain"], "result_summary": item["status"],
+                              "tokens": {"prompt": 0, "completion": 0, "reasoning": 0}, "latency": 0.0})
+        try:
+            findings, items, groups = watch(official, lookups, store, progress=progress)
+            run.findings = {f.id: f for f in findings}
+            view = findings_view(run.findings, store)
+            run.result = {"findings": view, "fix_first": view[:3], "claims": [], "order_note": "", "dropped": [],
+                          "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                                    "reasoning_tokens": 0},
+                          "model_finished": False, "stop_reason": "lookalike", "items": items, "groups": groups,
+                          "notes": [], "checks": [{"check": c, "status": "ran"} for c in LOOKALIKE_CHECKS],
+                          "upload": {"name": asset["host"], "official": official, "candidates": len(items),
+                                     "looked_up": min(LOOKUP_TOP, len(items)), "requests": lookups.requests}}
+            run.status = "finished"
+        except Exception as e:  # noqa: BLE001 - surface any failure on the run instead of a silent thread death
+            run.status, run.error = "failed", f"lookalike watch failed: {type(e).__name__}"
+        finally:
+            lookups.close()
+            run.finished_at = self.app.clock()
 
     def client_for(self, run: Run, store) -> HttpClient:
         """Same scope as the scan: the demo app on loopback, or only the verified host."""
