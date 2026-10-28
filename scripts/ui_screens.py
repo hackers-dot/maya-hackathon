@@ -69,6 +69,9 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("message-result", "/__preview/chat.html?view=message"),
     ("message-items", "/__preview/chat.html?view=message&scroll=items-panel"),
     ("message-notes", "/__preview/chat.html?view=message&scroll=notes-panel"),
+    ("investigate", "/__preview/chat.html?view=investigate"),
+    ("summary", "/__preview/chat.html?view=finished&scroll=summary-panel"),
+    ("reminder", "/__preview/chat.html?view=finished&scroll=reminder-panel"),
     ("chat", "/__preview/chat.html?view=chat"),
     ("chat-nokey", "/__preview/chat.html?view=chat-nokey"),
 ]

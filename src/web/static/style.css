@@ -442,6 +442,13 @@ select { font: inherit; color: var(--text); background: var(--panel-2); border: 
 .grade-A, .grade-B { color: #4ade80; } .grade-C { color: #facc15; } .grade-D, .grade-F { color: #f87171; }
 .diff-counts { margin-bottom: 10px; justify-content: flex-start; }
 .copy-issue { margin-top: 8px; }
+.investigate { font: inherit; font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer; white-space: nowrap; }
+.investigate:disabled { opacity: 0.5; cursor: not-allowed; }
+.summary-lines { margin: 8px 0 4px; padding-left: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; }
+#summary-panel .actions .btn { flex: 0 0 auto; }
+.inv-block { margin-top: 8px; font-size: 13px; display: grid; gap: 4px; }
+.inv-block ul, .inv-block ol { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
 .checks-list { margin: 0 0 14px; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; overflow-wrap: anywhere; }
 .downloads .btn { text-align: center; }
 .quality-summary { margin: 0 0 10px; font-size: 14px; }

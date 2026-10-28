@@ -123,6 +123,12 @@ Demo flow:
   - Findings in tests, fixtures, demo and docs folders are labelled "test or demo code", one severity level lower, in their own report section.
   - On this repository's own files: 75 findings before, 11 now. Real cases are still detected (tested).
   - The lookalike watch gives crt.sh a 5 s timeout, 1 retry and a 90 s total budget (then "certificate lookup skipped (time budget)"; DNS lookups always finish), and shows progress per candidate.
+- **2026-10-28 (Web 11):** Investigation agent, owner summary, client report, reminders.
+  - "Investigate" in the chat: a separate, bounded agent (6 steps, token budget) with read-only tools over your own data (findings, what changed, score history, fix status, check explanations, lookalike watch). Claims that cite anything that is not yours are removed, and the tool calls are shown under the reply. The scan agent is unchanged.
+  - "Summary for the owner": score, counts, the top 3 fixes with their change risk, what is fixed and what could not run, in English or Hinglish (the Hinglish needs native-speaker review). It has no time or cost estimates; an optional model reword is dropped if it adds a number, a time or cost word, or a reassurance.
+  - "Download client report": one self-contained HTML file to share by hand (masked evidence, fixes, what changed, re-test, the evidence pack's manifest hash and its disclaimer). Print or save it as PDF from the browser.
+  - Re-scan reminders in 7, 14 or 30 days: "re-scan due" when overdue, and an .ics file for your calendar. Nothing runs by itself.
+  - Offline eval not regenerated: finding and claim counts are unchanged (checked row by row).
 
 ## License
 

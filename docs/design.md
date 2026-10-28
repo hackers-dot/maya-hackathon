@@ -402,6 +402,30 @@ See `src/models.py`:
 - **Measured on this repository** (tracked files, scanned in memory, no network): the live GitHub run found 75; now 11, all `code_hardcoded_secret`. 10 are in test files; 1 is a fake secret in a fixture string in `scripts/ui_flow_check.py`. Code-pattern fixtures inside test string literals are no longer matched in the test files themselves; they are still detected when the tests put them into real files in a ZIP (tested).
 - **crt.sh budget.** crt.sh lookups use a 5 s timeout and 1 retry; DNS-over-HTTPS keeps 10 s and 2 retries. After 90 s of watch time, the remaining crt.sh lookups are skipped as "certificate lookup skipped (time budget)", while every DNS lookup still completes (tested with a fake clock: 3 slow crt.sh answers spend the budget, all 50 DNS lookups finish). The live trace shows "candidate i of 25" per lookup. `scripts/lookalike_live.py` prints each candidate's A and NS values and the shared-infrastructure groups.
 
+### Web 11: investigation agent, owner summary, client report, reminders
+
+- **Investigation agent (`src/investigate.py`).** "Ask MAYA to investigate" in the chat (`POST /api/chats/<id>/investigate`). The scan agent, its tools and its prompt are unchanged, so the live eval is unaffected.
+  - **Loop:** a separate bounded loop: at most 6 steps (the last one forced to answer with `tool_choice="none"`), at most 3 tool calls per step, reasoning effort low, 1,200 max tokens per call, and a TokenBudget capped at 20,000 and at what is left of the user's daily chat budget.
+  - **Tools:** its own allowlist of READ-ONLY tools: `get_findings(run_id?)`, `get_scan_diff(asset_id)`, `get_score_history(asset_id)`, `get_fix_status(asset_id)`, `explain_check(check_id)` (fixed templates) and `watch_lookalikes(domain)`. The last one works only for the user's own verified or official domain; it returns an existing watch or starts the existing passive watch in the background, with its time budget and disclosure.
+  - **Validation:** arguments are validated strictly (exact keys, 24/16-hex ids, known check ids). Unknown tools, bad arguments and extra calls are rejected and logged. Another user's run or asset answers exactly like a missing one, and the module contains no scan, apply, approve, delete or network code (tested).
+  - **Answer:** typed `{"answer", "claims": [{"text", "finding_ids", "run_ids"}]}`. Code drops claims that are malformed, cite nothing, or cite ids this user does not have; code attaches each cited finding's severity and title. The prose is labelled "unverified model text".
+  - The tool trace (step, tool, args, result, tokens) is stored with the reply and shown under it. Without a key: 409 "Model not configured".
+- **Owner summary (`src/owner_summary.py`, `GET /api/runs/<id>/summary.json`).** Built only from stored data with fixed templates:
+  - the heuristic score at scan time, plus after the re-test if there is one;
+  - open issues by severity;
+  - the top 3 by the severity table, each with its fix template's change risk;
+  - what is already fixed and re-tested, and the checks that could not run with the reason.
+
+  English and Hinglish line variants carry the same numbers; the Hinglish strings are marked in code as needing native-speaker review. No time estimates, costs or reassurance.
+  - **Reword (optional):** "Reword for me" (`POST /api/runs/<id>/reword`) asks the model to rephrase. Code drops the reply if it contains a number that is not in the summary, a reassurance word (safe, secure, protected...), or a time or cost word (hours, days, cost, currency...). The reply is labelled "unverified model text".
+- **Client report (`src/client_report.py`, `GET /api/runs/<id>/client-report.html`).** One self-contained HTML download (MAYA creates no public links). It includes:
+  - escaped strings, the DEMO banner when relevant, and the heuristic score label;
+  - findings with masked evidence, fix snippets, risk and rollback, with test or demo code listed apart;
+  - what changed, the re-test result, and the evidence pack's manifest SHA-256 with the pack disclaimer.
+
+  Styling is inline so the file works from disk. The Print button uses the existing external `/static/print.js`, and the page says to use Ctrl+P / Cmd+P when it is opened from disk. Evidence packs now use the run's finish time as `created_at`, so the same run always gives the same manifest hash (it changes only when the run's audit entries change), and the hash in the report matches a downloaded pack (tested).
+- **Re-scan reminders (`src/reminders.py`).** `POST /api/assets/<id>/reminder {"days": 7|14|30}` (0 clears it) stores a due date in a `reminders` table. The asset list shows the reminder, with "re-scan due" and a banner once the app clock passes it. `GET /api/assets/<id>/reminder.ics` downloads an all-day VEVENT: CRLF, RFC 5545 escaping and line folding, title "Re-scan <asset label> with MAYA", no URLs or account data. Nothing runs by itself. Disconnect and "Delete my data" remove reminders.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

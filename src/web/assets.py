@@ -57,6 +57,8 @@ class Assets:
         self.path, self.clock = Path(db_path), clock
         self.targets = VerifiedTargets(verified_path)
         with closing(sqlite3.connect(self.path)) as c, c:
+            c.execute("CREATE TABLE IF NOT EXISTS reminders (asset_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, "
+                      "due REAL NOT NULL, days INTEGER NOT NULL)")
             c.execute("CREATE TABLE IF NOT EXISTS official_entries (user_id INTEGER NOT NULL, kind TEXT NOT NULL, "
                       "value TEXT NOT NULL, UNIQUE (user_id, kind, value))")
             c.execute("CREATE TABLE IF NOT EXISTS assets (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, "
@@ -107,6 +109,7 @@ class Assets:
             return None
         with self._db() as c, c:
             c.execute("DELETE FROM assets WHERE id = ? AND user_id = ?", (asset["id"], user_id))
+            c.execute("DELETE FROM reminders WHERE asset_id = ? AND user_id = ?", (asset["id"], user_id))
             still = c.execute("SELECT COUNT(*) FROM assets WHERE host = ? AND status = 'verified'",
                               (asset["host"],)).fetchone()[0]
         if asset["status"] == "verified" and not still:
@@ -118,6 +121,18 @@ class Assets:
         for a in assets:
             self.remove(user_id, a["id"])
         return len(assets)
+
+    # --- re-scan reminders (a stored due date; nothing runs by itself) ---
+    def set_reminder(self, user_id: int, asset_id: str, due: float | None, days: int = 0) -> None:
+        with self._db() as c, c:
+            c.execute("DELETE FROM reminders WHERE asset_id = ? AND user_id = ?", (asset_id, user_id))
+            if due is not None:
+                c.execute("INSERT INTO reminders VALUES (?, ?, ?, ?)", (asset_id, user_id, due, days))
+
+    def reminders(self, user_id: int) -> dict:
+        with self._db() as c:
+            rows = c.execute("SELECT asset_id, due, days FROM reminders WHERE user_id = ?", (user_id,)).fetchall()
+        return {a: {"due": due, "days": days} for a, due, days in rows}
 
     # --- official domains / phone numbers (for the suspicious-message check), per user ---
     def official(self, user_id: int) -> dict:
@@ -164,11 +179,17 @@ class Assets:
         return self.get(user_id, asset_id)
 
 
-def public_asset(asset: dict, last_run: str | None = None) -> dict:
+def public_asset(asset: dict, last_run: str | None = None, reminder: dict | None = None,
+                 now: float | None = None) -> dict:
     demo = asset["kind"] == "demo"
     out = {"id": asset["id"], "kind": asset["kind"], "label": DEMO_LABEL if demo else asset["host"],
            "origin": None if demo else asset["origin"], "status": asset["status"], "reason": asset["reason"],
            "scannable": asset["status"] in ("verified", "loopback"), "last_run": last_run}
+    if reminder:
+        import time as _time
+        out["reminder"] = {"due": reminder["due"], "days": reminder["days"],
+                           "due_date": _time.strftime("%Y-%m-%d", _time.gmtime(reminder["due"])),
+                           "overdue": now is not None and now >= reminder["due"]}
     if asset["kind"] in ("code", "logs", "image", "watch"):
         out["label"] = asset["host"]
         out["origin"] = None

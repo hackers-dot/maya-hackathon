@@ -51,8 +51,9 @@ PAGES = {
     "/connect-website": ("connect-website.html", True),
     "/chat": ("chat.html", True),
 }
-ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|verify-dns|scan|reset-demo|disconnect)$")
-RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest|approve-all|summarize|dns-check|notes)$")
+ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|verify-dns|scan|reset-demo|disconnect|reminder)$")
+CHAT_INVESTIGATE = re.compile(r"^/api/chats/([0-9a-f]{16})/investigate$")
+RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest|approve-all|summarize|dns-check|notes|reword)$")
 # path -> (asset kind, max body bytes, allowed extensions, allowed content types); raw body, never JSON
 UPLOADS = {
     "/api/uploads/code": ("code", 10 * 1024 * 1024, (".zip",),
@@ -70,8 +71,8 @@ APPROVE = re.compile(r"^/api/runs/([0-9a-f]{24})/proposals/(fix-[a-z_]{3,60})/ap
 AUDIT_ENTRIES_SHOWN = 12
 RUN_PATH = re.compile(r"^/api/runs/([0-9a-f]{24})(/trace)?$")
 RUN_FILE = re.compile(r"^/api/runs/([0-9a-f]{24})/(evidence\.zip|report\.html|report\.md|issues\.md|issues\.json|"
-                      r"report-print\.html)$")
-ASSET_GET = re.compile(r"^/api/assets/([0-9a-f]{16})/(diff|history)$")
+                      r"report-print\.html|client-report\.html|summary\.json)$")
+ASSET_GET = re.compile(r"^/api/assets/([0-9a-f]{16})/(diff|history|reminder\.ics)$")
 # what the user has; only Website works now
 ASSETS = {"website": True, "webapp_api": False, "source_code": False, "server_tool": False, "mobile_desktop": False}
 
@@ -149,7 +150,9 @@ def _preview_extras(findings: list[dict]) -> dict:
                f"Grade {after['grade']} · {after['score']}/100",
                f"2026-10-28 10:09 UTC: Grade {after['grade']} · {after['score']}/100, {len(findings) - 3} finding(s)"]
     return {"proposals": proposals, "retest": retest, "audit": audit, "usage": usage, "score": s,
-            "retest_score": after, "diff": changes, "score_history": history}
+            "retest_score": after, "diff": changes, "score_history": history,
+            "summary": __import__("src.owner_summary", fromlist=["build"]).build(
+                findings, s, s["checks_not_run"], retest["resolved"], after)}
 
 
 def _preview_sample() -> dict:
@@ -207,7 +210,8 @@ def _preview_sample() -> dict:
                  "status": {"model_configured": True, "model": "meta-models/muse-spark-open-1026"}},
         "assets": [
             {"id": "0" * 16, "kind": "demo", "label": "Demo app (loopback, no verification needed)", "origin": None,
-             "status": "loopback", "reason": None, "scannable": True, "last_run": "0" * 24},
+             "status": "loopback", "reason": None, "scannable": True, "last_run": "0" * 24,
+             "reminder": {"due": 1_792_454_400, "days": 14, "due_date": "2026-10-20", "overdue": True}},
             {"id": "1" * 16, "kind": "website", "label": "shop.example", "origin": "https://shop.example",
              "status": "pending", "reason": None, "scannable": False, "last_run": None,
              "verification": {"token": "maya-verify-PREVIEWxSAMPLExTOKENx0000000000",
@@ -353,6 +357,40 @@ PREVIEW_SAMPLE = _preview_sample()
 PREVIEW_SAMPLE["logs"] = _preview_logs()
 PREVIEW_SAMPLE["message"] = _preview_message()
 PREVIEW_SAMPLE["lookalike"] = _preview_lookalike()
+
+
+def _preview_investigate() -> dict:
+    """An investigation reply for screenshots. Claims go through the real verify_claims; the trace is a fixed
+    preview sample (running the agent needs a model)."""
+    from src.investigate import verify_claims
+    run = "0" * 24
+    known = {"exposed_env_file:/.env": {"severity": "critical", "title": ".env file appears publicly accessible"},
+             "missing_csp:/": {"severity": "medium", "title": "Content-Security-Policy header not detected"}}
+    claims, dropped = verify_claims([
+        {"text": "Your .env file was exposed in the latest demo scan and a re-test showed it fixed.",
+         "finding_ids": ["exposed_env_file:/.env"], "run_ids": [run]},
+        {"text": "The CSP header is still missing.", "finding_ids": ["missing_csp:/"], "run_ids": []},
+        {"text": "An admin panel is exposed.", "finding_ids": ["exposed_admin_panel:/admin"], "run_ids": []}],
+        known, {run})
+    tok = {"prompt": 1310, "completion": 140, "reasoning": 60}
+    trace = [{"step": 1, "tool": "get_findings", "args": "{}", "summary": "12 finding(s)", "tokens": tok, "latency": 1.2},
+             {"step": 1, "tool": "get_fix_status", "args": '{"asset_id": "0000000000000000"}',
+              "summary": "11 proposal(s), re-test STILL_PRESENT", "tokens": tok, "latency": 1.2},
+             {"step": 2, "tool": None, "args": None, "summary": "final answer",
+              "tokens": {"prompt": 2240, "completion": 210, "reasoning": 90}, "latency": 2.0}]
+    return {"id": "1" * 16, "title": "What changed on my demo app?", "messages": [
+        {"role": "user", "content": "What changed on my demo app, and what is still open?", "meta": None,
+         "created_at": 1_800_000_000},
+        {"role": "assistant", "created_at": 1_800_000_010,
+         "content": "Two of the twelve issues from your latest demo scan were fixed and re-tested; the missing "
+                    "security headers and cookie flags are still open. Start with the CSP header.",
+         "meta": {"model": "preview-model", "label": "unverified model text", "cited": [], "cited_unknown": [],
+                  "tokens": {"prompt": 3550, "completion": 350, "reasoning": 150, "total": 3900},
+                  "investigation": {"trace": trace, "claims": claims, "dropped": dropped, "stop_reason": "final",
+                                    "valid_json": True}}}]}
+
+
+PREVIEW_SAMPLE["investigate"] = _preview_investigate()
 
 
 def default_provider_factory():
@@ -518,7 +556,8 @@ class WebHandler(BaseHTTPRequestHandler):
         return next_page(user, bool(user and self.app.assets.list(user["id"])))
 
     def _assets_view(self, user) -> list[dict]:
-        return [public_asset(a, self.app.runs.last_for_asset(user["id"], a["id"]))
+        reminders, now = self.app.assets.reminders(user["id"]), self.app.clock()
+        return [public_asset(a, self.app.runs.last_for_asset(user["id"], a["id"]), reminders.get(a["id"]), now)
                 for a in self.app.assets.list(user["id"])]
 
     def _get_api(self, path: str, user) -> bool:
@@ -552,6 +591,12 @@ class WebHandler(BaseHTTPRequestHandler):
         if asset_m:
             if user is None:
                 raise Reply(401, "please sign in")
+            if asset_m.group(2) == "reminder.ics":  # a file, not JSON
+                asset = self.app.assets.get(user["id"], asset_m.group(1))
+                if asset is None:
+                    raise Reply(404, "not found")
+                self._reminder_ics(user, asset)
+                return True
             self._json(200, self._asset_get(user, asset_m.group(1), asset_m.group(2)))
             return True
         file_m = RUN_FILE.match(path)
@@ -649,21 +694,13 @@ class WebHandler(BaseHTTPRequestHandler):
             body = issues_md(run.id, findings, target).encode("utf-8")
             return self._send(200, body, "text/markdown; charset=utf-8",
                               {"Content-Disposition": f'attachment; filename="maya-{run.id[:8]}-issues.md"'})
+        if name == "summary.json":
+            return self._json(200, self._owner_summary(run))
+        if name == "client-report.html":
+            return self._client_report(user, run, store)
         if name == "evidence.zip":
-            try:
-                entries = self.app.gate(user["id"]).audit._entries()
-            except ValueError:
-                raise Reply(500, "audit log unreadable; evidence pack not built") from None
             with tempfile.TemporaryDirectory(prefix="maya-pack-") as tmp:
-                try:
-                    build_pack(Path(tmp) / "pack", run.id, dict(run.findings), store,
-                               [e for e in entries if (e.get("details") or {}).get("run") == run.id],
-                               model=run.model if run.mode == "model" else None, who=f"user-{int(user['id'])}",
-                               statuses={fid: finding_status(run, fid) for fid in run.findings},
-                               demo=run.demo,  # from the asset (loopback demo app), not only the findings
-                               extra_files=dict(run.attachments))
-                except PackError:
-                    raise Reply(500, "evidence pack failed verification") from None
+                self._build_pack(user, run, store, Path(tmp) / "pack")
                 zip_path = export_zip(Path(tmp) / "pack", Path(tmp) / "pack.zip")
                 if not verify_zip(zip_path)["ok"]:
                     raise Reply(500, "evidence pack failed verification")
@@ -680,6 +717,49 @@ class WebHandler(BaseHTTPRequestHandler):
                 body, ctype = to_markdown(report).encode("utf-8"), "text/markdown; charset=utf-8"
         filename = f"maya-{run.id[:8]}-{name}"
         self._send(200, body, ctype, {"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    def _build_pack(self, user, run, store, dest: Path) -> Path:
+        """The run's evidence pack. created_at is the run's finish time, so the same run gives the same
+        manifest hash (it changes only when the run's own audit entries change, e.g. after an approval)."""
+        import datetime as _dt
+        from src.evidence_pack import PackError, build_pack
+        try:
+            entries = self.app.gate(user["id"]).audit._entries()
+        except ValueError:
+            raise Reply(500, "audit log unreadable; evidence pack not built") from None
+        created = _dt.datetime.fromtimestamp(run.finished_at or run.started_at, _dt.timezone.utc).isoformat()
+        try:
+            return build_pack(dest, run.id, dict(run.findings), store,
+                              [e for e in entries if (e.get("details") or {}).get("run") == run.id],
+                              model=run.model if run.mode == "model" else None, who=f"user-{int(user['id'])}",
+                              statuses={fid: finding_status(run, fid) for fid in run.findings},
+                              demo=run.demo,  # from the asset (loopback demo app), not only the findings
+                              extra_files=dict(run.attachments), created_at=created)
+        except PackError:
+            raise Reply(500, "evidence pack failed verification") from None
+
+    def _owner_summary(self, run) -> dict:
+        from src.owner_summary import build
+        return build(run.result["findings"], run_score(run), run.result.get("checks", []),
+                     run.retest["resolved"] if run.retest else [], retest_score(run))
+
+    def _client_report(self, user, run, store):
+        import hashlib
+        import tempfile
+        from src.client_report import build
+        from src.scan_diff import diff
+        asset = self.app.assets.get(user["id"], run.asset_id)
+        label = ("MAYA demo app (loopback)" if run.demo else asset["host"]) if asset else (run.base or "unknown")
+        runs = self.app.runs.runs_for_asset(user["id"], run.asset_id)
+        earlier = [r for r in runs if r.id != run.id and r.started_at <= run.started_at]
+        changes = diff(earlier[-1].result["findings"], run.result["findings"]) if earlier else None
+        with tempfile.TemporaryDirectory(prefix="maya-pack-") as tmp:
+            pack = self._build_pack(user, run, store, Path(tmp) / "pack")
+            manifest_sha = hashlib.sha256((pack / "manifest.json").read_bytes()).hexdigest()
+        body = build(label, run.id, run.result["findings"], run_score(run), run.demo, changes,
+                     run.retest, manifest_sha, self.app.clock()).encode("utf-8")
+        return self._send(200, body, "text/html; charset=utf-8",
+                          {"Content-Disposition": f'attachment; filename="maya-{run.id[:8]}-client-report.html"'})
 
     def _audit_view(self, user) -> dict:
         audit = self.app.gate(user["id"]).audit
@@ -761,9 +841,10 @@ class WebHandler(BaseHTTPRequestHandler):
         action = ASSET_ACTION.match(path)
         run_action, approve = RUN_ACTION.match(path), APPROVE.match(path)
         chat_send = CHAT_SEND.match(path)
+        chat_investigate = CHAT_INVESTIGATE.match(path)
         note_approve = NOTE_APPROVE.match(path)
         known = (path in self.POSTS or path in ("/api/assets", "/api/chats") or path in UPLOADS
-                 or bool(action or run_action or approve or chat_send or note_approve))
+                 or bool(action or run_action or approve or chat_send or note_approve or chat_investigate))
         try:
             cap = UPLOADS[path][1] if path in UPLOADS else MAX_BODY
             # always drain first, so an early refusal (even a 404) never resets the connection
@@ -781,7 +862,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 status, payload, headers = self._post_note_approve(session, note_approve.group(1),
                                                                    note_approve.group(2), body)
             elif action:
-                status, payload, headers = self._post_asset_action(session, action.group(1), action.group(2))
+                status, payload, headers = self._post_asset_action(session, action.group(1), action.group(2), body)
             elif run_action or approve:
                 m = run_action or approve
                 status, payload, headers = self._post_run_action(
@@ -791,6 +872,8 @@ class WebHandler(BaseHTTPRequestHandler):
                 status, payload, headers = self._post_assets(session, body)
             elif path == "/api/chats":
                 status, payload, headers = self._post_new_chat(session, body)
+            elif chat_investigate:
+                status, payload, headers = self._post_investigate(session, chat_investigate.group(1), body)
             elif chat_send:
                 status, payload, headers = self._post_chat_message(session, chat_send.group(1), body)
             else:
@@ -877,6 +960,87 @@ class WebHandler(BaseHTTPRequestHandler):
         return 200, {"user_message": user_msg, "reply": assistant, "chat_id": chat_id,
                      "budget": {"used": used + int(tokens["total"] or 0), "cap": self.app.chat_token_cap}}, None
 
+    def _reminder_ics(self, user, asset):
+        from src.reminders import ics
+        rem = self.app.assets.reminders(user["id"]).get(asset["id"])
+        if not rem:
+            raise Reply(404, "no reminder set for this asset")
+        label = "MAYA demo app" if asset["kind"] == "demo" else asset["host"]
+        body = ics(label, rem["due"], f"{asset['id']}-{int(rem['due'])}", self.app.clock()).encode("utf-8")
+        self._send(200, body, "text/calendar; charset=utf-8",
+                   {"Content-Disposition": f'attachment; filename="maya-rescan-{asset["id"][:8]}.ics"'})
+        return None
+
+    def _post_reword(self, user, run, body):
+        """Optional: the model rewords the owner summary. The reply is dropped if it adds a number."""
+        from src.owner_summary import LANGS, check_reword
+        from src.provider import ProviderError
+        if not run.result or run.status == "running":
+            raise Reply(409, "wait for the scan to finish")
+        lang = body.get("lang", "en")
+        if lang not in LANGS:
+            raise Reply(400, "lang must be en or hinglish")
+        provider, model = self.app.chat_provider_factory()
+        if provider is None:
+            raise Reply(409, "Model not configured: rewording needs a model key on the server")
+        summary = self._owner_summary(run)
+        style = "simple English" if lang == "en" else "simple Hinglish (Hindi words in Latin letters)"
+        messages = [{"role": "system", "content": (
+            f"Rewrite the summary below in {style} for a small-business owner. Keep every number exactly as written; "
+            "add no new numbers, no time or cost estimates, and never say the site is safe, secure or protected. "
+            "Reply with the rewritten text only.")},
+                    {"role": "user", "content": "\n".join(summary["lines"][lang])}]
+        try:
+            reply = provider.chat(messages, max_tokens=600, reasoning_effort="low")
+        except ProviderError as e:
+            raise Reply(502, f"model call failed: {e}") from None
+        text, reason = check_reword(reply.answer, summary, lang)
+        return 200, {"lang": lang, "text": text, "dropped": reason, "label": "unverified model text",
+                     "model": model}, None
+
+    def _post_investigate(self, session, chat_id: str, body):
+        """"Ask MAYA to investigate": the read-only investigation agent over this user's own data."""
+        from src.budget import TokenBudget
+        from src.investigate import INVESTIGATION_CAP, InvestigationTools, investigate
+        from src.provider import ProviderError
+        user = self._require_user(session)
+        chat = self.app.chats.get(user["id"], chat_id)
+        if chat is None:
+            raise Reply(404, "not found")
+        provider, model = self.app.chat_provider_factory()
+        if provider is None:
+            raise Reply(409, "Model not configured: the investigation needs a model key on the server")
+        try:
+            text = clean_user_text(body.get("content"))
+        except ChatError as e:
+            raise Reply(e.status, str(e)) from None
+        if not self.app.chats.allow_message(user["id"]):
+            raise Reply(429, "too many messages; wait a minute and try again")
+        used = self.app.chats.tokens_used(user["id"])
+        if used >= self.app.chat_token_cap:
+            raise Reply(429, "chat token budget reached for today")
+        user_msg = self.app.chats.add(user["id"], chat_id, "user", text,
+                                      title=text[:60] if not chat["messages"] else None)
+        mine = [r for r in self.app.runs.runs.values() if r.user_id == user["id"] and r.result]
+        known_findings = {f["id"]: {"severity": f["severity"], "title": f["title"]}
+                          for r in mine for f in r.result["findings"]}
+        budget = TokenBudget(f"investigate-{user['id']}", cap=max(1, min(INVESTIGATION_CAP, self.app.chat_token_cap - used)),
+                             path=self.app.data_dir / "usage.jsonl")
+        try:
+            result = investigate(provider, InvestigationTools(self.app, user["id"]), text, budget, known_findings,
+                                 {r.id for r in mine})
+        except ProviderError as e:
+            raise Reply(502, f"model call failed: {e}") from None
+        tokens = {"prompt": budget.run.get("prompt_tokens", 0), "completion": budget.run.get("completion_tokens", 0),
+                  "reasoning": budget.run.get("reasoning_tokens", 0), "total": budget.run.get("total_tokens", 0)}
+        meta = {"model": model, "tokens": tokens, "label": LABEL_UNVERIFIED, "cited": [], "cited_unknown": [],
+                "investigation": {"trace": result.trace, "claims": result.claims, "dropped": result.dropped,
+                                  "stop_reason": result.stop_reason, "valid_json": result.valid_json}}
+        assistant = self.app.chats.add(user["id"], chat_id, "assistant", result.answer, meta=meta,
+                                       tokens=int(tokens["total"] or 0))
+        return 200, {"user_message": user_msg, "reply": assistant, "chat_id": chat_id,
+                     "budget": {"used": used + int(tokens["total"] or 0), "cap": self.app.chat_token_cap}}, None
+
     def _post_run_action(self, session, run_id: str, action: str, body: dict, proposal_id: str | None):
         """approve / apply / retest. All gating is done by the existing ApprovalGate and retest code."""
         from src.approval import ApplyRefused
@@ -887,6 +1051,8 @@ class WebHandler(BaseHTTPRequestHandler):
             raise Reply(404, "not found")
         if action == "summarize":
             return self._post_summarize(user, run)
+        if action == "reword":
+            return self._post_reword(user, run, body)
         if action == "dns-check":
             return self._post_dns_check(user, run, body)
         if action == "notes":
@@ -937,7 +1103,7 @@ class WebHandler(BaseHTTPRequestHandler):
                               resolved=len(run.retest["resolved"]), still_present=len(run.retest["still_present"]))
         return 200, self._run_full(run), None
 
-    def _post_asset_action(self, session, asset_id: str, action: str):
+    def _post_asset_action(self, session, asset_id: str, action: str, body: dict | None = None):
         user = self._require_user(session)
         asset = self.app.assets.get(user["id"], asset_id)  # another user's asset is simply "not found"
         if asset is None:
@@ -947,6 +1113,20 @@ class WebHandler(BaseHTTPRequestHandler):
                                            transport=self.app.http_transport,
                                            method="dns" if action == "verify-dns" else "web")
             return 200, {"asset": public_asset(asset, self.app.runs.last_for_asset(user["id"], asset_id))}, None
+        if action == "reminder":
+            from src.reminders import due_at
+            days = (body or {}).get("days")
+            if days in (0, None):
+                self.app.assets.set_reminder(user["id"], asset_id, None)
+            else:
+                try:
+                    due = due_at(self.app.clock(), days if isinstance(days, int) and not isinstance(days, bool) else -1)
+                except ValueError as e:
+                    raise Reply(400, str(e)) from None
+                self.app.assets.set_reminder(user["id"], asset_id, due, days)
+            rem = self.app.assets.reminders(user["id"]).get(asset_id)
+            return 200, {"asset": public_asset(asset, self.app.runs.last_for_asset(user["id"], asset_id), rem,
+                                               self.app.clock())}, None
         if action == "disconnect":
             if self.app.runs.active_for(user["id"]):
                 raise Reply(409, "wait for the running scan to finish")

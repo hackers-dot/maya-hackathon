@@ -224,7 +224,7 @@
         : a.kind === "watch" ? "Watch: " : "";
       btn.appendChild(el("span", "asset-name", a.kind === "demo" ? "Demo app (loopback)" : prefix + a.label));
       const s = STATUS[a.status] || [a.status, ""];
-      btn.appendChild(el("span", "chip chip-" + s[1], s[0]));
+      btn.appendChild(el("span", "chip chip-" + s[1], a.reminder && a.reminder.overdue ? "re-scan due" : s[0]));
       btn.addEventListener("click", () => { selectAsset(a); setSidebar(false); });
       li.appendChild(btn);
       list.appendChild(li);
@@ -636,7 +636,7 @@
     if (!done) return;
     const base = "/api/runs/" + encodeURIComponent(run.id) + "/";
     for (const [id, name] of [["dl-pack", "evidence.zip"], ["dl-report", "report.html"], ["dl-report-md", "report.md"],
-      ["dl-issues", "issues.md"], ["dl-print", "report-print.html"]]) {
+      ["dl-issues", "issues.md"], ["dl-print", "report-print.html"], ["dl-client", "client-report.html"]]) {
       const a = $(id);
       if (a) a.setAttribute("href", base + name);
     }
@@ -791,7 +791,8 @@
     findingCards.clear();
     traceNext = 0;
     for (const id of ["run-panel", "findings-panel", "result-panel", "fixfirst-panel", "proposals-panel",
-      "retest-panel", "downloads-panel", "items-panel", "notes-panel", "candidates-panel", "diff-panel", "score-badge",
+      "retest-panel", "downloads-panel", "items-panel", "notes-panel", "candidates-panel", "diff-panel", "summary-panel",
+      "score-badge",
       "score-note",
       "demo-banner"]) show(id, false);
     show("trace-empty", true);
@@ -816,6 +817,7 @@
         renderFixFirst(full.data.result && full.data.result.fix_first);
         renderFull(full.data);
         loadIssues(runId);
+        loadSummary(runId);
         loadDiff(currentAsset);  // after a re-scan, "What changed" appears on its own
       }
       const btn = $("scan-btn");
@@ -852,6 +854,7 @@
         ? "From GitHub: checked once when fetched. Fetch it again to re-check."
         : "Uploaded file: checked once when uploaded. Upload it again to re-check.");
     show("reset-demo-btn", asset.kind === "demo");
+    renderReminder(asset);
     if (btn) btn.textContent = asset.last_run ? "Re-scan" : "Run security scan";
     setResetEnabled(true);
     say("", false);
@@ -1145,6 +1148,57 @@
     renderNotes(result.notes || []);
   }
 
+  // ---------- owner summary, reword, reminders ----------
+  let summaryData = null;
+  let summaryLang = "en";
+  function renderSummaryLines() {
+    const ul = $("summary-lines");
+    if (!ul || !summaryData) return;
+    clear(ul);
+    for (const line of summaryData.lines[summaryLang] || []) ul.appendChild(el("li", "", line));
+    $("sum-en").setAttribute("aria-pressed", String(summaryLang === "en"));
+    $("sum-hinglish").setAttribute("aria-pressed", String(summaryLang === "hinglish"));
+  }
+  function renderSummary(data) {
+    summaryData = data;
+    show("summary-panel", !!data);
+    show("reword-box", false);
+    renderSummaryLines();
+  }
+  async function loadSummary(runId) {
+    if (PREVIEW || !runId) return;
+    const r = await getJSON("/api/runs/" + runId + "/summary.json");
+    if (r.ok) renderSummary(r.data);
+  }
+  async function reword() {
+    if (!currentRunId || PREVIEW) return;
+    const d = await post("/api/runs/" + currentRunId + "/reword", { lang: summaryLang });
+    if (!d) return;
+    show("reword-box", true);
+    setText("reword-text", d.text || ("Not shown: " + d.dropped));
+  }
+  function renderReminder(asset) {
+    const rem = asset && asset.reminder;
+    show("reminder-panel", !!asset && (asset.kind === "website" || asset.kind === "demo"));
+    show("reminder-banner", !!(rem && rem.overdue));
+    if (rem && rem.overdue) setText("reminder-banner", "Re-scan due: the reminder for this asset was set for " +
+      rem.due_date + ". Press Re-scan when you are ready.");
+    setText("reminder-text", rem ? "Reminder set for " + rem.due_date + " (" + rem.days + " days)." : "No reminder set.");
+    const ics = $("reminder-ics");
+    show("reminder-ics", !!rem);
+    if (ics && rem && asset) ics.setAttribute("href", "/api/assets/" + encodeURIComponent(asset.id) + "/reminder.ics");
+  }
+  async function setReminder() {
+    if (!currentAsset || PREVIEW) return;
+    const days = parseInt($("reminder-days").value, 10);
+    const d = await post("/api/assets/" + currentAsset.id + "/reminder", { days: days });
+    if (!d) return;
+    currentAsset.reminder = d.asset.reminder;
+    renderReminder(d.asset);
+    const assets = await getJSON("/api/assets");
+    if (assets.ok) renderAssetList(assets.data.assets);
+  }
+
   async function disconnectAsset() {
     if (!currentAsset || PREVIEW) return;
     if (!window.confirm("Disconnect " + (currentAsset.label || "this asset") + "? Its verified status is removed.")) return;
@@ -1232,6 +1286,11 @@
     onClick("conn-logs", () => { setSidebar(false); openUpload("logs"); });
     onClick("conn-msg", () => { setSidebar(false); openUpload("image"); });
     onClick("conn-github", () => { setSidebar(false); openSimpleView("github"); });
+    onClick("investigate-btn", () => { const b = $("prompt"); if (b) sendMessage(b.value, "investigate"); });
+    onClick("sum-en", () => { summaryLang = "en"; renderSummaryLines(); show("reword-box", false); });
+    onClick("sum-hinglish", () => { summaryLang = "hinglish"; renderSummaryLines(); show("reword-box", false); });
+    onClick("reword-btn", reword);
+    onClick("reminder-btn", setReminder);
     onClick("conn-watch", () => { setSidebar(false); openSimpleView("watch"); });
     onClick("github-btn", fetchGithub);
     onClick("watch-btn", startWatch);
@@ -1263,8 +1322,8 @@
       renderChatList(r.data.chat.list);
       const view = new URLSearchParams(window.location.search).get("view");
       setComposer(view === "chat-nokey" ? { model_configured: false, model: null } : r.data.chat.status);
-      if (view === "chat") {
-        renderChat(r.data.chat.chat);
+      if (view === "chat" || view === "investigate") {
+        renderChat(view === "investigate" ? r.data.investigate : r.data.chat.chat);
         renderChatList(r.data.chat.list);  // after opening, so the open chat is highlighted (as loadChats does)
       }
       if (view === "upload-code" || view === "upload-logs" || view === "upload-image") openUpload(view.slice(7));
@@ -1294,6 +1353,8 @@
           renderUsage(r.data.extras.usage);
           renderDownloads(sample.run);
           renderFullScore(r.data.extras);
+          renderSummary(r.data.extras.summary);
+          renderReminder(r.data.assets[0]);
           if (r.data.extras.diff) { show("diff-panel", true); renderDiff(r.data.extras.diff);
             const hist = $("score-history"); clear(hist);
             for (const line of r.data.extras.score_history) hist.appendChild(el("li", "", line)); }
@@ -1342,6 +1403,8 @@
     const ready = !!status.model_configured && !sending && !!(box && box.value.trim());
     if (box) box.disabled = !status.model_configured;
     if (send) send.disabled = !ready;  // active only with a model and something to send
+    const inv = $("investigate-btn");
+    if (inv) inv.disabled = !ready;
     if (!status.model_configured) {
       composerHint("Model not configured: chat needs a model key on the server. No replies are generated.", "error");
     } else {
@@ -1372,9 +1435,42 @@
     renderChatList(r.data.chats);
   }
 
+  // investigation replies: verified claims, dropped claims, and the tool-call trace under the reply
+  function investigationBlock(inv) {
+    const box = el("div", "inv-block");
+    if ((inv.claims || []).length) {
+      box.appendChild(el("strong", "", "Checked against your data:"));
+      const ul = el("ul");
+      for (const c of inv.claims) {
+        const ids = (c.findings || []).map((f) => f.id + " (" + f.severity + ")").concat(c.run_ids || []);
+        ul.appendChild(el("li", "", c.text + " [" + ids.join(", ") + "]"));
+      }
+      box.appendChild(ul);
+    }
+    if ((inv.dropped || []).length) {
+      box.appendChild(el("strong", "", "Removed by MAYA (cited something that is not yours, or malformed):"));
+      const ul = el("ul");
+      for (const d of inv.dropped) ul.appendChild(el("li", "muted", d.claim + " (" + d.reason + ")"));
+      box.appendChild(ul);
+    }
+    const det = el("details");
+    det.appendChild(el("summary", "", "Tool calls (" + (inv.trace || []).length + ", read-only) · " + inv.stop_reason));
+    const ol = el("ol");
+    for (const t of inv.trace || []) {
+      const tok = t.tokens || {};
+      ol.appendChild(el("li", "", "step " + t.step + ": " + (t.tool || "answer") + (t.args ? " " + t.args : "") +
+        " → " + t.summary + " · " + (tok.prompt || 0) + " in / " + (tok.completion || 0) + " out (" +
+        (tok.reasoning || 0) + " reasoning)"));
+    }
+    det.appendChild(ol);
+    box.appendChild(det);
+    return box;
+  }
+
   function messageItem(m) {
     const li = el("li", "msg msg-" + m.role);
     li.appendChild(el("div", "msg-body", m.content));
+    if (m.role === "assistant" && m.meta && m.meta.investigation) li.appendChild(investigationBlock(m.meta.investigation));
     if (m.role === "assistant" && m.meta) {
       const meta = el("div", "msg-meta");
       const restates = m.meta.label === "restates verified findings";
@@ -1425,7 +1521,7 @@
     return d.chat.id;
   }
 
-  async function sendMessage(text) {
+  async function sendMessage(text, mode) {
     text = (text || "").trim();
     if (!text || sending) return;
     if (!chatStatus.model_configured) { setComposer(chatStatus); return; }
@@ -1437,14 +1533,15 @@
     show("chat-empty", false);
     const pending = messageItem({ role: "user", content: text });
     $("chat-messages").appendChild(pending);
-    const thinking = el("li", "msg msg-pending", "MAYA is thinking...");
+    const thinking = el("li", "msg msg-pending", mode === "investigate"
+      ? "MAYA is investigating with read-only tools..." : "MAYA is thinking...");
     $("chat-messages").appendChild(thinking);
     scrollConversation();
     const box = $("prompt");
     if (box) box.value = "";
     let r;
     try {
-      r = await fetch("/api/chats/" + currentChatId + "/messages", {
+      r = await fetch("/api/chats/" + currentChatId + (mode === "investigate" ? "/investigate" : "/messages"), {
         method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf || "" },
         body: JSON.stringify({ content: text }),

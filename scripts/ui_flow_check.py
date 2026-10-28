@@ -269,6 +269,23 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
         st, hd, raw = b.request("GET", f"/api/runs/{run_id}/report-print.html")
         rep.check(st == 200 and b"/static/report-print.css" in raw and b"<style" not in raw and
                   "Content-Disposition" not in hd, "printable report (print CSS, no inline style)", f"HTTP {st}")
+        # --- Web 11: owner summary, client report, reminder (this server has no model key) ---
+        st, _, raw = b.request("GET", f"/api/runs/{run_id}/summary.json")
+        sm = json.loads(raw) if st == 200 else {}
+        rep.check(st == 200 and len(sm.get("lines", {}).get("en", [])) == len(sm.get("lines", {}).get("hinglish", []))
+                  and sm.get("score", {}).get("label") == "heuristic score of the checks run",
+                  "owner summary from stored data (English + Hinglish)", f"{len(sm.get('lines', {}).get('en', []))} lines")
+        status, _, data = b.post(f"/api/runs/{run_id}/reword", {"lang": "en"})
+        rep.check(status == 409 and str(data.get("error", "")).startswith("Model not configured"),
+                  "reword without a key: 'Model not configured'", f"HTTP {status}")
+        st, hd, raw = b.request("GET", f"/api/runs/{run_id}/client-report.html")
+        rep.check(st == 200 and b"Tamper-evident, not tamper-proof" in raw and b"Manifest SHA-256" in raw
+                  and b"fake-demo-key-not-real" not in raw and "attachment" in hd.get("Content-Disposition", ""),
+                  "client report download (masked, manifest hash, disclaimer)", f"HTTP {st} {len(raw)} bytes")
+        status, _, data = b.post(f"/api/assets/{demo.get('id')}/reminder", {"days": 14})
+        st, hd, raw = b.request("GET", f"/api/assets/{demo.get('id')}/reminder.ics")
+        rep.check(status == 200 and st == 200 and raw.startswith(b"BEGIN:VCALENDAR\r\n") and b"SUMMARY:Re-scan" in raw,
+                  "re-scan reminder + .ics download (nothing runs by itself)", f"HTTP {status}/{st}")
         # --- Web 5: downloads and the Quality panel ---
         st, hd, raw = b.request("GET", f"/api/runs/{run_id}/evidence.zip")
         with tempfile.TemporaryDirectory(prefix="maya-flow-pack-") as tmp:
@@ -331,6 +348,9 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
     st, _, raw = b2.request("GET", f"/api/chats/{chat_id}")
     rep.check(st == 200 and json.loads(raw)["chat"]["messages"] == [], "nothing stored for the refused message",
               f"HTTP {st}")
+    status, _, data = b2.post(f"/api/chats/{chat_id}/investigate", {"content": "What is open on my site?"})
+    rep.check(status == 409 and str(data.get("error", "")).startswith("Model not configured"),
+              "investigation without a key: 'Model not configured' (no fake reply)", f"HTTP {status}")
     status, _, data = b2.post(f"/api/chats/{chat_id}/messages", {"content": "x" * 2001})
     rep.check(status in (400, 409), "over-long message refused", f"HTTP {status}")
     st, _, _ = b.request("GET", f"/api/chats/{chat_id}")

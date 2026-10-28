@@ -142,6 +142,7 @@
 <button id="summarize-btn" class="btn btn-secondary" type="button" hidden>Summarize with model</button>
 <button id="scan-btn" class="btn btn-primary" type="button" disabled>Run security scan</button></div>
 </div>
+<p id="reminder-banner" class="banner" hidden></p>
 <p id="av-hint" class="hint"></p>
 <p id="score-note" class="hint" hidden></p>
 <p id="message" class="message" role="status"></p>
@@ -208,6 +209,26 @@
 <input id="note-approver" type="text" autocomplete="name" maxlength="80" placeholder="Your name"></div>
 <div id="notes-list" class="proposal-list"></div>
 </section>
+<section id="summary-panel" class="panel" hidden>
+<div class="panel-head"><h2>Summary for the owner</h2><span class="panel-meta">built only from stored results</span></div>
+<div class="role-toggle" role="group" aria-label="Summary language">
+<button id="sum-en" class="role-btn" type="button" aria-pressed="true">English</button>
+<button id="sum-hinglish" class="role-btn" type="button" aria-pressed="false">Hinglish</button>
+</div>
+<ul id="summary-lines" class="summary-lines"></ul>
+<div class="actions"><button id="reword-btn" class="btn btn-quiet" type="button">Reword for me</button></div>
+<div id="reword-box" class="claim-line" hidden><span class="label label-unverified">unverified model text</span><span id="reword-text" class="note"></span></div>
+</section>
+<section id="reminder-panel" class="panel" hidden>
+<div class="panel-head"><h2>Re-scan reminder</h2><span class="panel-meta">nothing runs by itself</span></div>
+<div class="approver-row">
+<div class="field"><label for="reminder-days">Remind me in</label>
+<select id="reminder-days"><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option></select></div>
+<button id="reminder-btn" class="btn btn-secondary" type="button">Set reminder</button>
+<a id="reminder-ics" class="btn btn-quiet" href="#" download hidden>Add to calendar</a>
+</div>
+<p id="reminder-text" class="hint"></p>
+</section>
 <section id="diff-panel" class="panel" hidden>
 <div class="panel-head"><h2>What changed</h2><span id="diff-meta" class="panel-meta"></span></div>
 <div id="diff-counts" class="chips diff-counts"></div>
@@ -228,6 +249,7 @@
 </div>
 <div class="actions downloads">
 <a id="dl-issues" class="btn btn-secondary" href="#" download>Download all as issues.md</a>
+<a id="dl-client" class="btn btn-secondary" href="#" download>Download client report</a>
 <a id="dl-print" class="btn btn-quiet" href="#" target="_blank" rel="noopener">Printable report (save as PDF)</a>
 </div>
 <p class="hint">The pack holds the stored (redacted) evidence, a manifest of sha256 hashes and a hash-chained custody log. Tamper-evident, not tamper-proof (unsigned). Provenance is self-reported. Designed to support review; not legally validated.</p>
@@ -273,6 +295,7 @@
 <footer class="composer-wrap">
 <form id="composer" class="composer" aria-label="Message composer">
 <textarea id="prompt" rows="1" placeholder="Message MAYA..." aria-label="Message" aria-describedby="composer-hint" maxlength="2000" disabled></textarea>
+<button id="investigate-btn" class="investigate" type="button" disabled title="Ask MAYA to investigate with read-only tools">Investigate</button>
 <button class="send" type="submit" aria-label="Send" disabled>&#8593;</button>
 </form>
 <p id="composer-hint" class="composer-hint">Checking whether a model is configured... MAYA only runs read-only checks on sites you own.</p>
