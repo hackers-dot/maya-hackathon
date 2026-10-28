@@ -109,6 +109,21 @@ TABLE: dict[str, Rule] = {
     "log_login_after_failures": Rule("high",
         "A successful login came right after repeated failures from the same source address; the account may have been guessed.",
         "Confirm the login with the account owner, reset the password if unsure, and enable MFA."),
+    "msg_domain_resembles_yours": Rule("high",
+        "A web address in the message resembles your domain, so people may take it for yours.",
+        "Check who owns that domain; if it is not yours, report it to its registrar and to the platform where the message appeared."),
+    "msg_domain_not_in_list": Rule("medium",
+        "A web address in the message is not in your list of official domains.",
+        "Check whether the domain is yours or a partner's; add it to your official list, or report it if it is not."),
+    "msg_phone_not_in_list": Rule("medium",
+        "A phone number in the message is not in your list of official numbers.",
+        "Check whether the number is yours; add it to your official list, or warn customers if it is not."),
+    "msg_payment_request": Rule("medium",
+        "The message asks for a payment, which needs review if it did not come from you.",
+        "Confirm with your team whether this payment request is genuine before anyone pays."),
+    "msg_urgency_language": Rule("low",
+        "The message uses urgent wording, which pushes readers to act before checking.",
+        "Tell customers how you really contact them, and that you never rush payments."),
 }
 
 

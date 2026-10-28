@@ -50,6 +50,12 @@ OWASP = {  # check -> (code, name); None = outside the OWASP Top 10
     "log_many_4xx": None,
     "log_injection_pattern": None,
     "log_login_after_failures": None,
+    # message checks describe a third-party message, not a weakness in the app: no OWASP category
+    "msg_domain_resembles_yours": None,
+    "msg_domain_not_in_list": None,
+    "msg_phone_not_in_list": None,
+    "msg_payment_request": None,
+    "msg_urgency_language": None,
 }
 
 
@@ -256,6 +262,36 @@ TEXT = {
         "Like a door that opened after many wrong keys were tried.",
         "A successful login follows the configured number of failed logins that share one source address.",
         "Confirm the login with the account owner, reset the password if unsure, and turn on MFA."),
+    "msg_domain_resembles_yours": Text(
+        "Web address resembles your domain",
+        "A link in the message looks a lot like your own domain, so people may trust it.",
+        "Like a shop sign with one letter changed.",
+        "The domain differs from yours by a fixed look-alike rule (edit distance, look-alike characters, hyphen, keyword, or the same name with another ending).",
+        "Check the domain owner; if it is not you, report it to the registrar and the platform (MAYA can draft the note)."),
+    "msg_domain_not_in_list": Text(
+        "Web address not in your list",
+        "A link in the message points to a domain that is not on your official list.",
+        "Like a letter on your letterhead with a return address you do not recognise.",
+        "The normalised domain is neither a verified asset nor in your official-domains list.",
+        "Check whether it is yours or a partner's; update your list or report it."),
+    "msg_phone_not_in_list": Text(
+        "Phone number not in your list",
+        "The message gives a phone number that is not on your official list.",
+        "Like a business card with your logo and someone else's number.",
+        "The normalised number is not in your official-numbers list.",
+        "Check the number; add it to your list if it is yours, otherwise warn customers."),
+    "msg_payment_request": Text(
+        "Payment request in the message",
+        "The message asks the reader to pay, which needs review if it is not yours.",
+        "Like an invoice in your name that your accounts team never sent.",
+        "The model read one or more payment requests in the image; code only counts them.",
+        "Confirm internally whether the request is genuine before anyone pays."),
+    "msg_urgency_language": Text(
+        "Urgent wording in the message",
+        "The message pushes the reader to act quickly.",
+        "Like a caller who says the offer ends in five minutes.",
+        "The model read one or more urgency phrases in the image; code only counts them.",
+        "Tell customers how you really contact them, and that you never rush payments."),
 }
 
 DEMO_BANNER = "DEMO: findings below come from MAYA's deliberately vulnerable demo app on loopback, not a real site."

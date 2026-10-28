@@ -100,6 +100,12 @@ Demo flow:
   - Log upload (access logs and ssh auth logs, up to 5 MB): failed-login bursts, sensitive-path probing, many 4xx responses, injection-like strings (detection only) and a login after repeated failures. Findings are grouped by "shares source address", with configurable heuristic thresholds, and evidence lines are verbatim with credentials masked. An optional model summary uses typed claims verified like scans; without a key it says "Model not configured".
   - Upload findings go into the same findings table, report and evidence pack.
   - "Disconnect" per asset, and "Delete my data" (type DELETE): removes your assets, runs, evidence records, chats and demo app state, leaving one audit entry with counts only. A data-use note says what is stored, where (only on this computer) and for how long.
+- **2026-10-28 (Web 8):** Suspicious message check.
+  - Upload a screenshot of a message, ad or page that claims to come from your business. After you confirm that the image goes to the model provider, the model only reads the text: web addresses, phone numbers, brand names, payment requests and urgency phrases, as strict JSON.
+  - MAYA's code then compares the addresses and numbers with your verified websites and an optional official list, and labels each one "resembles your domain" (fixed look-alike rules), "not in your list, needs review" or "matches your list". Each item is shown as "read by the model from the image (unverified)".
+  - MAYA never visits the addresses. An optional DNS existence check goes only through the DNS-over-HTTPS resolver, for domains you confirm.
+  - Findings go into the same table, report and evidence pack. The pack keeps the image hash and size, plus the image only if you choose.
+  - Registrar and platform report notes come from fixed templates and become READY only after a named approval; MAYA never sends them.
 
 ## License
 

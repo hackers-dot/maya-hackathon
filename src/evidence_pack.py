@@ -30,7 +30,8 @@ DEMO_MARKER = ("DEMO: this evidence comes from MAYA's deliberately vulnerable de
 CAPTURE_TOOL = "maya HttpClient (GET/HEAD, scope-checked)"
 TOOL_FOR_METHOD = {"FILE": "maya code connector (ZIP read in memory, nothing executed)",
                    "LOG": "maya log parser (uploaded log, read only)",
-                   "TLS": "maya TLS check (one handshake, scope-checked)"}
+                   "TLS": "maya TLS check (one handshake, scope-checked)",
+                   "IMAGE": "maya suspicious-message check (model extraction, code verdicts)"}
 PACK_TOOL = "maya evidence_pack"
 NO_ISSUES = "No issues detected in the checks run."
 SEALED_FILES = {"manifest.json", "custody_log.jsonl"}  # not listed in the manifest (the log seals the manifest)
@@ -50,7 +51,7 @@ def _now() -> str:
 
 def build_pack(dest, run_id: str, findings: dict, store, audit_entries=(), model: str | None = None,
                who: str = "maya", statuses: dict | None = None, created_at: str | None = None,
-               demo: bool = False) -> Path:
+               demo: bool = False, extra_files: dict | None = None) -> Path:
     """Write the pack into the empty directory `dest`. findings: id -> Finding. audit_entries: this run's
     entries from the hash-chained audit log, in order. demo: the scanned asset is MAYA's loopback demo app
     (also inferred from any demo finding, so a run with 0 findings is still marked). Refuses to pack a record
@@ -95,6 +96,11 @@ def build_pack(dest, run_id: str, findings: dict, store, audit_entries=(), model
         d = a.get("details") or {}
         entry(f"audit:{a.get('event')}", a.get("at"), d.get("approver") or "maya",
               audit_seq=a.get("seq"), audit_hash=a.get("hash"), **{k: v for k, v in d.items() if k != "run"})
+
+    for rel, data in sorted((extra_files or {}).items()):  # e.g. the screenshot, only if the user chose to include it
+        (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+        meta = add_file(rel, data, created_at, [], [], "maya suspicious-message check (image included by the user)", None)
+        entry("attachment_included", created_at, who, file=rel, sha256=meta["sha256"], size=meta["size"])
 
     items = [{"id": f.id, "check": f.check, "severity": rule(f.check).severity, "location": f.location,
               "target": f.target, "status": (statuses or {}).get(f.id, "DETECTED"), "demo": f.demo,

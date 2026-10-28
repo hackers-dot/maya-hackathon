@@ -30,7 +30,8 @@ MAX_STEPS = 6
 TOKEN_CAP = 40_000
 MODE_LABELS = {"model": "Model-guided scan", "deterministic": "Deterministic only (no model key configured)",
                "code": "Source code ZIP: read-only text checks (nothing executed)",
-               "logs": "Log upload: pattern checks (heuristics, not a standard)"}
+               "logs": "Log upload: pattern checks (heuristics, not a standard)",
+               "message": "Suspicious message: the model reads the image, code decides"}
 GOAL = ("Check the target web app for misconfigurations. Use run_check on relevant paths (for example /, /.env, "
         "/db.sql, /backup/), then give the final claims JSON.")
 
@@ -59,6 +60,7 @@ class Run:
     proposals: dict = field(default_factory=dict)  # fix proposals from fixed templates, built when the scan ends
     retest: dict | None = None
     claims: dict | None = None           # raw verifier output (model runs only), for the downloadable report
+    attachments: dict = field(default_factory=dict)  # in memory only: e.g. the screenshot, if the user included it
 
 
 def finding_status(run: Run, finding_id: str) -> str:

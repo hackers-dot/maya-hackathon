@@ -119,6 +119,11 @@
     uploaded: ["uploaded", "ok"],
   };
   const UPLOAD_KINDS = {
+    image: { title: "Suspicious message", path: "/api/uploads/image", accept: ".png,.jpg,.jpeg", max: 5 * 1024 * 1024,
+      desc: "Upload a screenshot (PNG or JPEG, max 5 MB) of a message, ad or page that claims to come from your " +
+        "business. The model only reads the text in the image; MAYA's code compares the web addresses and phone " +
+        "numbers with your verified websites and official lists, and flags look-alikes. MAYA never visits the " +
+        "addresses in the image." },
     code: { title: "Source code ZIP", path: "/api/uploads/code", accept: ".zip", max: 10 * 1024 * 1024,
       desc: "Upload a .zip of your code (max 10 MB). MAYA reads it in memory, never runs or imports anything, " +
         "and never saves the file. It looks for hard-coded secrets (masked), a committed .env file, risky calls " +
@@ -204,7 +209,7 @@
       const li = el("li");
       const btn = el("button", "asset-item");
       btn.type = "button";
-      const prefix = a.kind === "code" ? "Code: " : a.kind === "logs" ? "Logs: " : "";
+      const prefix = a.kind === "code" ? "Code: " : a.kind === "logs" ? "Logs: " : a.kind === "image" ? "Message: " : "";
       btn.appendChild(el("span", "asset-name", a.kind === "demo" ? "Demo app (loopback)" : prefix + a.label));
       const s = STATUS[a.status] || [a.status, ""];
       btn.appendChild(el("span", "chip chip-" + s[1], s[0]));
@@ -586,7 +591,8 @@
     if (!result) return;
     show("result-panel", true);
     const upload = run.mode === "code" || run.mode === "logs";
-    setText("result-model", result.summary_model ? result.summary_model + " (optional summary)"
+    setText("result-model", result.summary_model ? result.summary_model + (run.mode === "message"
+      ? " (read the image; code decided the verdicts)" : " (optional summary)")
       : run.mode === "model" ? run.model : upload ? "none (findings come from code checks)" : "none (no model key configured)");
     setText("result-mode", run.mode_label);
     const u = result.usage || {};
@@ -620,9 +626,12 @@
     }
     renderChecks(result.checks);
     renderGroups(result.groups);
+    renderItems(run, result);
     const noClaims = !(result.claims || []).length;
     show("claims-empty", noClaims);
-    setText("claims-empty", run.mode === "model" || result.summary_model
+    setText("claims-empty", run.mode === "message"
+      ? "The model only read the image; MAYA's code decided every verdict below (see Read from the image)."
+      : run.mode === "model" || result.summary_model
       ? (result.model_finished ? "The model made no verified claims." : "The model did not finish; findings above are from code checks.")
       : run.mode === "logs" ? "Optional: press \"Summarize with model\" for a verified summary."
         : run.mode === "code" ? "Code uploads use no model; findings above are from code checks."
@@ -668,7 +677,7 @@
     findingCards.clear();
     traceNext = 0;
     for (const id of ["run-panel", "findings-panel", "result-panel", "fixfirst-panel", "proposals-panel",
-      "retest-panel", "downloads-panel", "demo-banner"]) show(id, false);
+      "retest-panel", "downloads-panel", "items-panel", "notes-panel", "demo-banner"]) show(id, false);
     show("trace-empty", true);
   }
 
@@ -716,7 +725,7 @@
     setText("mode-label", "");
     const btn = $("scan-btn");
     if (btn) btn.disabled = !asset.scannable;
-    const upload = asset.kind === "code" || asset.kind === "logs";
+    const upload = asset.kind === "code" || asset.kind === "logs" || asset.kind === "image";
     show("scan-btn", !upload);
     show("summarize-btn", asset.kind === "logs");
     if (upload) setText("av-hint", "Uploaded file: checked once when uploaded. Upload it again to re-check.");
@@ -753,7 +762,11 @@
     showView("upload");
     setText("up-title", k.title);
     setText("up-desc", k.desc);
-    setText("up-label", k.title === "Logs" ? "Log file (.log or .txt)" : "ZIP file (.zip)");
+    setText("up-label", kind === "logs" ? "Log file (.log or .txt)" : kind === "image" ? "Screenshot (.png or .jpg)"
+      : "ZIP file (.zip)");
+    show("msg-options", kind === "image");
+    for (const id of ["msg-confirm", "msg-include"]) { const c = $(id); if (c) c.checked = false; }
+    if (kind === "image") loadOfficial();
     const input = $("up-file");
     if (input) { input.value = ""; input.setAttribute("accept", k.accept); }
     const b = $("up-btn");
@@ -765,7 +778,8 @@
     const input = $("up-file");
     const k = UPLOAD_KINDS[uploadKind];
     const f = input && input.files && input.files[0];
-    const ok = !!(f && k && f.size > 0 && f.size <= k.max);
+    const confirmed = uploadKind !== "image" || ($("msg-confirm") && $("msg-confirm").checked);
+    const ok = !!(f && k && f.size > 0 && f.size <= k.max && confirmed);
     const b = $("up-btn");
     if (b) b.disabled = !ok;
     setText("up-message", f && k && f.size > k.max ? "This file is larger than the limit." : "");
@@ -783,8 +797,10 @@
     try {
       r = await fetch(k.path, {
         method: "POST", credentials: "same-origin", body: await f.arrayBuffer(),
-        headers: { "Content-Type": "application/octet-stream", "X-CSRF-Token": csrf || "",
-          "X-Upload-Name": f.name.replace(/[^A-Za-z0-9._ -]/g, "_").slice(0, 100) },
+        headers: Object.assign({ "Content-Type": "application/octet-stream", "X-CSRF-Token": csrf || "",
+          "X-Upload-Name": f.name.replace(/[^A-Za-z0-9._ -]/g, "_").slice(0, 100) }, uploadKind === "image" ? {
+          "X-Confirm-Send": $("msg-confirm").checked ? "yes" : "no",
+          "X-Include-Image": $("msg-include").checked ? "yes" : "no" } : {}),
       });
     } catch (e) {
       setText("up-message", "Could not reach MAYA. Is the server running?");
@@ -801,6 +817,128 @@
     const assets = await getJSON("/api/assets");
     if (assets.ok) renderAssetList(assets.data.assets);
     selectAsset(data.asset);
+  }
+
+  // ---------- suspicious message: official lists, extracted items, DNS check, report notes ----------
+  function showOfficial(v) {
+    if (!v) return;
+    setText("official-current", "Saved: " + v.counts.domains + " domain(s) " + (v.domains.join(", ") || "-") + "; " +
+      v.counts.numbers + " number(s) " + (v.numbers.join(", ") || "-") + ". Verified websites: " +
+      ((v.verified_assets || []).join(", ") || "none") + ".");
+  }
+
+  async function loadOfficial() {
+    if (PREVIEW) { showOfficial({ counts: { domains: 1, numbers: 1 }, domains: ["sho...om"], numbers: ["+15...00"],
+      verified_assets: [] }); return; }
+    const r = await getJSON("/api/official");
+    if (r.ok) showOfficial(r.data);
+  }
+
+  async function saveOfficial() {
+    const lines = (id) => ($(id) ? $(id).value : "").split("\n").map((s) => s.trim()).filter(Boolean);
+    const d = await post("/api/official", { domains: lines("official-domains"), numbers: lines("official-numbers") });
+    if (!d) return;
+    $("official-domains").value = "";
+    $("official-numbers").value = "";
+    showOfficial(d);
+  }
+
+  const VERDICT_CHIP = { "resembles your domain": "failed", "not in your list, needs review": "pending",
+    "matches your list": "ok" };
+
+  async function dnsCheck(domain) {
+    if (!currentRunId || PREVIEW) return;
+    if (!window.confirm("Send the domain name " + domain + " to the DNS-over-HTTPS resolver (cloudflare-dns.com) " +
+      "to see whether it exists? MAYA does not visit the domain.")) return;
+    const d = await post("/api/runs/" + currentRunId + "/dns-check", { domain: domain, confirm: true });
+    if (d) renderResult(d.run, d.result);
+  }
+
+  function renderItems(run, result) {
+    const isMsg = run.mode === "message";
+    show("items-panel", isMsg);
+    show("notes-panel", isMsg);
+    if (!isMsg) return;
+    const list = $("items-list");
+    clear(list);
+    const select = $("note-domain");
+    if (select) clear(select);
+    for (const it of result.items || []) {
+      const li = el("li", "item");
+      const head = el("div", "item-head");
+      head.appendChild(el("span", "item-kind", it.kind));
+      head.appendChild(el("span", "chip chip-" + (VERDICT_CHIP[it.verdict] || ""), it.verdict));
+      li.appendChild(head);
+      li.appendChild(el("span", "item-text", it.text));
+      const src = el("span", "label label-unverified", it.source);
+      li.appendChild(src);
+      if (it.domain && it.verdict !== "matches your list") {
+        const row = el("div", "item-head");
+        row.appendChild(el("code", "", it.domain));
+        if (it.dns) row.appendChild(el("span", "muted", it.dns.resolves ? "DNS: the domain exists"
+          : "DNS: no such domain (" + it.dns.status + ")"));
+        else {
+          const b = el("button", "btn btn-quiet", "Check DNS");
+          b.type = "button";
+          b.addEventListener("click", () => dnsCheck(it.domain));
+          row.appendChild(b);
+        }
+        li.appendChild(row);
+        if (select && !Array.from(select.options).some((o) => o.value === it.domain)) {
+          const o = el("option", "", it.domain);
+          o.value = it.domain;
+          select.appendChild(o);
+        }
+      }
+      list.appendChild(li);
+    }
+    if (!(result.items || []).length) list.appendChild(el("li", "muted", "Nothing was read from the image."));
+    for (const id of ["note-registrar", "note-platform"]) { const b = $(id); if (b) b.disabled = !(select && select.options.length); }
+    renderNotes(result.notes || []);
+  }
+
+  function renderNotes(notes) {
+    const list = $("notes-list");
+    if (!list) return;
+    clear(list);
+    for (const n of notes) {
+      const card = el("div", "proposal");
+      const head = el("div", "item-head");
+      head.appendChild(el("span", "chip chip-" + (n.status === "READY" ? "ok" : "pending"), n.status));
+      head.appendChild(el("strong", "", n.template + " note"));
+      head.appendChild(el("code", "", n.domain));
+      card.appendChild(head);
+      card.appendChild(el("pre", "codebox note-text", n.text));
+      const foot = el("div", "item-head");
+      const copy = el("button", "btn btn-quiet", "Copy");
+      copy.type = "button";
+      copy.addEventListener("click", () => { try { navigator.clipboard.writeText(n.text); } catch (e) { /* no clipboard */ } });
+      foot.appendChild(copy);
+      if (n.status === "DRAFT") {
+        const ok = el("button", "btn btn-secondary", "Approve (mark READY)");
+        ok.type = "button";
+        ok.addEventListener("click", () => approveNote(n.id));
+        foot.appendChild(ok);
+      } else {
+        foot.appendChild(el("span", "hint", "Approved by " + (n.approved_by || "-") + ". Send it yourself; MAYA never sends it."));
+      }
+      card.appendChild(foot);
+      list.appendChild(card);
+    }
+    if (!notes.length) list.appendChild(el("p", "muted", "No drafts yet."));
+  }
+
+  async function draftNote(template) {
+    const select = $("note-domain");
+    if (!currentRunId || !select || !select.value || PREVIEW) return;
+    const d = await post("/api/runs/" + currentRunId + "/notes", { template: template, domain: select.value });
+    if (d) renderResult(d.run, d.result);
+  }
+
+  async function approveNote(id) {
+    if (!currentRunId || PREVIEW) return;
+    const d = await post("/api/runs/" + currentRunId + "/notes/" + id + "/approve", { approver: $("note-approver").value });
+    if (d) { renderResult(d.run, d.result); refreshSidePanels(); }
   }
 
   async function disconnectAsset() {
@@ -885,6 +1023,12 @@
     onClick("summarize-btn", summarize);
     onClick("conn-code", () => { setSidebar(false); openUpload("code"); });
     onClick("conn-logs", () => { setSidebar(false); openUpload("logs"); });
+    onClick("conn-msg", () => { setSidebar(false); openUpload("image"); });
+    onClick("official-save", saveOfficial);
+    onClick("note-registrar", () => draftNote("registrar"));
+    onClick("note-platform", () => draftNote("platform"));
+    const msgConfirm = $("msg-confirm");
+    if (msgConfirm) msgConfirm.addEventListener("change", uploadChosen);
     onClick("up-btn", uploadFile);
     onClick("data-link", () => { setSidebar(false); openData(); });
     onClick("delete-btn", deleteData);
@@ -912,10 +1056,10 @@
         renderChat(r.data.chat.chat);
         renderChatList(r.data.chat.list);  // after opening, so the open chat is highlighted (as loadChats does)
       }
-      if (view === "upload-code" || view === "upload-logs") openUpload(view.slice(7));
+      if (view === "upload-code" || view === "upload-logs" || view === "upload-image") openUpload(view.slice(7));
       if (view === "data") openData();
-      if (view === "logs") {
-        const s = r.data.logs;
+      if (view === "logs" || view === "message") {
+        const s = r.data[view];
         selectAsset(s.asset);
         appendSteps(s.steps);
         renderFindings(s.result.findings);

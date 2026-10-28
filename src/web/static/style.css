@@ -421,6 +421,21 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .danger-zone { margin-top: 18px; }
 .danger-zone .hint { margin-bottom: 14px; }
 .side-actions .btn { white-space: nowrap; padding: 6px 10px; }
+.check-row { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; font-size: 14px; }
+.check-row input { margin-top: 3px; }
+.official-box { margin: 12px 0; }
+.official-box summary { cursor: pointer; font-size: 14px; }
+.official-box textarea { width: 100%; font: inherit; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
+.item-list { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 8px; }
+.item { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; }
+.item-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.item-kind { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.item-text { overflow-wrap: anywhere; }
+#notes-panel .actions + .field { margin-top: 16px; }
+.note-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+select { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px; max-width: 100%; }
 .checks-list { margin: 0 0 14px; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; overflow-wrap: anywhere; }
 .downloads .btn { text-align: center; }
 .quality-summary { margin: 0 0 10px; font-size: 14px; }

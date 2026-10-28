@@ -119,7 +119,8 @@ def test_delete_my_data_removes_only_this_users_data(web):
     audit = AuditLog(tmp / "audit" / "user-1.jsonl")
     entries = audit._entries()
     assert audit.verify() == (True, None) and [e["event"] for e in entries] == ["user_data_deleted"]
-    assert set(entries[0]["details"]) == {"assets", "runs", "evidence_records", "chats", "demo_control_file"}
+    assert set(entries[0]["details"]) == {"assets", "runs", "evidence_records", "chats", "official_entries",
+                                          "demo_control_file"}
     assert a.get("/api/session").json()["user"]["email"] == "a@shop.example"  # the account itself remains
 
     # Bob: untouched

@@ -120,7 +120,9 @@ def test_enum_and_prompt_list_exactly_the_runnable_checks():
     assert enum == RUNNABLE_CHECKS and len(enum) == 13
     from src.code_scan import CODE_CHECKS
     from src.logs import LOG_CHECKS
-    upload_checks = set(CODE_CHECKS) | set(LOG_CHECKS)  # run on uploaded files, never offered to the scan agent
+    from src.brand_check import MESSAGE_CHECKS
+    # run on uploaded files / screenshots, never offered to the scan agent
+    upload_checks = set(CODE_CHECKS) | set(LOG_CHECKS) | set(MESSAGE_CHECKS)
     assert set(enum) == set(TABLE) - set(NOT_RUNNABLE) - tls_findings - upload_checks
     assert not upload_checks & set(enum)
     listed = SYSTEM_PROMPT.split("The runnable checks are exactly: ")[1].split(". ")[0]

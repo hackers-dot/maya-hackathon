@@ -329,6 +329,21 @@ See `src/models.py`:
   - The data-use note (what is stored, where, how long) is on the "Your data" page, and a short version is on the consent page.
 - **Dashboard.** The sidebar lists connectors: Website, Source code ZIP and Logs work; API, Mobile and Cloud are labelled "coming soon" and are not buttons.
 
+### Web 8: suspicious message check
+
+- **What it is.** The user uploads a screenshot (PNG/JPEG, at most 5 MB; the type comes from the magic bytes, never the file name) of a message, ad or page that claims to be from their business. `POST /api/uploads/image` needs `X-Confirm-Send: yes`, matching the UI checkbox "I understand this image will be sent to the model provider". Without it the image is never sent. Without a key the answer is 409 "Model not configured" and nothing is stored.
+- **The model reads; code decides (`src/brand_check.py`).**
+  - The image goes to the existing provider as an `image_url` data URL, with a strict `json_schema` response format: `{urls, phone_numbers, brand_names, payment_requests, urgency_phrases}`, lists of strings of at most 200 characters, copied from visible text.
+  - `parse_extraction` enforces the schema again in code: unknown fields, non-lists, over-long and extra items are dropped and listed. Every item passes through `redact_text`, so a password visible in the screenshot is masked.
+  - Code normalises domains (scheme, `www.`, port, path, IDNA) and phone numbers, then compares them with the user's verified websites plus an optional per-user official-domains and official-numbers list (`official_entries` table, shown masked).
+  - A fixed lookalike rule flags "resembles your domain" for: the same name with another ending; an extra or missing hyphen; look-alike characters (digits, `rn`/`m`, Cyrillic letters, punycode); your name plus a keyword; your name as a subdomain of another domain; or 1 to 2 characters different (names of 4+ letters).
+  - Everything else is "not in your list, needs review". Payment requests and urgency phrases are counted, not judged.
+  - Severity comes from the table. Wording never says fake, scam or fraud, and a test checks every text.
+  - Each item is shown with "read by the model from the image (unverified)" beside the code verdict.
+- **Passive only.** No request is ever sent to an extracted URL. A test records every outbound request during an upload (none) and every socket connection (loopback only). The optional "Check DNS" (`POST /api/runs/<id>/dns-check {domain, confirm: true}`) works only for a domain read from that image. It asks the existing DNS-over-HTTPS resolver for an A record via `doh_query` and never contacts the domain; the UI says the domain name goes to cloudflare-dns.com.
+- **Evidence.** One evidence record holds the image hash prefix, size, type and the masked extraction (never pixels). The store's redaction masks long hex strings, so the pack also always gets `image/image_info.json` with the full SHA-256, size and type. The image file is added only if the user ticked "include image": it is held in memory with the run and deleted with "Delete my data". Attachments are hashed in the manifest and logged in the custody log (`attachment_included`).
+- **Report notes.** Fixed templates for a domain registrar and for a platform, with placeholders such as `[your business name]` and the image hash. `POST /api/runs/<id>/notes` drafts one with status DRAFT. Only `ApprovalGate.approve_note` with an approver name makes it READY (audited `note_approved`). There is no sending code anywhere; a test checks for mail libraries.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

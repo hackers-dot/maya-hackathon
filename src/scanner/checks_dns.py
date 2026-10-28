@@ -73,11 +73,17 @@ def check_domain(domain: str, verified) -> str:
 
 
 def doh_txt(name: str, transport=None, store=None) -> tuple[list[str], str | None]:
-    """TXT answers for `name` via DNS-over-HTTPS: GET only, 5 s timeout, no redirects, no env proxies.
-    Returns (answers, evidence id of the stored, redacted raw JSON answer)."""
+    """TXT answers for `name` via DNS-over-HTTPS. Returns (answers, evidence id of the stored raw answer)."""
+    data, evidence_id = doh_query(name, "TXT", transport, store)
+    return [a.get("data", "") for a in data.get("Answer") or [] if a.get("type") == TXT_TYPE], evidence_id
+
+
+def doh_query(name: str, rtype: str, transport=None, store=None) -> tuple[dict, str | None]:
+    """One DNS-over-HTTPS query: GET only, 5 s timeout, no redirects, no env proxies. The resolver is asked;
+    the name itself is never contacted. Returns (JSON answer, evidence id of the stored, redacted answer)."""
     with httpx.Client(transport=transport, timeout=DOH_TIMEOUT_S, follow_redirects=False, trust_env=False,
                       headers={"accept": "application/dns-json"}) as c:
-        r = c.get(DOH_URL, params={"name": name, "type": "TXT"})
+        r = c.get(DOH_URL, params={"name": name, "type": rtype})
         body = r.content[:64 * 1024]
         sent = list(r.request.headers.multi_items())
     evidence_id = store.add("GET", str(r.request.url), sent, r.status_code, list(r.headers.multi_items()), body) \
@@ -90,8 +96,7 @@ def doh_txt(name: str, transport=None, store=None) -> tuple[list[str], str | Non
         raise DnsUnavailable("DNS-over-HTTPS answer is not JSON") from None
     if data.get("Status") not in (0, 3):  # NOERROR, NXDOMAIN (no record is a valid answer)
         raise DnsUnavailable(f"DNS lookup failed (status {data.get('Status')})")
-    answers = [a.get("data", "") for a in data.get("Answer") or [] if a.get("type") == TXT_TYPE]
-    return answers, evidence_id
+    return data, evidence_id
 
 
 def run_dns_check(check_id: str, domain: str, verified, transport=None, store=None) -> list[Finding]:

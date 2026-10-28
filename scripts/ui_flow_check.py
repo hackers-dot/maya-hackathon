@@ -64,11 +64,12 @@ class Browserless:
         self.csrf = json.loads(raw)["csrf"]
         return status, headers, json.loads(raw)
 
-    def upload(self, path: str, data: bytes, name: str, ctype: str):
+    def upload(self, path: str, data: bytes, name: str, ctype: str, confirm: bool = False):
         if self.csrf is None:
             self.session()
         req = urllib.request.Request(self.base + path, data=data, method="POST")
-        for k, v in {"Content-Type": ctype, "X-Upload-Name": name, "X-CSRF-Token": self.csrf or ""}.items():
+        extra = {"X-Confirm-Send": "yes"} if confirm else {}
+        for k, v in {"Content-Type": ctype, "X-Upload-Name": name, "X-CSRF-Token": self.csrf or "", **extra}.items():
             req.add_header(k, v)
         try:
             with self.opener.open(req, timeout=30) as r:
@@ -346,6 +347,21 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
               "optional model summary without a key: 'Model not configured'", f"HTTP {status}")
     status, _, _ = b2.request("GET", f"/api/runs/{code_run}")
     rep.check(status == 404, "another user's upload result is not found", f"HTTP {status}")
+
+    # --- Web 8: suspicious message check (this server has no model key) ---
+    status, _, data = b.post("/api/official", {"domains": ["shopexample.com"], "numbers": ["+1 555 010 0100"]})
+    rep.check(status == 200 and data.get("domains") == ["sho...om"] and data.get("numbers") == ["+15...00"],
+              "official domains and numbers saved per user, shown masked", f"HTTP {status} {data.get('domains')}")
+    tiny_png = (b"\x89PNG\r\n\x1a\n" + bytes(32))
+    status, data = b.upload("/api/uploads/image", tiny_png, "message.png", "image/png")
+    rep.check(status == 400 and data.get("error") == "confirm that this image will be sent to the model provider",
+              "image is not sent without the user's confirmation", f"HTTP {status}")
+    status, data = b.upload("/api/uploads/image", b"GIF89a fake image", "message.png", "image/png", confirm=True)
+    rep.check(status == 400 and data.get("error") == "only PNG or JPEG images are accepted",
+              "image type checked by magic bytes, not the file name", f"HTTP {status}")
+    status, data = b.upload("/api/uploads/image", tiny_png, "message.png", "image/png", confirm=True)
+    rep.check(status == 409 and str(data.get("error", "")).startswith("Model not configured"),
+              "no model key: 'Model not configured', nothing stored", f"HTTP {status}")
     status, _, _ = b.post(f"/api/assets/{data_asset(b, 'code')}/disconnect", {})
     rep.check(status == 200 and data_asset(b, "code") is None, "disconnect removes the asset", f"HTTP {status}")
     status, _, data = b.post("/api/data/delete", {"confirm": "nope"})

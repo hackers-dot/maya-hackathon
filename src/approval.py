@@ -98,6 +98,19 @@ class ApprovalGate:
                           finding_ids=proposal.finding_ids, **ctx)
         return proposal
 
+    def approve_note(self, note: dict, approver: str, run: str | None = None) -> dict:
+        """A drafted report note (registrar / platform) becomes READY only here. MAYA never sends it."""
+        ctx = {"run": run} if run else {}
+        if not isinstance(approver, str) or not approver.strip():
+            self.audit.append("approve_refused", note=note.get("id"), reason="approver name is required", **ctx)
+            raise ValueError("approval needs a non-empty approver name")
+        if note.get("status") != "DRAFT":
+            raise ValueError(f"{note.get('id')} is {note.get('status')}, only DRAFT can be approved")
+        note.update(status="READY", approved_by=approver.strip(), approved_at=_now())
+        self.audit.append("note_approved", note=note["id"], template=note["template"], domain=note["domain"],
+                          approver=note["approved_by"], **ctx)
+        return note
+
     # --- apply ---
     def _refuse(self, proposals, target, reason, ctx=None):
         self.audit.append("apply_refused", proposals=[p.id for p in proposals], target=target, reason=reason,

@@ -52,13 +52,17 @@ PAGES = {
     "/chat": ("chat.html", True),
 }
 ASSET_ACTION = re.compile(r"^/api/assets/([0-9a-f]{16})/(verify|scan|reset-demo|disconnect)$")
-RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest|approve-all|summarize)$")
+RUN_ACTION = re.compile(r"^/api/runs/([0-9a-f]{24})/(apply|retest|approve-all|summarize|dns-check|notes)$")
 # path -> (asset kind, max body bytes, allowed extensions, allowed content types); raw body, never JSON
 UPLOADS = {
     "/api/uploads/code": ("code", 10 * 1024 * 1024, (".zip",),
                           {"application/zip", "application/x-zip-compressed", "application/octet-stream"}),
     "/api/uploads/logs": ("logs", 5 * 1024 * 1024, (".log", ".txt"), {"text/plain", "application/octet-stream"}),
+    "/api/uploads/image": ("image", 5 * 1024 * 1024, (".png", ".jpg", ".jpeg"),
+                           {"image/png", "image/jpeg", "application/octet-stream"}),
 }
+NOTE_APPROVE = re.compile(r"^/api/runs/([0-9a-f]{24})/notes/(note-[0-9a-f]{8})/approve$")
+OFFICIAL_MAX = 50
 UPLOAD_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,99}$")
 CHAT_PATH = re.compile(r"^/api/chats/([0-9a-f]{16})$")
 CHAT_SEND = re.compile(r"^/api/chats/([0-9a-f]{16})/messages$")
@@ -247,8 +251,43 @@ def _preview_logs() -> dict:
                                   for ip, ids in sorted(groups.items())]}}
 
 
+def _preview_message() -> dict:
+    """A suspicious-message result for screenshots: a fixed extraction (no model), verdicts by the real code."""
+    from src.brand_check import MESSAGE_CHECKS, analyse, draft_note, parse_extraction
+    extraction, dropped = parse_extraction(json.dumps({
+        "urls": ["https://shop-example-login.com/pay", "https://www.shopexample.com/help", "parcel-update.example"],
+        "phone_numbers": ["+1 (555) 010-0199"], "brand_names": ["ShopExample"],
+        "payment_requests": ["Pay 49.99 by gift card"], "urgency_phrases": ["Act within 1 hour"]}))
+    digest = "5" * 64
+    findings, items = analyse(extraction, ["shopexample.com"], ["+1 555 010 0100"], digest, "message.png")
+    items[0]["dns"] = {"resolves": True, "status": "NOERROR", "evidence_id": None}
+    view = findings_view({f.id: f for f in findings}, None)
+    note = {"id": "note-0000aaaa", "template": "registrar", "domain": "shop-example-login.com", "status": "DRAFT",
+            "approved_by": None, "approved_at": None,
+            "text": draft_note("registrar", "shop-example-login.com", "shopexample.com", items[0]["verdict"], digest,
+                               "2026-10-28")}
+    run = {"id": "2" * 24, "asset_id": "2" * 16, "mode": "message", "mode_label": "Suspicious message: the model "
+           "reads the image, code decides", "model": "none", "demo": False, "error": None,
+           "started_at": 1_800_000_000, "finished_at": 1_800_000_000, "steps": 1, "can_apply": False,
+           "status": "finished"}
+    return {"asset": {"id": "2" * 16, "kind": "image", "label": "message.png", "origin": None, "status": "uploaded",
+                      "reason": None, "scannable": False, "last_run": None},
+            "run": run, "steps": [{"step": 1, "tool": "message upload", "args": "message.png",
+                                   "result_summary": f"{len(findings)} finding(s)",
+                                   "tokens": {"prompt": 0, "completion": 0, "reasoning": 0}, "latency": 0.0}],
+            "result": {"findings": view, "fix_first": view[:3], "claims": [], "order_note": "", "dropped": [],
+                       "usage": {"prompt_tokens": 1180, "completion_tokens": 96, "total_tokens": 1276,
+                                 "reasoning_tokens": 0},
+                       "model_finished": True, "stop_reason": "message", "summary_model": "preview-vision-model",
+                       "items": items, "notes": [note], "dropped_from_model": dropped,
+                       "upload": {"name": "message.png", "media_type": "image/png", "image_bytes": 48213,
+                                  "image_sha256": digest, "include_image": False},
+                       "checks": [{"check": c, "status": "ran"} for c in MESSAGE_CHECKS]}}
+
+
 PREVIEW_SAMPLE = _preview_sample()
 PREVIEW_SAMPLE["logs"] = _preview_logs()
+PREVIEW_SAMPLE["message"] = _preview_message()
 
 
 def default_provider_factory():
@@ -417,13 +456,15 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _get_api(self, path: str, user) -> bool:
         """Signed-in JSON reads. Returns False if the path is not one of them."""
-        if path in ("/api/assets", "/api/audit", "/api/usage", "/api/chats", "/api/eval"):
+        if path in ("/api/assets", "/api/audit", "/api/usage", "/api/chats", "/api/eval", "/api/official"):
             if user is None:
                 raise Reply(401, "please sign in")
             if path == "/api/assets":
                 self._json(200, {"assets": self._assets_view(user)})
             elif path == "/api/audit":
                 self._json(200, self._audit_view(user))
+            elif path == "/api/official":
+                self._json(200, self._official_view(user))
             elif path == "/api/eval":
                 self._json(200, eval_view(self.app.eval_path))
             elif path == "/api/chats":
@@ -495,7 +536,8 @@ class WebHandler(BaseHTTPRequestHandler):
                                [e for e in entries if (e.get("details") or {}).get("run") == run.id],
                                model=run.model if run.mode == "model" else None, who=f"user-{int(user['id'])}",
                                statuses={fid: finding_status(run, fid) for fid in run.findings},
-                               demo=run.demo)  # from the asset (loopback demo app), not only the findings
+                               demo=run.demo,  # from the asset (loopback demo app), not only the findings
+                               extra_files=dict(run.attachments))
                 except PackError:
                     raise Reply(500, "evidence pack failed verification") from None
                 zip_path = export_zip(Path(tmp) / "pack", Path(tmp) / "pack.zip")
@@ -584,7 +626,7 @@ class WebHandler(BaseHTTPRequestHandler):
 
     # --- POST (all state-changing) ---
     POSTS = {"/api/signup", "/api/signin", "/api/signout", "/api/profile", "/api/asset", "/api/connect",
-             "/api/consent", "/api/data/delete"}
+             "/api/consent", "/api/data/delete", "/api/official"}
 
     def do_POST(self):
         if not self._host_ok():
@@ -593,8 +635,9 @@ class WebHandler(BaseHTTPRequestHandler):
         action = ASSET_ACTION.match(path)
         run_action, approve = RUN_ACTION.match(path), APPROVE.match(path)
         chat_send = CHAT_SEND.match(path)
+        note_approve = NOTE_APPROVE.match(path)
         known = (path in self.POSTS or path in ("/api/assets", "/api/chats") or path in UPLOADS
-                 or bool(action or run_action or approve or chat_send))
+                 or bool(action or run_action or approve or chat_send or note_approve))
         try:
             cap = UPLOADS[path][1] if path in UPLOADS else MAX_BODY
             # always drain first, so an early refusal (even a 404) never resets the connection
@@ -608,7 +651,10 @@ class WebHandler(BaseHTTPRequestHandler):
                 status, payload, headers = self._post_upload(session, path, raw)
                 return self._json(status, payload, headers)
             body = self._parse_json(raw)
-            if action:
+            if note_approve:
+                status, payload, headers = self._post_note_approve(session, note_approve.group(1),
+                                                                   note_approve.group(2), body)
+            elif action:
                 status, payload, headers = self._post_asset_action(session, action.group(1), action.group(2))
             elif run_action or approve:
                 m = run_action or approve
@@ -715,6 +761,10 @@ class WebHandler(BaseHTTPRequestHandler):
             raise Reply(404, "not found")
         if action == "summarize":
             return self._post_summarize(user, run)
+        if action == "dns-check":
+            return self._post_dns_check(user, run, body)
+        if action == "notes":
+            return self._post_note(user, run, body)
         if run.status == "running" or run.base is None:
             raise Reply(409, "wait for the scan to finish" if run.status == "running"
                         else "this result comes from an upload: there is nothing to apply or re-test")
@@ -811,6 +861,8 @@ class WebHandler(BaseHTTPRequestHandler):
         if self.app.runs.active_for(user["id"]):
             raise Reply(409, "wait for the running scan to finish")
         store = self._store(user)
+        if kind == "image":
+            return self._post_image(user, name, raw, store)
         if kind == "code":
             try:
                 files, counts = read_zip(raw)
@@ -833,6 +885,144 @@ class WebHandler(BaseHTTPRequestHandler):
                                     "many_4xx": MANY_4XX_THRESHOLD, "fails_before_success": FAILS_BEFORE_SUCCESS}}
         run = self.app.runs.record_upload(user["id"], asset, kind, findings, store, extra)
         return 200, {"asset": public_asset(asset, run.id), "run": run_view(run)}, None
+
+    # --- suspicious message check ---
+    def _official_view(self, user) -> dict:
+        from src.evidence import mask
+        o = self.app.assets.official(user["id"])
+        return {"domains": [mask(d) for d in o["domains"]], "numbers": [mask(n) for n in o["numbers"]],
+                "counts": {"domains": len(o["domains"]), "numbers": len(o["numbers"])},
+                "verified_assets": sorted(a["host"] for a in self.app.assets.list(user["id"])
+                                          if a["kind"] == "website" and a["status"] == "verified")}
+
+    def _post_official(self, session, body):
+        from src.brand_check import normalise_domain, normalise_phone
+        user = self._require_user(session)
+        domains, numbers = body.get("domains", []), body.get("numbers", [])
+        if not (isinstance(domains, list) and isinstance(numbers, list)
+                and all(isinstance(x, str) for x in domains + numbers)):
+            raise Reply(400, "domains and numbers must be lists of text")
+        if len(domains) > OFFICIAL_MAX or len(numbers) > OFFICIAL_MAX:
+            raise Reply(400, f"at most {OFFICIAL_MAX} domains and {OFFICIAL_MAX} numbers")
+        clean_d = [normalise_domain(d) for d in domains if d.strip()]
+        clean_n = [normalise_phone(n) for n in numbers if n.strip()]
+        if None in clean_d or None in clean_n:
+            raise Reply(400, "every entry must be a domain name or a phone number")
+        self.app.assets.set_official(user["id"], sorted(set(clean_d)), sorted(set(clean_n)))
+        return 200, self._official_view(user), None
+
+    def _post_image(self, user, name: str, raw: bytes, store):
+        """The image goes to the model only after the user confirmed it; code decides every verdict."""
+        import base64
+        from src.brand_check import (MESSAGE_CHECKS, PROMPT, SCHEMA, ImageRefused, analyse, evidence_body,
+                                     image_info, image_type, parse_extraction, sha256)
+        from src.budget import BudgetExceeded, TokenBudget
+        from src.provider import ProviderError
+        from src.web.runs import TOKEN_CAP
+        if (self.headers.get("X-Confirm-Send") or "").lower() != "yes":
+            raise Reply(400, "confirm that this image will be sent to the model provider")
+        try:
+            mtype = image_type(raw)  # magic bytes, not the file name
+        except ImageRefused as e:
+            raise Reply(400, str(e)) from None
+        provider, model = self.app.provider_factory()
+        if provider is None:
+            raise Reply(409, "Model not configured: reading the image needs a model key on the server")
+        include = (self.headers.get("X-Include-Image") or "").lower() == "yes"
+        digest = sha256(raw)
+        messages = [{"role": "system", "content": "You read text in images and reply with JSON only."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": PROMPT},
+                        {"type": "image_url", "image_url": {"url": f"data:{mtype};base64,"
+                                                            + base64.b64encode(raw).decode()}}]}]
+        try:
+            reply = provider.chat(messages, max_tokens=1200, reasoning_effort="low", response_format={
+                "type": "json_schema", "json_schema": {"name": "message_extraction", "strict": True, "schema": SCHEMA}})
+        except ProviderError as e:  # already key-scrubbed by the provider
+            raise Reply(502, f"model call failed: {e}") from None
+        budget = TokenBudget(f"message-{digest[:12]}", cap=TOKEN_CAP, path=self.app.data_dir / "usage.jsonl")
+        try:
+            budget.add(reply.usage or {})
+        except (BudgetExceeded, ValueError, TypeError):
+            pass
+        try:
+            extraction, dropped = parse_extraction(reply.answer)
+        except ValueError as e:
+            raise Reply(502, f"{e}; nothing was stored") from None
+        official = self.app.assets.official(user["id"])
+        domains = official["domains"] + [a["host"] for a in self.app.assets.list(user["id"])
+                                         if a["kind"] == "website" and a["status"] == "verified"]
+        eid = store.add("IMAGE", f"image://{digest}", [], 0, [],
+                        evidence_body(digest, len(raw), mtype, extraction, dropped))
+        findings, items = analyse(extraction, domains, official["numbers"], digest, name, eid)
+        asset = self.app.assets.add_upload(user["id"], "image", name)
+        extra = {"upload": {"name": name, "media_type": mtype, "image_bytes": len(raw), "image_sha256": digest,
+                            "include_image": include},
+                 "items": items, "dropped_from_model": dropped, "notes": [], "summary_model": model,
+                 "usage": dict(budget.run), "checks": [{"check": c, "status": "ran"} for c in MESSAGE_CHECKS]}
+        run = self.app.runs.record_upload(user["id"], asset, "message", findings, store, extra)
+        run.attachments["image/image_info.json"] = image_info(digest, len(raw), mtype, include)
+        if include:
+            run.attachments[f"image/{digest[:16]}.{'png' if mtype == 'image/png' else 'jpg'}"] = raw
+        return 200, {"asset": public_asset(asset, run.id), "run": run_view(run)}, None
+
+    def _message_domain(self, run, body) -> dict:
+        if run.mode != "message":
+            raise Reply(409, "only for suspicious-message results")
+        domain = body.get("domain")
+        item = next((i for i in run.result["items"] if i.get("domain") and i["domain"] == domain), None)
+        if item is None:
+            raise Reply(400, "choose a domain read from this image")
+        return item
+
+    def _post_dns_check(self, user, run, body):
+        """Optional: does the domain exist? Asked of the DNS-over-HTTPS resolver only, never of the domain."""
+        import httpx
+        from src import scope
+        from src.scanner.checks_dns import DnsUnavailable, doh_query
+        item = self._message_domain(run, body)
+        if body.get("confirm") is not True:
+            raise Reply(400, "confirm that this domain name will be sent to the DNS-over-HTTPS resolver")
+        if scope.is_loopback(item["domain"]):
+            raise Reply(400, "not a public domain")
+        try:
+            data, eid = doh_query(item["domain"], "A", self.app.http_transport, self._store(user))
+        except (DnsUnavailable, httpx.HTTPError) as e:
+            raise Reply(502, f"DNS check failed: {type(e).__name__}") from None
+        item["dns"] = {"resolves": data.get("Status") == 0 and bool(data.get("Answer")),
+                       "status": "NXDOMAIN" if data.get("Status") == 3 else "NOERROR", "evidence_id": eid}
+        return 200, self._run_full(run), None
+
+    def _post_note(self, user, run, body):
+        """Draft a report note from a fixed template. Status DRAFT; only the approval gate makes it READY."""
+        import secrets
+        import time as _time
+        from src.brand_check import NOT_IN_LIST, RESEMBLES, TEMPLATES, draft_note
+        item = self._message_domain(run, body)
+        template = body.get("template")
+        if template not in TEMPLATES:
+            raise Reply(400, f"template must be one of: {', '.join(sorted(TEMPLATES))}")
+        if item.get("verdict") not in (RESEMBLES, NOT_IN_LIST):
+            raise Reply(409, "this domain matches your list; there is nothing to report")
+        note = {"id": f"note-{secrets.token_hex(4)}", "template": template, "domain": item["domain"],
+                "status": "DRAFT", "approved_by": None, "approved_at": None,
+                "text": draft_note(template, item["domain"], item.get("resembles"), item["verdict"],
+                                   run.result["upload"]["image_sha256"],
+                                   _time.strftime("%Y-%m-%d", _time.gmtime(run.started_at)))}
+        run.result["notes"].append(note)
+        return 200, self._run_full(run), None
+
+    def _post_note_approve(self, session, run_id: str, note_id: str, body):
+        user = self._require_user(session)
+        run = self.app.runs.get(user["id"], run_id)  # another user's run is simply "not found"
+        note = next((n for n in (run.result or {}).get("notes", []) if n["id"] == note_id), None) if run else None
+        if note is None:
+            raise Reply(404, "not found")
+        try:
+            self.app.gate(user["id"]).approve_note(note, body.get("approver"), run=run.id)
+        except ValueError as e:
+            raise Reply(400 if "approver" in str(e) else 409, str(e)) from None
+        return 200, self._run_full(run), None
 
     def _post_summarize(self, user, run):
         """Optional model summary of a log upload: typed claims, verified like scan claims (no model quotes)."""
@@ -894,7 +1084,8 @@ class WebHandler(BaseHTTPRequestHandler):
             raise Reply(409, "wait for the running scan to finish")
         counts = {"assets": self.app.assets.remove_all(uid), "runs": self.app.runs.drop_for_user(uid),
                   "evidence_records": EvidenceStore(self.app.data_dir / "evidence.db").delete_owner(f"user-{uid}"),
-                  "chats": self.app.chats.delete_user(uid)}
+                  "chats": self.app.chats.delete_user(uid),
+                  "official_entries": self.app.assets.delete_official(uid)}
         control = self.app.demo_control(uid)
         counts["demo_control_file"] = int(control.exists())
         control.unlink(missing_ok=True)

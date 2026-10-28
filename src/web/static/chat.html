@@ -31,6 +31,7 @@
 <li><a class="connector" href="/connect-website"><span>Website</span><span class="chip chip-ok">works</span></a></li>
 <li><button id="conn-code" class="connector" type="button"><span>Source code ZIP</span><span class="chip chip-ok">works</span></button></li>
 <li><button id="conn-logs" class="connector" type="button"><span>Logs</span><span class="chip chip-ok">works</span></button></li>
+<li><button id="conn-msg" class="connector" type="button"><span>Suspicious message</span><span class="chip chip-ok">works</span></button></li>
 <li class="connector connector-soon"><span>API</span><span class="chip">coming soon</span></li>
 <li class="connector connector-soon"><span>Mobile</span><span class="chip">coming soon</span></li>
 <li class="connector connector-soon"><span>Cloud</span><span class="chip">coming soon</span></li>
@@ -79,6 +80,18 @@
 <h1 id="up-title" class="title">Upload</h1>
 <p id="up-desc" class="hint"></p>
 <div class="field"><label id="up-label" for="up-file">File</label><input id="up-file" type="file"></div>
+<div id="msg-options" hidden>
+<label class="check-row"><input id="msg-confirm" type="checkbox"> <span>I understand this image will be sent to the model provider</span></label>
+<label class="check-row"><input id="msg-include" type="checkbox"> <span>Include the image itself in the evidence pack (its hash and size are always included)</span></label>
+<details id="official-box" class="official-box">
+<summary>Your official domains and phone numbers</summary>
+<p class="hint">Verified websites count automatically. One entry per line. Saved lists are shown masked.</p>
+<div class="field"><label for="official-domains">Official domains</label><textarea id="official-domains" rows="3" maxlength="4000"></textarea></div>
+<div class="field"><label for="official-numbers">Official phone numbers</label><textarea id="official-numbers" rows="3" maxlength="4000"></textarea></div>
+<div class="actions"><button id="official-save" class="btn btn-secondary" type="button">Save lists</button></div>
+<p id="official-current" class="hint"></p>
+</details>
+</div>
 <div class="actions"><button id="up-btn" class="btn btn-primary" type="button" disabled>Upload and check</button></div>
 <p id="up-message" class="message" role="status"></p>
 </section>
@@ -87,6 +100,7 @@
 <ul class="checklist data-note">
 <li><strong>What is stored:</strong> your account (email and a scrypt password hash), what you connected (website addresses, upload file names), scan results with their evidence records (secrets masked before storing), your chats, and an audit log of approvals.</li>
 <li><strong>Uploads:</strong> ZIP and log files are read in memory and never saved. Only findings with masked excerpts are kept.</li>
+<li><strong>Screenshots (suspicious message):</strong> sent to the model provider only after you confirm. MAYA keeps the image's hash, size and the masked text read from it; the image itself only if you tick "include image", and then only in memory until the server restarts or you delete your data. Your official domains and phone numbers are stored with your account.</li>
 <li><strong>Where:</strong> only on this computer, in MAYA's local data folder (SQLite and JSON files). Exceptions you control: with a model key, findings and chat messages go to the model provider; the SPF/DMARC check sends your domain name to cloudflare-dns.com.</li>
 <li><strong>How long:</strong> until you delete it here. Scan runs are held in memory and end when the server restarts; evidence records and chats stay until deleted.</li>
 </ul>
@@ -150,6 +164,22 @@
 <div class="diff-col"><h3 class="sub-heading">Still present</h3><ul id="retest-still" class="diff-list"></ul></div>
 <div class="diff-col"><h3 class="sub-heading">New</h3><ul id="retest-new" class="diff-list"></ul></div>
 </div>
+</section>
+<section id="items-panel" class="panel" hidden>
+<div class="panel-head"><h2>Read from the image</h2><span class="panel-meta">model text (unverified), code verdict</span></div>
+<ul id="items-list" class="item-list"></ul>
+<p class="hint">MAYA never visits these addresses. "Check DNS" asks the DNS-over-HTTPS resolver (cloudflare-dns.com) whether a domain exists, sending only the domain name.</p>
+</section>
+<section id="notes-panel" class="panel" hidden>
+<div class="panel-head"><h2>Report note drafts</h2><span class="panel-meta">fixed templates; MAYA never sends them</span></div>
+<div class="field"><label for="note-domain">Domain to report</label><select id="note-domain"></select></div>
+<div class="actions">
+<button id="note-registrar" class="btn btn-secondary" type="button">Draft registrar note</button>
+<button id="note-platform" class="btn btn-secondary" type="button">Draft platform note</button>
+</div>
+<div class="field"><label for="note-approver">Approver name (a note becomes READY only after approval)</label>
+<input id="note-approver" type="text" autocomplete="name" maxlength="80" placeholder="Your name"></div>
+<div id="notes-list" class="proposal-list"></div>
 </section>
 <section id="downloads-panel" class="panel" hidden>
 <div class="panel-head"><h2>Downloads</h2><span class="panel-meta">evidence pack is re-verified on every download</span></div>

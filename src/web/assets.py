@@ -57,6 +57,8 @@ class Assets:
         self.path, self.clock = Path(db_path), clock
         self.targets = VerifiedTargets(verified_path)
         with closing(sqlite3.connect(self.path)) as c, c:
+            c.execute("CREATE TABLE IF NOT EXISTS official_entries (user_id INTEGER NOT NULL, kind TEXT NOT NULL, "
+                      "value TEXT NOT NULL, UNIQUE (user_id, kind, value))")
             c.execute("CREATE TABLE IF NOT EXISTS assets (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, "
                       "kind TEXT NOT NULL, origin TEXT NOT NULL, host TEXT NOT NULL, token TEXT, "
                       "status TEXT NOT NULL, reason TEXT, created_at REAL NOT NULL, verified_at REAL, "
@@ -89,7 +91,7 @@ class Assets:
 
     def add_upload(self, user_id: int, kind: str, name: str) -> dict:
         """A code ZIP or log file upload. Only its name and kind are kept; the content never is."""
-        assert kind in ("code", "logs")
+        assert kind in ("code", "logs", "image")
         asset = {"id": secrets.token_hex(8), "user_id": user_id, "kind": kind,
                  "origin": f"upload:{kind}:{secrets.token_hex(8)}", "host": name, "token": None,
                  "status": "uploaded", "reason": None, "created_at": self.clock(), "verified_at": None}
@@ -116,6 +118,23 @@ class Assets:
         for a in assets:
             self.remove(user_id, a["id"])
         return len(assets)
+
+    # --- official domains / phone numbers (for the suspicious-message check), per user ---
+    def official(self, user_id: int) -> dict:
+        with self._db() as c:
+            rows = c.execute("SELECT kind, value FROM official_entries WHERE user_id = ? ORDER BY value",
+                             (user_id,)).fetchall()
+        return {"domains": [v for k, v in rows if k == "domain"], "numbers": [v for k, v in rows if k == "number"]}
+
+    def set_official(self, user_id: int, domains: list[str], numbers: list[str]) -> None:
+        with self._db() as c, c:
+            c.execute("DELETE FROM official_entries WHERE user_id = ?", (user_id,))
+            c.executemany("INSERT OR IGNORE INTO official_entries VALUES (?, ?, ?)",
+                          [(user_id, "domain", d) for d in domains] + [(user_id, "number", n) for n in numbers])
+
+    def delete_official(self, user_id: int) -> int:
+        with self._db() as c, c:
+            return c.execute("DELETE FROM official_entries WHERE user_id = ?", (user_id,)).rowcount
 
     def list(self, user_id: int) -> list[dict]:
         return self._rows("user_id = ?", (user_id,))
@@ -144,7 +163,7 @@ def public_asset(asset: dict, last_run: str | None = None) -> dict:
     out = {"id": asset["id"], "kind": asset["kind"], "label": DEMO_LABEL if demo else asset["host"],
            "origin": None if demo else asset["origin"], "status": asset["status"], "reason": asset["reason"],
            "scannable": asset["status"] in ("verified", "loopback"), "last_run": last_run}
-    if asset["kind"] in ("code", "logs"):
+    if asset["kind"] in ("code", "logs", "image"):
         out["label"] = asset["host"]
         out["origin"] = None
     elif not demo:
