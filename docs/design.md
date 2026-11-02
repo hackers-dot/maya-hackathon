@@ -473,6 +473,16 @@ See `src/models.py`:
 - **Lines.** `src/guide.py` templates carry `(English, Hinglish, Devanagari)`; `step()` returns `spoken_hi` for Hinglish. The browser's own lines (greeting, chips, reactions) live in `static/pet-lines.js`. All of them are fixed templates without the model badge.
 - **Greeting.** A "greeted" flag per account per device, under a key derived from a SHA-256 prefix of the email (the email is never stored).
 
+### Pet v2 (tier 2): hover guide, learning, modes, tour
+
+- **Registry** (`static/pet-brain.js`, plain object, fixed text in English and Hinglish): each control id or class maps to (what it is, what a click does, effect). Effects: reads, saves, demo, approval, deletes, session, and "sends ..." variants that name the destination: model provider, GitHub, cloudflare-dns.com/crt.sh, your own site, MAYA on this computer. A test checks that every registry key exists in the pages.
+- **Hover:** event-delegated `pointerover`/`pointerout`. After 400 ms the pet walks beside the control (`placeBeside`, never covering it) and shows the line in its bubble; it goes home after 800 ms away. It is off on touch devices (`(hover: hover) and (pointer: fine)`), while typing, during a tour or while a bubble with choices is open.
+- **Learning:** `maya-pet-used` (localStorage, guarded) counts clicks per registry key. Detail is full for 0 uses, a single line for 1 to 4, nothing after 5. An idle suggestion picks one visible, never-used control from a fixed list, once per screen. Cleared by "Reset what the pet learned" and by "Delete my data" (the `data-deleted` page event).
+- **Modes:** `mode()` is WORK when a scan or tour runs, an approval or re-test is pending, the user typed in the last 2.5 s, hovered a control in the last 10 s, or was active in the last 20 s; otherwise PLAY. `nextAntic()` allows one antic per 25 s in PLAY only, and none under reduced motion. Antics run at home only; the "chase" steps along the bottom row only if no control is in the way.
+- **Tour:** app.js emits `scan-finished` only for a run the page saw running, so opening an old result does not start a tour.
+  - `tourStops()` builds the stops: the score, the findings sorted by the code's severity order (title, location and plain text from the rendered cards, which come from the fixed report templates), Fix first, then the approve step.
+  - Numbers come only from the page. The tour only scrolls, points and explains; it never clicks anything.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

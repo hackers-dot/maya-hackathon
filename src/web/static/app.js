@@ -979,9 +979,11 @@
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
 
+  const seenRunning = new Set();  // runs this page watched while running: only those count as "just finished"
   async function pollOnce(runId) {
     const r = await getJSON("/api/runs/" + runId + "/trace?after=" + traceNext);
     if (!r.ok) { stopPolling(); say(r.data.error || "Could not load the run.", true); return; }
+    if (r.data.run.status === "running") seenRunning.add(runId);
     appendSteps(r.data.steps);
     traceNext = r.data.next;
     renderFindings(r.data.findings);
@@ -999,7 +1001,7 @@
       }
       const btn = $("scan-btn");
       if (btn && currentAsset && currentAsset.scannable) btn.disabled = false;
-      emit("scan-finished");
+      if (seenRunning.delete(runId)) emit("scan-finished", { runId: runId });
     }
   }
 
@@ -1416,6 +1418,7 @@
     const d = await post("/api/data/delete", { confirm: input.value });
     if (!d) { setText("data-message", "Not deleted. See the message above."); return; }
     const c = d.deleted || {};
+    emit("data-deleted");  // the pet forgets what it learned on this device too
     setText("data-message", "Deleted: " + c.assets + " asset(s), " + c.runs + " run(s), " + c.evidence_records +
       " evidence record(s), " + c.chats + " chat(s). Your account remains.");
     input.value = "";

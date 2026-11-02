@@ -39,6 +39,10 @@ MAYA, the project's own character, lives on every signed-in page as a small pet:
 - **Small and out of the way:** about 80 px tall (56 px on phones). What she says appears in a small bubble beside her, with choices as chips ("Show me", "Next tip", your level), and it hides after you have had time to read it. The bubble never covers the control she is talking about and tries not to cover any other control nearby. On her own surface there are only two buttons, mute and hide; "Call pet" and "Pet settings" are in the sidebar.
 - **Pet settings** (sidebar): experience level, language, voice picker with Preview, speed, pitch, speak the steps, speak answers, microphone (optional), "Let the pet help me" (not available yet) and "Reset what the pet learned".
 - **What she does:** she walks to the button she is talking about and points at it without covering any other control, then goes home. You can drag her anywhere. With reduced motion turned on she stays docked and only her face changes.
+- **Hover guide:** rest the mouse on a button for a moment and she glides next to it and says what it is, what a click does, and its effect: "only reads", "changes something on your demo app", "needs your approval", "sends data to ..." (naming where), or "deletes your data". Not on touch screens and not while you type.
+- **She learns, on this device only:** she remembers which buttons you have used. New ones get the full explanation, familiar ones a single line or nothing. When you are idle she may suggest one thing you have not tried yet. "Reset what the pet learned" and "Delete my data" clear it. Nothing is sent to MAYA's server.
+- **Work and play:** while a scan or re-test runs, an approval is waiting, or you are typing or exploring, she stays calm and helpful. After about 20 s of quiet she may wink, dance, look around, peek or follow the pointer a few steps, at most once every 25 s and never over a button. She gets sleepy after about 45 s.
+- **After a scan:** she reacts to the real result and offers a short tour ("Show me" or "Skip"): the score ring, then each finding in severity order (critical first) with what it means and what to look at, then Fix first, then the approve step. She explains approving but never does it; Esc ends the tour.
 - **Steps and emotions are not from a model.** They come from a fixed state machine over your own stored data: account, consent, verification, scan, findings, proposals, apply, re-test.
   - She explains what was found before she asks for any approval. She never approves or applies anything for you, never says a site is "safe" or "secure", and gives no time or cost estimates.
   - Her greeting and guide lines are fixed templates, so they carry no "unverified model text" badge. Only real model answers in the chat carry it.
@@ -170,6 +174,11 @@ MAYA, the project's own character, lives on every signed-in page as a small pet:
   - Voice: a picker with Preview, a female-sounding default (never a male-sounding one), pitch 1.2 and the user's choice remembered.
   - Lines: every line rewritten as MAYA in the first person, with Devanagari spoken versions for a hi-IN voice. A first-visit greeting asks for your level.
   - The main chat now sends the chosen level, so answers are worded for it.
+- **2026-11-02 (Pet v2, tier 2):** Hover guide, learning, work/play modes, post-scan tour.
+  - Hover guide: a fixed registry in `static/pet-brain.js` says what each control is, what a click does and its effect. The pet glides beside the control and never covers it.
+  - Learning: per-device use counts that shorten explanations and drive one idle suggestion.
+  - Work/play: a work/play state machine with rate-limited antics.
+  - Tour: after a scan the pet walks through the real findings in severity order. The pet still only points and explains.
 
 ## License
 

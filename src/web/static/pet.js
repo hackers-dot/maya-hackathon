@@ -615,7 +615,7 @@
         host.classList.toggle("face-left", spot.side === "right");  // the arm points to the right by default
         pet.setPose("pointing");
       }, 950));
-      returnTimer = setTimeout(() => goHome(false), holdMs || 5200);
+      if (holdMs !== Infinity) returnTimer = setTimeout(() => goHome(false), holdMs || 5200);
       return true;
     }
     function hop() {
@@ -666,25 +666,61 @@
 
     // idle life: sleepy after ~45 s without interaction, look around, wave now and then
     for (const ev of ["pointermove", "keydown", "pointerdown"]) document.addEventListener(ev, wake, { passive: true });
+    // WORK (scan running, approval pending, typing, recent hover): calm, no antics. PLAY (20 s of quiet):
+    // at most one small antic every ~25 s, only at home and never over another control; sleepy after ~45 s.
+    let anticCount = 0;
+    let lastAnticAt = 0;
+    let lastPointer = null;
+    document.addEventListener("pointermove", (e) => { lastPointer = { x: e.clientX, y: e.clientY }; }, { passive: true });
+    function classFor(cls, ms) {
+      host.classList.add(cls);
+      setTimeout(() => host.classList.remove(cls), ms);
+    }
+    function freeAt(box) {
+      for (const n of document.querySelectorAll(CONTROLS)) {
+        if (n.closest(".pet-layer")) continue;
+        const r = n.getBoundingClientRect();
+        if (r.width && r.height && overlaps(box, { x: r.left, y: r.top, w: r.width, h: r.height })) return false;
+      }
+      return true;
+    }
+    function antic(name) {
+      if (name === "wink") flash("wink", null, 1100);
+      else if (name === "dance") flash("happy", "celebrating", 1600);
+      else if (name === "look") { classFor("look-l", 900); setTimeout(() => classFor("look-r", 900), 1000); }
+      else if (name === "peek") classFor("is-peeking", 1700);
+      else if (name === "hide") { classFor("is-hiding", 1200); setTimeout(() => flash("surprised", null, 900), 1200); }
+      else if (name === "chase" && lastPointer) {  // a few steps along the bottom towards the pointer, then home
+        const s = size();
+        const x0 = parseFloat(host.dataset.x || "0"), y0 = parseFloat(host.dataset.y || "0");
+        const x = Math.max(x0 - 140, Math.min(x0, lastPointer.x - s.w / 2));
+        host.classList.toggle("face-left", lastPointer.x < x0);
+        if (x !== x0 && freeAt({ x: x, y: y0, w: s.w, h: s.h })) {
+          pet.setPose("walking");
+          place(x, y0);
+          atHome = false;
+          returnTimer = setTimeout(() => goHome(false), 1400);
+        } else flash("curious", null, 900);
+      }
+    }
     if (b.loops) {
-      let tick = 0;
       setInterval(() => {
-        tick += 1;
-        if (talking || drag) return;
+        if (talking || drag || !atHome) return;
+        if (opts.getMode && opts.getMode() === "work") {
+          if (sleeping) { sleeping = false; restore(); }
+          return;
+        }
         if (!sleeping && Date.now() - lastActive > 45000) {
           sleeping = true;
           pet.setExpression("sleepy");
           pet.setPose("idle");
           return;
         }
-        if (sleeping || !atHome) return;
-        if (tick % 2 === 0) {
-          const side = tick % 4 === 0 ? "look-l" : "look-r";
-          host.classList.add(side);
-          setTimeout(() => host.classList.remove(side), 1200);
-        }
-        if (tick % 11 === 0 && base.pose === "idle") flash(base.expression, "waving", 1600);
-      }, 4500);
+        if (sleeping || !window.MayaBrain) return;
+        const next = window.MayaBrain.nextAntic({ mode: "play", reduced: false, now: Date.now(), lastAnticAt: lastAnticAt,
+          count: anticCount });
+        if (next) { lastAnticAt = Date.now(); anticCount += 1; antic(next); }
+      }, 2500);
       document.addEventListener("scroll", () => {
         host.classList.add("is-scrolling");
         clearTimeout(scrollTimer);
@@ -702,6 +738,7 @@
       hop: hop, talkStart: talkStart, talkStop: talkStop, mouth: mouth, rehome: rehome, say: say,
       hideBubble: hideBubble, setMuted: setMuted, bubble: bubble,
       expression() { return pet.expression; },
+      isHome() { return atHome; },
       show(visible) { layer.hidden = !visible; if (!visible) hideBubble(); } };
   }
 

@@ -112,6 +112,20 @@
   let gesture = false;  // speechSynthesis may only start after a user gesture
   let speechRun = 0;
   let greetKey = null;
+  // tier 2: hover guide, what the pet learned on this device, work/play mode, post-scan tour
+  const INTERACTIVE = "button, a[href], [role=tab], select, input[type=file], input[type=checkbox], input[type=range], " +
+    "summary, .finding-sum, .asset-item";
+  let used = {};
+  let hoverEl = null;
+  let hoverTimer = null;
+  let leaveTimer = null;
+  let hoverShown = false;
+  let lastHoverAt = 0;
+  let lastActiveAt = Date.now();
+  let lastTypingAt = 0;
+  let suggestedHere = false;
+  let pendingTour = false;
+  let tour = null;
   const L = () => (window.MayaLines || { LINES: {}, CHIPS: {} });
   const line = (name) => { const x = L().LINES[name] || {}; return { text: x[prefs.lang] || x.en || "", spoken: prefs.lang === "hinglish" ? x.spoken_hi : null }; };
   const chip = (name, onClick) => ({ label: (L().CHIPS[name] || {})[prefs.lang] || name, onClick: onClick });
@@ -163,7 +177,156 @@
     if (!data) return;
     steps = data.steps || [];
     stepIndex = 0;
-    showStep();
+    if (pendingTour) { pendingTour = false; offerTour(); } else showStep();
+  }
+
+  // ---------- hover guide: what a control does, beside it, never covering it ----------
+  const brain = () => window.MayaBrain;
+  function loadUsed() {
+    let raw = null;
+    try { raw = window.localStorage.getItem("maya-pet-used"); } catch (e) { raw = null; }
+    try { const v = JSON.parse(raw || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; }
+  }
+  function saveUsed() { save("maya-pet-used", JSON.stringify(used)); }
+  function typing() {
+    const a = document.activeElement;
+    const field = a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && /^(text|email|url|password|search)$/.test(a.type)));
+    return !!field || Date.now() - lastTypingAt < 2500;
+  }
+  function chipsOpen() { return !!pet && !pet.bubble.hidden && !!pet.bubble.querySelector(".pet-chip"); }
+  function hoverKey(el) {
+    const b = brain();
+    return b ? b.keyFor(el.id, Array.from(el.classList)) : null;
+  }
+  function explain(el) {
+    const b = brain();
+    if (!b || !pet || prefs.petHidden || tour || chipsOpen() || typing() || !document.contains(el)) return;
+    const key = hoverKey(el);
+    const t = b.hoverText(key || "generic", prefs.lang, key ? used[key] || 0 : used["generic"] || 0);
+    if (!t) return;
+    lastHoverAt = Date.now();
+    hoverShown = true;
+    pet.setEmotion([{ expression: t.isNew ? "excited" : "curious", pose: "pointing", ms: null }]);
+    pet.moveTo(el, Infinity);
+    pet.say(t.text, [], { avoid: el, ms: 9000 });
+    briefTalk(t.text);
+  }
+  function endHover() {
+    hoverShown = false;
+    if (!pet || tour) return;
+    if (!chipsOpen()) pet.hideBubble();
+    pet.goHome(false);
+    if (steps[stepIndex]) pet.setEmotion(steps[stepIndex].emotion);
+  }
+  function wireHover() {
+    const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    if (!fine || window.matchMedia("(max-width: 860px)").matches) return;  // never on touch devices or phones
+    document.addEventListener("pointerover", (e) => {
+      const el = e.target.closest && e.target.closest(INTERACTIVE);
+      if (!el || el.closest(".pet-layer") || el === hoverEl) return;
+      hoverEl = el;
+      clearTimeout(hoverTimer);
+      clearTimeout(leaveTimer);
+      hoverTimer = setTimeout(() => { if (hoverEl === el) explain(el); }, 400);
+    });
+    document.addEventListener("pointerout", (e) => {
+      if (!hoverEl || (e.relatedTarget && hoverEl.contains(e.relatedTarget))) return;
+      if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".pet-layer")) return;
+      hoverEl = null;
+      clearTimeout(hoverTimer);
+      if (hoverShown) leaveTimer = setTimeout(endHover, 800);
+    });
+  }
+  // what the pet learns: which controls this user clicks, how often (this device only)
+  function wireLearning() {
+    used = loadUsed();
+    document.addEventListener("click", (e) => {
+      const el = e.target.closest && e.target.closest(INTERACTIVE);
+      if (!el || el.closest(".pet-layer") || !brain()) return;
+      const key = hoverKey(el);
+      if (key) used = brain().bump(used, key);
+      if (el.closest("#fixfirst-panel")) used = brain().bump(used, "fixfirst-panel");
+      if (key || el.closest("#fixfirst-panel")) saveUsed();
+    }, true);
+    for (const ev of ["pointermove", "pointerdown", "scroll", "keydown"]) {
+      document.addEventListener(ev, () => { lastActiveAt = Date.now(); }, { passive: true, capture: true });
+    }
+    document.addEventListener("keydown", (e) => {
+      const t = e.target;
+      if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.isContentEditable)) lastTypingAt = Date.now();
+    }, true);
+  }
+  function currentMode() {
+    const b = brain();
+    const state = steps[0] ? steps[0].state : null;
+    if (!b) return "work";
+    return b.mode({ state: state, scanRunning: state === "scan_running" || !!tour, typing: typing(),
+      sinceHoverMs: Date.now() - lastHoverAt, idleMs: Date.now() - lastActiveAt });
+  }
+  // when the user is idle on a screen: suggest ONE useful control they have never tried
+  function maybeSuggest() {
+    const b = brain();
+    if (!b || !pet || suggestedHere || tour || chipsOpen() || prefs.petHidden || currentMode() !== "play") return;
+    const visible = b.SUGGEST.filter((id) => {
+      const n = $(id);
+      if (!n || n.closest("[hidden]")) return false;
+      const r = n.getBoundingClientRect();
+      return r.width > 0 && r.bottom > 0 && r.top < window.innerHeight;
+    });
+    const key = b.pickSuggestion(visible, used);
+    if (!key) return;
+    suggestedHere = true;
+    const text = b.suggestText(key, prefs.lang);
+    pet.setEmotion([{ expression: "curious", pose: "pointing", ms: null }]);
+    pet.say(text, [], { avoid: $(key), ms: 6000 });
+    briefTalk(text);
+  }
+
+  // ---------- after a scan: a guided tour of the real result ----------
+  function offerTour() {
+    const s = steps[0];
+    if (!s || !pet) return;
+    pet.setEmotion(s.emotion);
+    say(s.line, s.spoken_hi, [chip("tourStart", startTour), chip("skip", endTour)], { sticky: true });
+  }
+  function tourInput() {
+    const findings = Array.from(document.querySelectorAll("#findings-list .finding")).map((card) => {
+      const txt = (sel) => { const n = card.querySelector(sel); return n ? n.textContent.trim() : ""; };
+      return { target: card, severity: txt(".finding-sum .sev").toLowerCase(), title: txt(".finding-sum .f-title"),
+        location: txt(".finding-sum .f-where"), plain: core.speakable(txt(".finding-body .role-owner"), 220, true) };
+    }).filter((f) => f.severity);
+    const line = $("score-line");
+    return { findings: findings, scoreLine: line ? line.textContent.trim() : "" };
+  }
+  function startTour(from) {
+    const b = brain();
+    if (!b || !pet) return;
+    tour = { stops: b.tourStops(tourInput(), prefs.lang), i: typeof from === "number" ? from : 0 };
+    showStop();
+  }
+  function showStop() {
+    if (!tour) return;
+    const stop = tour.stops[tour.i];
+    if (!stop) return endTour();
+    const el = typeof stop.target === "string" ? $(stop.target) : stop.target;
+    if (!el || el.closest("[hidden]")) { tour.i += 1; return showStop(); }
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    const last = tour.i === tour.stops.length - 1;
+    const chips = last ? [chip("done", endTour)] : [chip("nextStop", () => { tour.i += 1; showStop(); }), chip("skip", endTour)];
+    setTimeout(() => {
+      if (!tour) return;
+      pet.setEmotion([{ expression: stop.expression, pose: "pointing", ms: null }]);
+      pet.moveTo(el, Infinity);
+      say(stop.text, null, chips, { avoid: el, sticky: true });
+    }, reduced ? 0 : 650);
+  }
+  function endTour() {
+    tour = null;
+    if (!pet) return;
+    pet.hideBubble();
+    pet.goHome(false);
+    if (steps[0]) pet.setEmotion(steps[0].emotion);
   }
 
   // ---------- first time on this device for this account: wave, greet, ask the level ----------
@@ -381,6 +544,7 @@
     });
     on("pet-reset", "click", () => {
       for (const k of LEARNED_KEYS) forget(k);
+      used = {};
       if (greetKey) forget(greetKey);
       $("pet-reset-message").textContent = "Done: the pet forgot what it learned on this device.";
     });
@@ -412,8 +576,10 @@
   function onEvent(e) {
     const type = e.detail && e.detail.type;
     const table = window.MayaPet ? window.MayaPet.core.EVENT_EMOTION : {};
-    if (type === "asset") assetId = e.detail.id || null;
-    if (type === "view") { if (pet) pet.hop(); return; }
+    if (type === "asset") { assetId = e.detail.id || null; suggestedHere = false; }
+    if (type === "view") { suggestedHere = false; if (pet) pet.hop(); return; }
+    if (type === "data-deleted") { for (const k of LEARNED_KEYS) forget(k); used = {}; if (greetKey) forget(greetKey); return; }
+    if (type === "scan-finished") pendingTour = true;
     if (type === "error") {
       if (pet) pet.setEmotion(table.error);
       const x = line("error");
@@ -457,7 +623,8 @@
         onMute: () => setVoice(prefs.voice === "on" ? "off" : "on"),
         onHide: () => setPetHidden(true),
         onOpen: () => (steps.length ? showStep() : refresh()),
-        homeAnchor: () => { const c = $("composer"); return mobile && c ? c.getBoundingClientRect() : null; } });
+        homeAnchor: () => { const c = $("composer"); return mobile && c ? c.getBoundingClientRect() : null; },
+        getMode: currentMode });
       pet.setMuted(prefs.voice !== "on");
     }
     const launcher = document.createElement("button");
@@ -476,13 +643,22 @@
     const firstGesture = () => { gesture = true; };
     document.addEventListener("pointerdown", firstGesture, { once: true });
     document.addEventListener("keydown", firstGesture, { once: true });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { stopSpeech(); if (pet) pet.hideBubble(); } });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      stopSpeech();
+      if (tour) endTour(); else if (pet) pet.hideBubble();
+    });
+    wireLearning();
+    wireHover();  // with reduced motion the pet explains from home without walking (moveTo does not roam)
+    setInterval(maybeSuggest, 5000);
     setPetHidden(prefs.petHidden);
     greetKey = await accountKey();
     if (prefs.petHidden) return;
     const shouldGreet = PREVIEW ? !!asked.get("greet") : load(greetKey, "0") !== "1";
     if (shouldGreet) greet(); else refresh();
     if (PREVIEW && asked.get("talk") && pet) setTimeout(() => { pet.talkStart(); pet.mouth(true); }, 3000);  // speaking frame
+    if (PREVIEW && asked.get("tour")) setTimeout(() => startTour(Number(asked.get("tour")) || 0), 1200);  // a tour stop
+    if (PREVIEW && asked.get("hover")) setTimeout(() => { const n = $(asked.get("hover")); if (n && pet) { pet.hideBubble(); explain(n); } }, 1500);
   });
   window.MayaGuide = { listen: listen };
 })();

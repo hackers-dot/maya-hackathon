@@ -180,7 +180,8 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
     st, _, _ = b.request("GET", "/static/pet.js")
     st2, _, _ = b.request("GET", "/static/pet-sheet.html")
     st3, _, _ = b.request("GET", "/static/pet-lines.js")
-    rep.check(st3 == 200, "pet-lines.js (fixed pet lines) served", f"HTTP {st3}")
+    st5, _, _ = b.request("GET", "/static/pet-brain.js")
+    rep.check(st3 == 200 and st5 == 200, "pet-lines.js and pet-brain.js (fixed pet text and logic) served", f"HTTP {st3}/{st5}")
     st4, _, raw4 = b.request("GET", "/chat")
     rep.check(st4 == 200 and b'id="pet-view"' in raw4 and b'id="pet-settings-btn"' in raw4,
               "Pet settings page reachable from the sidebar", f"HTTP {st4}")

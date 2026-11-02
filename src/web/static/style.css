@@ -829,6 +829,8 @@ button.option:hover { border-color: var(--accent-text); background: var(--panel-
 .pose-walking .pet-figure { animation: pet-walk 0.45s ease-in-out infinite; }
 .pose-walking .pet-trail { opacity: 0.8; }
 .maya-pet.is-hopping .maya-pet-figure { animation: pet-hop 0.5s ease; }
+.maya-pet.is-peeking .maya-pet-figure { transform: translateX(45%) rotate(8deg); transition: transform 0.5s ease; }
+.maya-pet.is-hiding .maya-pet-figure { transform: scale(0.2); opacity: 0; transition: transform 0.35s ease, opacity 0.35s ease; }
 .maya-pet.is-scrolling .maya-pet-figure { transform: rotate(-4deg); }
 .maya-pet.face-left.is-scrolling .maya-pet-figure { transform: scaleX(-1) rotate(-4deg); }
 @keyframes pet-wave { from { transform: rotate(-110deg); } to { transform: rotate(-145deg); } }

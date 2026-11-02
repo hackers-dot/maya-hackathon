@@ -49,6 +49,10 @@
     levelTech: { en: "I'm technical", hinglish: "Technical hoon" },
     voiceOn: { en: "Turn on voice", hinglish: "Awaaz on karo" },
     later: { en: "Not now", hinglish: "Abhi nahi" },
+    tourStart: { en: "Show me", hinglish: "Dikhao" },
+    skip: { en: "Skip", hinglish: "Skip" },
+    nextStop: { en: "Next", hinglish: "Aage" },
+    done: { en: "Done", hinglish: "Ho gaya" },
   };
   const api = { LINES: LINES, CHIPS: CHIPS };
   if (typeof module === "object" && module.exports) { module.exports = api; return; }
