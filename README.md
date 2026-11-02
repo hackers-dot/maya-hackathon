@@ -205,6 +205,13 @@ MAYA, the project's own character, lives on every signed-in page as a small pet:
   - Hover explanations run and are spoken on every page, including sign-in.
   - Idle life: one 1-second scheduler with explicit states. A pet left beside a control now comes home, and the end of WORK resets the idle wait.
   - `scripts/pet_check.py` checks all of this with real mouse and key events in headless Chrome.
+- **2026-11-02 (Pet v3):** Complete explanations, audience-aware English lines, real hover tests.
+  - English only for now; the language switch is hidden. On the first visit the pet also asks what you run (shop, company, clinic, developer, something else); Pet settings can change it.
+  - Every interactive control on every screen has a fixed entry (`scripts/pet_registry_check.py`: 59 screens, 0 controls without one). The first hover says what a click does and where the data goes; later hovers say one sentence.
+  - Guide steps, tour, approval and re-test lines exist for every level and audience. Clinic lines give no medical advice and make no compliance claims.
+  - `scripts/pet_review.py` walked five audience x level combinations with real mouse events (shop/new, clinic/new, developer/technical, company/new, other/new; 655 lines) and checked 26 facts against the running app, with no mismatch. After reading them, 29 sentences were rewritten and the tour got audience wording for every finding; 14 hover lines were rewritten earlier. The other five combinations were not walked in a browser, because RAM was short; their tour and onboarding lines are listed in `docs/pet_lines_review.md`, generated from the API.
+  - One wrong data line fixed: Disconnect said it deletes your data; it removes the site, its reminder and its verified status, and past scans stay until "Delete my data".
+  - The Chrome-driven scripts now stop the whole Chrome process tree; before, its child processes stayed alive after each run.
 
 ## License
 

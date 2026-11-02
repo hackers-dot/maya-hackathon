@@ -16,12 +16,73 @@ AUDIENCE_LABELS = {"shop": "Shop or small business", "company": "Company or team
                    "clinic": "Clinic or healthcare practice", "developer": "Developer", "other": "Something else"}
 
 # state -> context group (states without a group get no extra sentence)
-STEP_GROUP = {"ready_to_scan": "scan", "scan_finished": "findings", "proposals_not_approved": "approve",
+STEP_GROUP = {"no_account_type": "account", "no_asset_type": "asset", "no_connect": "connect", "no_consent": "consent",
+              "no_asset": "website", "ready_to_scan": "scan", "scan_finished": "findings", "proposals_not_approved": "approve",
               "approved_not_applied": "apply", "applied_not_retested": "retest", "retest_fixed": "fixed",
               "retest_still_present": "still"}
 
 # group -> audience -> (new, technical)
 STEP_CONTEXT = {
+    "account": {
+        "shop": ("For a shop, Company is the usual choice: it lets me check the storefront.",
+                 "Pick Company for the storefront; Individual is chat only."),
+        "company": ("For a company or team, choose Company to check the site.",
+                    "Company also unlocks the connectors; Individual is chat only."),
+        "clinic": ("For a clinic's booking site, choose Company.",
+                   "Pick Company for the booking site; Individual is chat only."),
+        "developer": ("To check an app you run, choose Company.",
+                      "Company adds the ZIP, logs and GitHub connectors; Individual is chat only."),
+        "other": ("Pick Company if you have a website to check.",
+                  "Individual is chat only, for learning."),
+    },
+    "asset": {
+        "shop": ("Your online shop counts as a website.",
+                 "The storefront is one website asset."),
+        "company": ("The company site counts, even if it's just a landing page.",
+                    "Add one asset per company origin."),
+        "clinic": ("Your booking or practice website counts.",
+                   "The booking site is one website asset."),
+        "developer": ("Your web app counts as a website here.",
+                      "A web app counts; one origin per asset."),
+        "other": ("Any site you own counts.",
+                  "One website per asset."),
+    },
+    "connect": {
+        "shop": ("Nothing touches your shop until you say so.",
+                 "Yes opens the storefront URL step."),
+        "company": ("Nothing touches the company site until you agree.",
+                    "Yes opens the URL step for the company site."),
+        "clinic": ("Nothing touches the booking site until you agree.",
+                   "Yes opens the URL step for the booking site."),
+        "developer": ("No request hits your app at this step.",
+                      "Yes only routes to the URL form."),
+        "other": ("Nothing is checked at this step.",
+                  "Yes opens the URL step."),
+    },
+    "consent": {
+        "shop": ("I never place orders, log in or change your stock.",
+                 "No forms, logins or writes to the storefront."),
+        "company": ("I never log in, submit forms or change anything on the company site.",
+                    "No authentication, form submission or writes."),
+        "clinic": ("I never book appointments, log in or open private areas of the booking site.",
+                   "No logins and no form posts to the booking system."),
+        "developer": ("No logins, no payloads, no brute force.",
+                      "GET/HEAD only, no auth, no fuzzing; the scope guard enforces it in code."),
+        "other": ("I never log in or fill in forms on your site.",
+                  "No logins or form posts."),
+    },
+    "website": {
+        "shop": ("The practice shop lets you see a whole scan before touching your real store.",
+                 "Enter the storefront's origin."),
+        "company": ("The practice shop is an easy way to show the team how it works.",
+                    "Enter the company site's origin."),
+        "clinic": ("That way you see a whole scan before your real booking site is checked.",
+                   "Enter the booking site's origin."),
+        "developer": ("The demo app is deliberately vulnerable, so you see real findings.",
+                      "Real origins verify via a meta tag, a /.well-known file or a DNS TXT record."),
+        "other": ("The practice shop shows what a full scan looks like.",
+                  "Enter your site's origin."),
+    },
     "scan": {
         "shop": ("Think of it as walking past your shop window to see what a customer can see.",
                  "Checks headers, cookies, exposed files and outdated scripts on the storefront; nothing is changed."),
@@ -54,7 +115,7 @@ STEP_CONTEXT = {
         "clinic": ("Your sign-off is recorded before anything on the booking site changes.",
                    "Approval is logged with your name; the booking site itself is not touched."),
         "developer": ("Think of it as a code review approval, not a merge.",
-                      "Approval is an audit-log entry; Apply is the separate, demo-only deploy step."),
+                      "Approval is an audit-log entry, like a review, not a merge."),
         "other": ("Your sign-off is recorded, and nothing changes yet.",
                   "Approval is recorded in the hash-chained audit log only."),
     },
@@ -278,6 +339,61 @@ def step_context(state: str, audience: str, level: str) -> str:
     return STEP_CONTEXT[group][audience][level_index(level)]
 
 
+# audience words for the per-check lines below
+WORDS = {
+    "shop": {"site": "your shop's website", "people": "customers", "person": "customer"},
+    "company": {"site": "the company website", "people": "staff and clients", "person": "client"},
+    "clinic": {"site": "your clinic's booking site", "people": "patients", "person": "patient"},
+    "developer": {"site": "your app", "people": "users", "person": "user"},
+    "other": {"site": "your website", "people": "visitors", "person": "visitor"},
+}
+# a later finding of the same kind: the check's own fact, in the audience's words (new and some levels)
+CHECK_LINE = {
+    "exposed_env_file": "Anyone, not just {people}, can download a file from {site} that usually holds passwords and API keys.",
+    "exposed_backup_file": "Anyone can download a backup copy from {site}; it may hold data or source code.",
+    "exposed_git_dir": "The source code behind {site} and its history can be downloaded.",
+    "directory_listing": "A folder on {site} lists all its files, including ones never meant for {people}.",
+    "missing_csp": "Browsers loading {site} are not told which scripts may run, so an injected script would run without limits.",
+    "missing_hsts": "Browsers are not told to always use HTTPS for {site}, so a {person} can start on unencrypted HTTP.",
+    "missing_x_frame_options": "Another website could show {site} in a hidden frame and trick {people} into clicking on it.",
+    "missing_x_content_type_options": "Browsers may guess file types on {site} and could treat an uploaded file as a script.",
+    "cookie_missing_httponly": "Scripts on the page can read this cookie, so an injected script could copy a {person}'s session.",
+    "cookie_missing_secure": "This cookie may travel over unencrypted connections, where someone on a {person}'s network could read it.",
+    "cookie_missing_samesite": "Other websites' requests also carry this cookie, which can help them act on a {person}'s behalf.",
+    "server_version_disclosure": "The server behind {site} announces its exact software versions, so known weaknesses are easier to look up.",
+    "missing_spf": "Others can more easily send email that looks like it comes from you, and {people} may trust it.",
+    "missing_dmarc": "Mail receivers have no instruction for email that fakes your domain, so fakes can reach {people}.",
+    "cert_expires_within_14_days": "The certificate for {site} expires very soon (or already has); browsers will then warn {people}.",
+    "cert_expires_within_30_days": "The certificate for {site} expires within a month; browsers warn {people} once it lapses.",
+    "tls_protocol_below_1_2": "The server behind {site} still agrees to an old encryption protocol version.",
+    "weak_tls_or_expiring_cert": "The encrypted connection to {site} uses outdated settings or a certificate close to expiry.",
+    "outdated_js_library": "Pages on {site} load an old release of a JavaScript library with publicly documented issues.",
+}
+# technical fix wording where the report's text would use a word the pet never says as a claim
+TECH_FIX = {"cookie_missing_secure": "Add the HTTPS-only attribute to the cookie."}
+# one audience sentence for the score and Fix first tour stops: (new, technical)
+TOUR_EXTRA = {
+    "score": {
+        "shop": ("It reflects only what a customer's browser could see.", "Outside-in checks of the storefront only."),
+        "company": ("It reflects only what any visitor to the company site could see.", "Outside-in checks of the company site only."),
+        "clinic": ("It reflects only what a patient's browser could see on the booking site.", "Outside-in checks of the booking site only."),
+        "developer": ("It reflects only these outside-in checks, not your code.", "Outside-in checks only; no source code was read."),
+        "other": ("It reflects only these checks.", "Outside-in checks only."),
+    },
+    "fixfirst": {
+        "shop": ("They are the highest severity, so start there for your customers.",
+                 "Each card names the storefront path and its fix template."),
+        "company": ("They are the highest severity: a good first item for the team's list.",
+                    "Each card names the path and the fix template for the ticket."),
+        "clinic": ("They are the highest severity on the booking site, so start there.",
+                   "Each card names the booking-site path and its fix template."),
+        "developer": ("Highest severity first; each has a fix template you can review.",
+                      "Each card has the path, the evidence and a fix template to diff against your config."),
+        "other": ("They are the highest severity, so start there.", "Each card names the path and the fix template."),
+    },
+}
+
+
 def finding_line(check: str, title: str, location: str, severity: str, audience: str, level: str,
                  index: int, total: int, first_of_kind: bool = True) -> str:
     """The first finding of each kind gets the audience sentence; later ones of the same kind get that check's own
@@ -286,8 +402,13 @@ def finding_line(check: str, title: str, location: str, severity: str, audience:
     cat = CATEGORY.get(check)
     if first_of_kind and cat:
         context = FINDING_CONTEXT[cat][audience][level_index(level)]
+    elif level == "technical" and check in TEXT:  # the exact fix, framed by where it applies
+        fix = TECH_FIX.get(check) or TEXT[check].fix.replace("`", "")
+        context = f"For {WORDS[audience]['site']}: {fix[0].lower()}{fix[1:]}"
+    elif check in CHECK_LINE:
+        context = CHECK_LINE[check].format(**WORDS[audience])
     elif check in TEXT:
-        context = TEXT[check].fix.replace("`", "") if level == "technical" else TEXT[check].plain
+        context = TEXT[check].plain
     else:
         context = ""
     head = f"{severity.capitalize()} issue, {index} of {total}: {title} at {location}."
@@ -314,11 +435,13 @@ def tour_lines(findings: list[dict], score_line: str, audience: str, level: str)
     else:
         score = (f"Heuristic score {score_line} from {n} finding(s), by the fixed severity table."
                  if tech else f"This is your score: {score_line}. The checks found {n} issue(s). Let's look at them in order.")
+    i = level_index(level)
     return {
-        "score": score,
+        "score": score + " " + TOUR_EXTRA["score"][audience][i],
         "findings": _finding_lines(findings, audience, level),
-        "fixfirst": ("Fix first: the top three by the severity table, each with its fixed fix template."
-                     if tech else "These Fix first cards are the three things to do first."),
-        "approve": ("Proposals: approval is an audit-log entry; Apply is separate and demo-only. I never approve for you."
-                    if tech else "Here are the fix proposals. Approving is your decision; I never approve for you."),
+        "fixfirst": ("Fix first: the top three by the severity table." if tech
+                     else "These Fix first cards are your top three.") + " " + TOUR_EXTRA["fixfirst"][audience][i],
+        "approve": ("Proposals: approving is your call; I never approve for you." if tech
+                    else "Here are the fix proposals. Approving is your decision; I never approve for you.")
+        + " " + STEP_CONTEXT["approve"][audience][i],
     }

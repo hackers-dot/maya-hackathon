@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from ui_screens import PAGES, find_chrome, start_chrome  # noqa: E402
+from ui_screens import PAGES, find_chrome, start_chrome, stop_chrome  # noqa: E402
 from src.web.server import make_server  # noqa: E402
 
 SEL = "button, a[href], input, select, textarea, summary, [role=button], [role=tab], [data-guide]"
@@ -62,11 +62,7 @@ def main() -> int:
         if cdp:
             cdp.close()
         if proc:
-            proc.terminate()
-            try:
-                proc.wait(timeout=15)
-            except Exception:
-                proc.kill()
+            stop_chrome(proc)
         server.shutdown()
         server.server_close()
         shutil.rmtree(data_dir, ignore_errors=True)

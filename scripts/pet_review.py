@@ -9,6 +9,7 @@ control: hover with a real pointer, record the control key, the bubble text and 
 replaced by a recorder; no sound). Also checks facts against the API (approve changes nothing, apply only touches
 the demo app, re-test only reads, delete really deletes) and that the tour follows the real findings.
 Run: .venv\\Scripts\\python scripts\\pet_review.py [--quick]   (--quick: one audience x level)
+Light mode (one Chrome per combination): --combo shop/new --json out.json, then --render a.json b.json ... writes the doc.
 """
 import json
 import re
@@ -23,7 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from ui_screens import find_chrome, start_chrome  # noqa: E402
+from ui_screens import find_chrome, start_chrome, stop_chrome  # noqa: E402
 from src.web.server import make_server  # noqa: E402
 
 AUDIENCES = ["shop", "company", "clinic", "developer", "other"]
@@ -295,8 +296,25 @@ def write(rows, facts, combos):
     OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def render(paths) -> int:
+    rows, facts, combos = [], [], []
+    for path in paths:
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+        rows += [tuple(r) for r in d["rows"]]
+        facts += [(label, ok, detail) for label, ok, detail in d["facts"]]  # labels already name the combination
+        combos.append(d["combo"])
+    write(rows, facts, combos)
+    print(f"wrote {OUT.relative_to(ROOT)}: {len(rows)} rows from {', '.join(combos)}")
+    return 0 if all(ok for _, ok, _ in facts) else 1
+
+
 def main(argv=None) -> int:
-    quick = "--quick" in (argv or sys.argv[1:])
+    args = list(sys.argv[1:] if argv is None else argv)
+    if "--render" in args:
+        return render(args[args.index("--render") + 1:])
+    quick = "--quick" in args
+    one = args[args.index("--combo") + 1].split("/") if "--combo" in args else None
+    json_out = Path(args[args.index("--json") + 1]) if "--json" in args else None
     chrome = find_chrome()
     if chrome is None:
         print("chrome.exe not found; review skipped")
@@ -307,7 +325,8 @@ def main(argv=None) -> int:
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
     proc = cdp = None
-    combos = [(a, lv) for a in AUDIENCES for lv in LEVELS][:1 if quick else None]
+    combos = [tuple(one)] if one else [(a, lv) for a in AUDIENCES for lv in LEVELS][:1 if quick else None]
+    assert all(a in AUDIENCES and lv in LEVELS for a, lv in combos), combos
     try:
         proc, port, cdp = start_chrome(chrome, profile)
         cdp.call("Page.enable")
@@ -320,20 +339,19 @@ def main(argv=None) -> int:
             t0 = time.time()
             w.walk(aud, lvl, n)
             print(f"walked {aud}/{lvl}: {len(w.rows)} rows so far ({time.time() - t0:.0f} s)", flush=True)
-        write(w.rows, w.facts, [f"{a}/{lv}" for a, lv in combos])
+        if json_out:  # light mode: rows and facts of this one combination; --render builds the doc
+            json_out.write_text(json.dumps({"combo": "/".join(combos[0]), "rows": w.rows, "facts": w.facts}), encoding="utf-8")
+        else:
+            write(w.rows, w.facts, [f"{a}/{lv}" for a, lv in combos])
         for label, ok, detail in w.facts:
             print(f"{'OK      ' if ok else 'MISMATCH'} {label} [{detail}]")
-        print(f"wrote {OUT.relative_to(ROOT)}: {len(w.rows)} rows")
+        print(f"wrote {json_out or OUT.relative_to(ROOT)}: {len(w.rows)} rows")
         return 0 if all(ok for _, ok, _ in w.facts) else 1
     finally:
         if cdp:
             cdp.close()
         if proc:
-            proc.terminate()
-            try:
-                proc.wait(timeout=15)
-            except Exception:
-                proc.kill()
+            stop_chrome(proc)
         server.shutdown()
         server.server_close()
         shutil.rmtree(data_dir, ignore_errors=True)

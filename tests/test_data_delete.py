@@ -170,7 +170,7 @@ def test_connectors_listed_with_coming_soon_not_buttons():
     import re
     chat = (STATIC_DIR / "chat.html").read_text(encoding="utf-8")
     block = chat.split('<div id="connectors"', 1)[1].split("</div>", 1)[0]
-    assert re.search(r'href="/connect-website"><span>Website</span>', block)
+    assert re.search(r'href="/connect-website"[^>]*><span>Website</span>', block)
     assert '<button id="conn-code"' in block and '<button id="conn-logs"' in block
     for name in ("API", "Mobile", "Cloud"):
         li = re.search(rf'<li class="connector connector-soon"><span>{name}</span><span class="chip">coming soon</span></li>',

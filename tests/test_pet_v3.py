@@ -105,6 +105,14 @@ def test_tour_lines_cover_every_check_for_every_audience_and_level():
     # the first finding of each kind speaks to the audience; later ones use the check's own text (no repeats)
     t = tour_lines(findings, "Grade D · 47/100", "shop", "new")
     assert len(set(t["findings"].values())) == len(findings)
+    # and no tour line reads the same for every audience (later findings of a kind use the audience's words too)
+    web = [f for f in findings if CATEGORY[f["check"]] not in ("code", "logs", "lookalike", "message")]
+    for level in ("new", "technical"):
+        per = {a: tour_lines(web, "Grade D · 47/100", a, level) for a in AUDIENCES}
+        for key in ("score", "fixfirst", "approve"):
+            assert len({per[a][key] for a in AUDIENCES}) == len(AUDIENCES), (level, key)
+        for f in web:
+            assert len({per[a]["findings"][f["id"]] for a in AUDIENCES}) == len(AUDIENCES), (level, f["check"])
 
 
 def test_guide_api_takes_the_audience_and_returns_tour_lines(tmp_path):

@@ -238,6 +238,20 @@ def start_chrome(chrome: Path, profile: Path):
     return proc, port, CDP(page["webSocketDebuggerUrl"])
 
 
+def stop_chrome(proc) -> None:
+    """Stop headless Chrome and its child processes. On Windows terminate() ends only the browser process and leaves
+    the GPU, network and renderer children running (they held about 1 GB after a few runs), so kill the whole tree."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=30)
+    else:
+        proc.terminate()
+    try:
+        proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=15)
+
+
 def shoot(cdp: CDP, url: str, out: Path, width: int, height: int, mobile: bool):
     cdp.call("Emulation.setDeviceMetricsOverride", width=width, height=height, deviceScaleFactor=1, mobile=mobile)
     # headless Chrome reports prefers-reduced-motion: reduce; set it explicitly (?motion=reduce for that path)
@@ -311,12 +325,7 @@ def main(argv=None) -> int:
         if cdp:
             cdp.close()
         if proc:
-            proc.terminate()
-            try:
-                proc.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=15)
+            stop_chrome(proc)
             print(f"chrome stopped (exit code {proc.returncode})")
         server.shutdown()
         server.server_close()
