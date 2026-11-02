@@ -141,7 +141,9 @@
 <div class="field"><label for="pet-rate">Speed</label><input id="pet-rate" type="range" min="0.7" max="1.5" step="0.05"></div>
 <div class="field"><label for="pet-pitch">Pitch</label><input id="pet-pitch" type="range" min="0.6" max="1.8" step="0.05"></div>
 </div>
-<label class="check-row"><input id="pet-speak-steps" type="checkbox"> <span>Speak the steps</span></label>
+<p class="hint">MAYA speaks by default. The speaker button on the pet mutes her; that is the only switch that silences her. Browsers start speech only after your first click or key press on the page.</p>
+<label class="check-row"><input id="pet-speak-steps" type="checkbox"> <span>Speak guide lines</span></label>
+<label class="check-row"><input id="pet-speak-hover" type="checkbox"> <span>Speak hover explanations</span></label>
 <label class="check-row"><input id="pet-speak-answers" type="checkbox"> <span>Speak answers (a one-line summary of the model's reply in the chat)</span></label>
 <div class="actions"><button id="pet-voice-test" class="btn btn-secondary" type="button">Test voice</button><button id="pet-voice-stop" class="btn btn-quiet" type="button">Stop</button></div>
 <p id="pet-voice-status" class="hint" role="status"></p>

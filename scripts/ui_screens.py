@@ -89,6 +89,8 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("guide-running", "/__preview/chat.html?view=running&guide=running&level=new&expand=1"),
     ("guide-speaking", "/__preview/chat.html?view=chat&guide=chat&level=new&expand=1&talk=1"),
     ("pet-greeting", "/__preview/onboarding.html?greet=1"),
+    ("pet-hover-signin", "/__preview/signin.html?level=new&hover=tab-signup"),
+    ("pet-idle-dance", "/__preview/chat.html?view=finished&guide=concerned&level=new&antic=dance"),
     ("pet-hover", "/__preview/chat.html?view=finished&guide=concerned&level=new&hover=reset-demo-btn"),
     ("pet-tour", "/__preview/chat.html?view=finished&guide=concerned&level=new&tour=1"),
     ("pet-help-consent", "/__preview/chat.html?view=pet&level=new&help=consent&scroll=pet-help-consent"),
@@ -240,7 +242,8 @@ def shoot(cdp: CDP, url: str, out: Path, width: int, height: int, mobile: bool):
     cdp.call("Page.navigate", url=url)
     cdp.wait_event("Page.loadEventFired")
     # let app.js fetch /api/session and fill the page; pet pages also play their emotion sequence and walk
-    time.sleep(3.6 if "guide=" in url or "pet-sheet" in url else 0.8)
+    pet_page = any(k in url for k in ("guide=", "pet-sheet", "hover=", "antic=", "greet=", "level="))
+    time.sleep(4.4 if pet_page else 0.8)
     target = re.search(r"[?&]scroll=([a-z-]+)", url)
     if target:  # the shell scrolls inside .conversation, so scroll that, not the window
         name = target.group(1)

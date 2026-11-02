@@ -180,5 +180,6 @@ def test_voice_and_mic_disclosures_are_in_the_ui():
                  "the browser may send the spoken text to the voice provider. MAYA itself sends nothing"):
         assert text in js, text
     # speech only after the user's own gesture, and only browser APIs (no audio ever reaches the server)
-    assert "|| !gesture) return;" in js and "getUserMedia" not in js and "MediaRecorder" not in js
-    assert re.search(r'load\("maya-voice", "unset"\)', js)  # voice is off until the user turns it on
+    # speech waits for the browser's user-activation rule: the latest line is kept until the first gesture
+    assert "if (!gesture) { pendingSpeech = {" in js and "getUserMedia" not in js and "MediaRecorder" not in js
+    assert 'load("maya-voice", "on") === "off" ? "off" : "on"' in js  # on by default; only mute turns it off

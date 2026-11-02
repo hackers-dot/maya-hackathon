@@ -493,6 +493,22 @@ See `src/models.py`:
   - Pending actions sit in an `ActionQueue`; Esc or any manual click outside the pet cancels them and logs "Pet stopped".
 - **Never-list controls in a step:** the pet offers a chip ("Run the scan?" / "Scan chalaun?", "Where do I press?") that scrolls to and highlights the real button and says "press it yourself"; it never presses it.
 
+### Pet v2 fixes
+
+- **Diagnosed with real input events** (headless Chrome, `Input.dispatchMouseEvent`):
+  - **Chips:** the level chip was on top and its click handler fired. The only visible result was a second question (opt-in voice), with no expression change and no next step.
+  - **Silence:** speech was gated by an opt-in default, hover lines were never spoken, and `speak()` dropped lines before a gesture.
+  - **Idle:** antics needed the pet at home, PLAY mode (20 s) and a 25 s gap, so the first one came at about 25 s and nothing after sleepy. A pet left beside a control never came home.
+- **Speech.** On by default; mute (`maya-voice = off`) is the only off switch, plus per-kind toggles that default to on. `navigator.userActivation.hasBeenActive` or the first pointerdown, keydown or touchstart (capture, once) unlocks it: `cancel()`, a silent utterance, then the one pending line (only the latest is kept). Muted, the bubble, expressions and a timed mouth continue.
+- **Hover.** Capture-phase `pointerover`/`pointerout` on `document` from startup, on every page including sign-in, with a wide selector. Unknown controls get a line built from their visible label. Spoken rules:
+  - one sentence, the full one only for a never-used control;
+  - the previous line is cancelled first;
+  - no repeat for the same control within 30 s (class keys include the label);
+  - speech stops when the pointer has left for 800 ms.
+  A bubble with choices is restored, not spoken, after a hover.
+- **Idle scheduler.** `pet-brain.js idleTick()` runs every 1 s: ACTIVE, then IDLE_WAIT after 8 s, then PLAYING (the first antic is look or wave at 8-15 s, then every 15-25 s), then SLEEPY at 45 s; the next input is "wake". WORK pauses it, and the end of WORK counts as input. Reduced motion allows only wink, sleepy and wake. A pet away from home walks back after 8 s of quiet.
+- **Proof.** `scripts/pet_check.py` uses real mouse and key events, with speech calls recorded and none played. `tests/test_pet_fixes.py` runs it when Chrome is installed, and runs the scheduler for 90 s on a fake clock.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

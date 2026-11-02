@@ -300,7 +300,4 @@ def test_guide_js_static_rules():
         page = p.read_text(encoding="utf-8")
         if p.name == "pet-sheet.html":
             continue  # test-only contact sheet, served only in preview mode
-        if p.name == "signin.html":
-            assert "guide.js" not in page  # signed-in pages only
-        else:
-            assert '<script src="/static/guide.js" defer></script>' in page, p.name
+        assert '<script src="/static/guide.js" defer></script>' in page, p.name  # every page, sign-in too

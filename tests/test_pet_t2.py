@@ -94,21 +94,24 @@ let used = {};
 used = b.bump(used, 'dl-pack'); used = b.bump(used, 'dl-pack');
 console.log(JSON.stringify({
   levels: [0, 1, 4, 5, 50].map(b.detailFor),
-  full: b.hoverText('apply-btn', 'en', 0), short: b.hoverText('apply-btn', 'en', 2), none: b.hoverText('apply-btn', 'en', 9),
+  full: b.hoverText('apply-btn', 'en', 0), short: b.hoverText('apply-btn', 'en', 2), many: b.hoverText('apply-btn', 'en', 9),
   hiFull: b.hoverText('scan-btn', 'hinglish', 0), unknown: b.hoverText(null, 'en', 0),
+  labelled: b.hoverText(null, 'hinglish', 0, '  Experience   level '),
   used: used,
   suggest: b.pickSuggestion(['dl-pack', 'fixfirst-panel'], used), suggestUsed: b.pickSuggestion(['dl-pack'], used),
   suggestNone: b.pickSuggestion([], {}), suggestText: b.suggestText('fixfirst-panel', 'hinglish'),
   keyId: b.keyFor('scan-btn', ['btn']), keyClass: b.keyFor('', ['finding-sum']), keyNone: b.keyFor('x', ['y']),
 }));
 """)
-    assert out["levels"] == ["full", "short", "short", "none", "none"]
+    assert out["levels"] == ["full", "short", "short", "short", "short"]  # every hover explains something
     assert out["full"]["isNew"] and out["full"]["text"].startswith("New: Apply approved fixes")
     assert "(changes something on your demo app)" in out["full"]["text"]
-    assert out["short"] == {"text": "Apply approved fixes: changes something on your demo app.", "isNew": False}
-    assert out["none"] is None
+    assert out["full"]["spoken"].count(".") == 1  # spoken as one sentence
+    short = "Apply approved fixes: changes something on your demo app."
+    assert out["short"] == {"text": short, "spoken": short, "isNew": False} and out["many"] == out["short"]
     assert out["hiFull"]["text"].startswith("Naya: Run security scan")
     assert out["unknown"]["text"] == "This control is part of MAYA. Nothing happens until you click it."
+    assert out["labelled"]["text"].startswith("\u201cExperience level\u201d: iske baare mein")  # from the visible label
     assert out["used"] == {"dl-pack": 2}
     assert (out["suggest"], out["suggestUsed"], out["suggestNone"]) == ("fixfirst-panel", None, None)
     assert out["suggestText"] == "Ye abhi tak try nahi kiya: Fix first"
@@ -121,14 +124,14 @@ const quiet = {state: 'nothing_to_do', scanRunning: false, typing: false, sinceH
 const m = (x) => b.mode(Object.assign({}, quiet, x));
 const a = (x) => b.nextAntic(Object.assign({mode: 'play', reduced: false, now: 100000, lastAnticAt: 0, count: 0}, x));
 console.log(JSON.stringify({
-  play: m({}), scan: m({scanRunning: true}), typing: m({typing: true}), hover: m({sinceHoverMs: 3000}),
-  busyIdle: m({idleMs: 5000}), approval: m({state: 'proposals_not_approved'}), apply: m({state: 'applied_not_retested'}),
+  play: m({}), scan: m({scanRunning: true}), typing: m({typing: true}), hover: m({sinceHoverMs: 5000}),
+  oldHover: m({sinceHoverMs: 7000}), approval: m({state: 'proposals_not_approved'}), apply: m({state: 'applied_not_retested'}),
   first: a({}), work: a({mode: 'work'}), reduced: a({reduced: true}), tooSoon: a({lastAnticAt: 90000}),
   rotate: [0, 1, 2, 3, 4, 5, 6].map((c) => a({count: c})), gap: b.ANTIC_GAP_MS,
 }));
 """)
-    assert out["play"] == "play"
-    assert all(out[k] == "work" for k in ("scan", "typing", "hover", "busyIdle", "approval", "apply"))
+    assert out["play"] == "play" and out["oldHover"] == "play"  # pointer on a control in the last 6 s = work
+    assert all(out[k] == "work" for k in ("scan", "typing", "hover", "approval", "apply"))
     assert out["first"] == "wink" and out["work"] is None and out["reduced"] is None and out["tooSoon"] is None
     assert out["rotate"] == ["wink", "dance", "look", "peek", "hide", "chase", "wink"] and out["gap"] == 25000
 

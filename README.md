@@ -39,9 +39,15 @@ MAYA, the project's own character, lives on every signed-in page as a small pet:
 - **Small and out of the way:** about 80 px tall (56 px on phones). What she says appears in a small bubble beside her, with choices as chips ("Show me", "Next tip", your level), and it hides after you have had time to read it. The bubble never covers the control she is talking about and tries not to cover any other control nearby. On her own surface there are only two buttons, mute and hide; "Call pet" and "Pet settings" are in the sidebar.
 - **Pet settings** (sidebar): experience level, language, voice picker with Preview, speed, pitch, speak the steps, speak answers, microphone (optional), "Let the pet help me" (not available yet) and "Reset what the pet learned".
 - **What she does:** she walks to the button she is talking about and points at it without covering any other control, then goes home. You can drag her anywhere. With reduced motion turned on she stays docked and only her face changes.
-- **Hover guide:** rest the mouse on a button for a moment and she glides next to it and says what it is, what a click does, and its effect: "only reads", "changes something on your demo app", "needs your approval", "sends data to ..." (naming where), or "deletes your data". Not on touch screens and not while you type.
+- **Hover guide, on every page (sign-in too):** rest the mouse on a control for a moment and she glides next to it, then shows and says what it is, what a click does, and its effect: "only reads", "changes something on your demo app", "needs your approval", "sends data to ..." (naming where), or "deletes your data".
+  - Controls she has no notes on get a line built from their own label.
+  - She speaks one sentence per control: the full explanation only for a control you have never used. She does not repeat the same control within 30 s and stops talking when you move away.
+  - Not on touch screens and not while you type.
 - **She learns, on this device only:** she remembers which buttons you have used. New ones get the full explanation, familiar ones a single line or nothing. When you are idle she may suggest one thing you have not tried yet. "Reset what the pet learned" and "Delete my data" clear it. Nothing is sent to MAYA's server.
-- **Work and play:** while a scan or re-test runs, an approval is waiting, or you are typing or exploring, she stays calm and helpful. After about 20 s of quiet she may wink, dance, look around, peek or follow the pointer a few steps, at most once every 25 s and never over a button. She gets sleepy after about 45 s.
+- **Work and play:** while a scan or re-test runs, an approval is waiting, you are typing, or the pointer was on a control in the last 6 s, she stays calm and helpful.
+  - After 8 s of quiet she looks around or waves, then does one small thing every 15 to 25 s (wink, wave, a tiny dance, look at the pointer, peek, stretch).
+  - She gets sleepy at about 45 s and wakes up surprised when you move the mouse.
+  - With reduced motion she does not walk or dance; she still blinks, winks and gets sleepy.
 - **After a scan:** she reacts to the real result and offers a short tour ("Show me" or "Skip"): the score ring, then each finding in severity order (critical first) with what it means and what to look at, then Fix first, then the approve step. She explains approving but never does it; Esc ends the tour.
 - **"Let the pet help me"** (Pet settings, off by default): after you read and accept a short list, she may do a few harmless things herself.
   - **What she may do:** scroll to what she is talking about, open or close a finding card, switch the Owner / Developer / Technical view or the summary language, highlight something, or open a read-only panel.
@@ -51,10 +57,11 @@ MAYA, the project's own character, lives on every signed-in page as a small pet:
 - **Steps and emotions are not from a model.** They come from a fixed state machine over your own stored data: account, consent, verification, scan, findings, proposals, apply, re-test.
   - She explains what was found before she asks for any approval. She never approves or applies anything for you, never says a site is "safe" or "secure", and gives no time or cost estimates.
   - Her greeting and guide lines are fixed templates, so they carry no "unverified model text" badge. Only real model answers in the chat carry it.
-- **First visit:** on a new device or account she waves, says hello ("Hii! Main MAYA hoon...", or the English version) and asks your level. She speaks only after you turn the voice on.
+- **First visit:** on a new device or account she waves, says hello ("Hii! Main MAYA hoon...", or the English version) and asks your level with chips. Choosing a level makes her happy and the guide continues at once in that level's words.
 - **Language:** English or Hinglish, written as MAYA herself (first person, female). Every Hinglish line also has a Devanagari version that is spoken only with a Hindi (hi-IN) voice; the screen always shows the Roman text. The Hinglish and Devanagari text still needs review by a native speaker.
 - **Voice is your browser's built-in text-to-speech, not a Meta model, and not MAYA's server.**
-  - It is off until you turn it on: browsers only allow speech after a click.
+  - **She speaks from the start, and mute is the only switch that silences her.** The speaker button on the pet mutes her and the choice is remembered. Muted, she keeps showing the bubble, moving her mouth and guiding; only the sound stops. Pet settings also has per-kind switches (guide lines, hover explanations, answers), all on by default.
+  - **Browsers start speech only after your first click, key press or touch on the page.** Until then the bubble shows "Click anywhere and I'll start talking". On that first gesture she unlocks the audio and says the line that was waiting: only the latest one, never a backlog.
   - By default she picks a female-sounding voice in your language (hi-IN for Hinglish if there is one, then en-IN, then other English) and never a male-sounding one. The default pitch is slightly high (1.2). You can pick any installed voice yourself.
   - If no female-sounding voice is installed, the settings page says so; install one in Windows Settings > Speech.
   - Some browser voices are online voices: the browser may send the spoken text to the voice provider. MAYA itself sends nothing.
@@ -188,6 +195,12 @@ MAYA, the project's own character, lives on every signed-in page as a small pet:
   - "Let the pet help me", off by default, is turned on through a consent card. An allowlist in `static/pet-brain.js` permits only scroll, open or close a finding card, switch the view or summary language, highlight, and open a read-only panel. A never-list covers every state-changing control.
   - Every action and refusal is logged in Pet settings; Esc or a manual click cancels anything pending.
   - The tests try every forbidden control with every action and expect a refusal.
+- **2026-11-02 (Pet v2 fixes):** Clickable chips, speech from the first gesture, hover guide everywhere, idle life.
+  - The level chips now visibly continue the guide (happy face, next line) instead of asking a second question.
+  - Speech is on by default and unlocks on the first gesture; mute is the only silence switch.
+  - Hover explanations run and are spoken on every page, including sign-in.
+  - Idle life: one 1-second scheduler with explicit states. A pet left beside a control now comes home, and the end of WORK resets the idle wait.
+  - `scripts/pet_check.py` checks all of this with real mouse and key events in headless Chrome.
 
 ## License
 

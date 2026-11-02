@@ -96,10 +96,11 @@
     petHidden: load("maya-pet-hidden", "0") === "1",
     level: load("maya-guide-level", ""),
     lang: load("maya-guide-lang", "en") === "hinglish" ? "hinglish" : "en",
-    voice: load("maya-voice", "unset"),            // unset | on | off; "on" only after the user's own click
+    voice: load("maya-voice", "on") === "off" ? "off" : "on",  // "off" only when the user pressed mute
     voiceURI: load("maya-voice-uri", ""),
     speakSteps: load("maya-speak-steps", "1") === "1",
-    speakAnswers: load("maya-guide-speak-answers", "0") === "1",
+    speakHover: load("maya-speak-hover", "1") === "1",
+    speakAnswers: load("maya-guide-speak-answers", "1") === "1",
     rate: num(load("maya-voice-rate", "1"), 0.7, 1.5, 1),
     pitch: num(load("maya-voice-pitch", "1.2"), 0.6, 1.8, 1.2),
   };
@@ -109,12 +110,19 @@
   let target = null;
   let pet = null;
   let voices = [];
-  let gesture = false;  // speechSynthesis may only start after a user gesture
+  // browsers allow speechSynthesis only after a user activation: until the first gesture the latest line waits
+  let gesture = !!(navigator.userActivation && navigator.userActivation.hasBeenActive);
+  let pendingSpeech = null;
   let speechRun = 0;
+  let sticky = null;          // the last bubble with choices, shown again after a hover explanation
+  let hoverSpeaking = false;
+  let lastHoverSpoken = {};   // control -> time: the same control is not spoken again within 30 s
+  let chosenLevelJustNow = false;
+  const SIGNIN = document.body ? document.body.classList.contains("auth-page") : false;
   let greetKey = null;
   // tier 2: hover guide, what the pet learned on this device, work/play mode, post-scan tour
-  const INTERACTIVE = "button, a[href], [role=tab], select, input[type=file], input[type=checkbox], input[type=range], " +
-    "summary, .finding-sum, .asset-item";
+  const INTERACTIVE = "button, a, [role=button], [role=tab], input, select, summary, label, .finding-card, .tab, " +
+    "[data-guide], .finding-sum, .asset-item";
   let used = {};
   let hoverEl = null;
   let hoverTimer = null;
@@ -134,11 +142,19 @@
   const chip = (name, onClick) => ({ label: (L().CHIPS[name] || {})[prefs.lang] || name, onClick: onClick });
 
   // ---------- what MAYA says ----------
-  function say(text, spokenHi, chips, opts) {
+  function unlockHint() {
+    const h = L().LINES.tapToTalk || {};
+    return !gesture && prefs.voice === "on" && core.speechSupported(window) ? (h[prefs.lang] || h.en || "") : "";
+  }
+  function say(text, spokenHi, chips, opts, kind) {
     if (!pet || prefs.petHidden) return;
-    pet.say(text, chips || [], opts || {});
-    if (prefs.voice === "on" && gesture && prefs.speakSteps) speak(text, spokenHi, false);
-    else briefTalk(text);
+    const o = Object.assign({}, opts || {}, { hint: unlockHint() });
+    pet.say(text, chips || [], o);
+    if (o.sticky && (chips || []).length) sticky = { text: text, chips: chips, opts: opts || {} };
+    else if ((chips || []).length === 0 && kind !== "hover") sticky = null;
+    const allowed = kind === "hover" ? prefs.speakHover : kind === "answer" ? prefs.speakAnswers : prefs.speakSteps;
+    if (prefs.voice === "on" && allowed) speak(text, spokenHi, kind === "answer");
+    else briefTalk(text, true);
   }
   function showStep() {
     const s = steps[stepIndex];
@@ -147,7 +163,9 @@
     document.querySelectorAll(".guide-target").forEach((n) => n.classList.remove("guide-target"));
     const t = target && $(target);
     if (t) t.classList.add("guide-target");
-    pet.setEmotion(s.emotion);
+    const emotion = chosenLevelJustNow ? [{ expression: "happy", pose: "idle", ms: 1400 }].concat(s.emotion) : s.emotion;
+    chosenLevelJustNow = false;
+    pet.setEmotion(emotion);
     if (t && s.emotion.some((e) => e.pose === "pointing")) setTimeout(() => pet.moveTo(t), 500);
     const chips = [];
     const never = t && brain() && brain().NEVER_IDS.indexOf(t.id) >= 0;
@@ -169,7 +187,11 @@
   async function refresh() {
     if (!prefs.level) return askLevel();
     let data = null;
-    if (PREVIEW) {
+    if (SIGNIN) {
+      const x = line("signinStep");
+      data = { steps: [{ state: "signin", line: x.text, spoken_hi: x.spoken, why: null, targets: ["signin-email", "signup-email"],
+        emotion: [{ expression: "smiling", pose: "pointing", ms: null }] }] };
+    } else if (PREVIEW) {
       const r = await fetch("/__preview/sample.json", { credentials: "same-origin" });
       const sample = r.ok ? await r.json() : {};
       data = (sample.guide || {})[new URLSearchParams(window.location.search).get("guide") || "no_account_type"] || null;
@@ -193,34 +215,44 @@
     try { const v = JSON.parse(raw || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; }
   }
   function saveUsed() { save("maya-pet-used", JSON.stringify(used)); }
-  function typing() {
-    const a = document.activeElement;
-    const field = a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && /^(text|email|url|password|search)$/.test(a.type)));
-    return !!field || Date.now() - lastTypingAt < 2500;
-  }
+  // typing = a key pressed in a text field in the last 2.5 s (a focused but quiet field does not count)
+  function typing() { return Date.now() - lastTypingAt < 2500; }
   function chipsOpen() { return !!pet && !pet.bubble.hidden && !!pet.bubble.querySelector(".pet-chip"); }
   function hoverKey(el) {
     const b = brain();
     return b ? b.keyFor(el.id, Array.from(el.classList)) : null;
   }
+  function visibleLabel(el) {
+    const own = el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("placeholder") || "";
+    const lab = el.id && document.querySelector('label[for="' + el.id + '"]');
+    return (own || (lab ? lab.textContent : "") || el.textContent || el.value || "").replace(/\s+/g, " ").trim();
+  }
   function explain(el) {
     const b = brain();
-    if (!b || !pet || prefs.petHidden || tour || chipsOpen() || typing() || !document.contains(el)) return;
+    if (!b || !pet || prefs.petHidden || tour || typing() || !document.contains(el)) return;
     const key = hoverKey(el);
-    const t = b.hoverText(key || "generic", prefs.lang, key ? used[key] || 0 : used["generic"] || 0);
-    if (!t) return;
+    const t = b.hoverText(key, prefs.lang, key ? used[key] || 0 : 0, visibleLabel(el));
     lastHoverAt = Date.now();
     hoverShown = true;
     pet.setEmotion([{ expression: t.isNew ? "excited" : "curious", pose: "pointing", ms: null }]);
     pet.moveTo(el, Infinity);
-    pet.say(t.text, [], { avoid: el, ms: 9000 });
-    briefTalk(t.text);
+    pet.say(t.text, [], { avoid: el, ms: 9000, hint: unlockHint() });
+    // one entry per control: a class key (e.g. ".suggestion") is shared by several buttons, so add the label
+    const id = key && key.charAt(0) !== "." ? key : (key || "") + ":" + visibleLabel(el);
+    const now = Date.now();
+    if (prefs.voice === "on" && prefs.speakHover && now - (lastHoverSpoken[id] || 0) > 30000) {
+      lastHoverSpoken[id] = now;
+      hoverSpeaking = true;
+      speak(t.spoken, null, false);  // cancels whatever was being said: never more than one hover line
+    } else briefTalk(t.text, true);
   }
   function endHover() {
     hoverShown = false;
+    if (hoverSpeaking) { hoverSpeaking = false; stopSpeech(); }
     if (!pet || tour) return;
-    if (!chipsOpen()) pet.hideBubble();
     pet.goHome(false);
+    if (sticky) pet.say(sticky.text, sticky.chips, Object.assign({}, sticky.opts, { hint: unlockHint() }));  // shown again, not spoken
+    else pet.hideBubble();
     if (steps[stepIndex]) pet.setEmotion(steps[stepIndex].emotion);
   }
   function wireHover() {
@@ -233,14 +265,14 @@
       clearTimeout(hoverTimer);
       clearTimeout(leaveTimer);
       hoverTimer = setTimeout(() => { if (hoverEl === el) explain(el); }, 400);
-    });
+    }, true);
     document.addEventListener("pointerout", (e) => {
       if (!hoverEl || (e.relatedTarget && hoverEl.contains(e.relatedTarget))) return;
       if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".pet-layer")) return;
       hoverEl = null;
       clearTimeout(hoverTimer);
       if (hoverShown) leaveTimer = setTimeout(endHover, 800);
-    });
+    }, true);
   }
   // what the pet learns: which controls this user clicks, how often (this device only)
   function wireLearning() {
@@ -399,25 +431,21 @@
   }
   function setLevel(level) {
     if (["new", "some", "technical"].indexOf(level) < 0) return;
-    gesture = true;
     prefs.level = level;
     save("maya-guide-level", level);
     const role = { new: "owner", some: "developer", technical: "technical" }[level];
     save("maya-role", role);
     document.dispatchEvent(new CustomEvent("maya:role", { detail: role }));  // the findings toggle follows the level
     syncSettings();
-    if (prefs.voice === "unset" && core.speechSupported(window)) {
-      const v = line("askVoice");
-      say(v.text, v.spoken, [chip("voiceOn", () => { setVoice("on"); refresh(); }),
-        chip("later", () => { setVoice("off"); refresh(); })], { sticky: true });
-    } else {
-      refresh();
-    }
+    sticky = null;
+    if (pet) pet.setEmotion([{ expression: "happy", pose: "idle", ms: null }]);
+    chosenLevelJustNow = true;
+    refresh();  // the guide continues at once, in the chosen level's words
   }
 
   // ---------- voice: the browser's own text-to-speech ----------
   function setVoice(v) {
-    gesture = true;
+    unlock();
     prefs.voice = v;
     save("maya-voice", v);
     if (pet) pet.setMuted(v !== "on");
@@ -463,8 +491,24 @@
   }
   // Speak in sentence-sized pieces (Chrome stops one long utterance after about 15 s); the mouth follows
   // word boundary events, or a timer when the voice sends none.
+  function unlock() {
+    if (gesture) return;
+    gesture = true;
+    if (core.speechSupported(window)) {
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      const silent = new window.SpeechSynthesisUtterance(" ");
+      silent.volume = 0;
+      synth.speak(silent);  // unlocks audio inside the gesture
+    }
+    const p = pendingSpeech;
+    pendingSpeech = null;
+    if (pet) pet.bubble.querySelectorAll(".pet-bubble-hint").forEach((n) => n.remove());
+    if (p && prefs.voice === "on") speak(p.text, p.spokenHi, p.summary);
+  }
   function speak(text, spokenHi, summary, force) {
-    if (!core.speechSupported(window) || (!force && prefs.voice !== "on") || !gesture) return;
+    if (!core.speechSupported(window) || (!force && prefs.voice !== "on")) return;
+    if (!gesture) { pendingSpeech = { text: text, spokenHi: spokenHi, summary: summary }; briefTalk(text, true); return; }
     const pick = chosenVoice();
     const clean = core.speakable(core.spokenText(text, spokenHi, pick.voice), summary ? 200 : 600, summary);
     const parts = window.MayaPet ? window.MayaPet.core.splitSentences(clean.replace(/।/g, "."), 160) : [clean];
@@ -504,6 +548,7 @@
       u.onend = u.onerror = () => {
         if (run !== speechRun || i < parts.length - 1) return;
         clearInterval(flap);
+        hoverSpeaking = false;
         if (pet) pet.talkStop();
       };
       synth.speak(u);
@@ -515,11 +560,11 @@
     if (pet) pet.talkStop();
   }
   // without voice the mouth still moves briefly when a new line appears
-  function briefTalk(text) {
+  function briefTalk(text, whole) {
     if (!pet || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     pet.talkStart();
     let open = false;
-    const until = Date.now() + Math.min(2400, core.estimateMs(text, 1.4));
+    const until = Date.now() + (whole ? Math.min(9000, core.estimateMs(text, prefs.rate)) : Math.min(2400, core.estimateMs(text, 1.4)));
     const t = setInterval(() => {
       open = !open;
       pet.mouth(open);
@@ -563,8 +608,9 @@
     set("pet-lang", "value", prefs.lang);
     set("pet-rate", "value", String(prefs.rate));
     set("pet-pitch", "value", String(prefs.pitch));
-    set("pet-speak-steps", "checked", prefs.voice === "on" && prefs.speakSteps);
+    set("pet-speak-steps", "checked", prefs.speakSteps);
     set("pet-speak-answers", "checked", prefs.speakAnswers);
+    set("pet-speak-hover", "checked", prefs.speakHover);
     set("pet-mic", "checked", load("maya-pet-mic", "0") === "1");
     set("pet-help", "checked", helpOn);
   }
@@ -572,7 +618,7 @@
     if (!$("pet-view")) return;
     const speech = core.speechSupported(window);
     const on = (id, ev, fn) => { const n = $(id); if (n) n.addEventListener(ev, fn); };
-    const test = () => { gesture = true; const t = line("voiceTest"); speak(t.text, t.spoken, false, true); };
+    const test = () => { unlock(); const t = line("voiceTest"); speak(t.text, t.spoken, false, true); };
     $("pet-voice-note").textContent = VOICE_NOTE;
     on("pet-level", "change", () => setLevel($("pet-level").value));
     on("pet-lang", "change", () => { prefs.lang = $("pet-lang").value; save("maya-guide-lang", prefs.lang); fillVoicePicker(); refresh(); });
@@ -585,7 +631,10 @@
     on("pet-speak-steps", "change", () => {
       prefs.speakSteps = $("pet-speak-steps").checked;
       save("maya-speak-steps", prefs.speakSteps ? "1" : "0");
-      if (prefs.speakSteps) setVoice("on");
+    });
+    on("pet-speak-hover", "change", () => {
+      prefs.speakHover = $("pet-speak-hover").checked;
+      save("maya-speak-hover", prefs.speakHover ? "1" : "0");
     });
     on("pet-speak-answers", "change", () => {
       prefs.speakAnswers = $("pet-speak-answers").checked;
@@ -618,7 +667,7 @@
       $("pet-reset-message").textContent = "Done: the pet forgot what it learned on this device.";
     });
     for (const id of ["pet-voice", "pet-voice-preview", "pet-voice-test", "pet-voice-stop", "pet-rate", "pet-pitch",
-      "pet-speak-steps", "pet-speak-answers"]) if ($(id)) $(id).disabled = !speech;
+      "pet-speak-steps", "pet-speak-hover", "pet-speak-answers"]) if ($(id)) $(id).disabled = !speech;
     $("pet-mic").closest(".panel").hidden = !core.recognitionCtor(window);  // no speech recognition: no microphone option
     $("pet-mic-note").textContent = MIC_NOTE;
     $("pet-mic-note").hidden = !$("pet-mic").checked;
@@ -658,6 +707,7 @@
     if (type === "answered") {
       if (pet) pet.setEmotion(table.answered);
       if (prefs.speakAnswers && prefs.voice === "on") speak(e.detail.text, null, true);
+      else briefTalk(e.detail.text);
       return;
     }
     if (table[type] && pet) pet.setEmotion(table[type]);
@@ -672,20 +722,20 @@
       const d = r.ok ? await r.json() : {};
       email = d.user && d.user.email ? d.user.email : (PREVIEW ? "preview@maya.local" : "");
     } catch (e) { email = ""; }
-    if (!email || !window.crypto || !window.crypto.subtle) return "maya-greeted";
+    if (!email || !window.crypto || !window.crypto.subtle) return "maya-greeted";  // no account yet (sign-in page)
     const hash = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(email.toLowerCase()));
     return "maya-greeted-" + Array.from(new Uint8Array(hash)).slice(0, 6).map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
-    if (!document.body || document.body.classList.contains("auth-page")) return;  // signed-in pages only
+    if (!document.body) return;
     const mobile = window.matchMedia("(max-width: 860px)").matches;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const asked = new URLSearchParams(window.location.search);
-    if (PREVIEW) {  // screenshots: a clean device, the voice not yet chosen
+    if (PREVIEW) {  // screenshots: a clean device
       helpOn = asked.get("help") === "on";
       prefs.level = asked.get("level") || "";
-      prefs.voice = asked.get("voice") || "unset";
+      prefs.voice = asked.get("voice") === "off" ? "off" : "on";
       prefs.petHidden = false;
     }
     if (window.MayaPet) {
@@ -709,10 +759,8 @@
     wireSettings();
     loadVoices();
     document.addEventListener("maya:event", onEvent);
-    // browsers allow speech only after a user gesture: the first click or key press counts
-    const firstGesture = () => { gesture = true; };
-    document.addEventListener("pointerdown", firstGesture, { once: true });
-    document.addEventListener("keydown", firstGesture, { once: true });
+    // browsers allow speech only after a user gesture: the first pointerdown, key press or touch anywhere unlocks it
+    for (const ev of ["pointerdown", "keydown", "touchstart"]) document.addEventListener(ev, unlock, { once: true, capture: true });
     if (window.MayaBrain) actions = window.MayaBrain.ActionQueue(window.setTimeout.bind(window), window.clearTimeout.bind(window));
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
@@ -733,9 +781,10 @@
     const shouldGreet = PREVIEW ? !!asked.get("greet") : load(greetKey, "0") !== "1";
     if (shouldGreet) greet(); else refresh();
     if (PREVIEW && asked.get("talk") && pet) setTimeout(() => { pet.talkStart(); pet.mouth(true); }, 3000);  // speaking frame
+    if (PREVIEW && asked.get("antic") && pet) setTimeout(() => { pet.hideBubble(); pet.talkStop(); pet.antic(asked.get("antic")); }, 3400);  // an idle antic frame
     if (PREVIEW && asked.get("help") === "consent" && $("pet-help-consent")) $("pet-help-consent").hidden = false;
     if (PREVIEW && asked.get("tour")) setTimeout(() => startTour(Number(asked.get("tour")) || 0), 1200);  // a tour stop
-    if (PREVIEW && asked.get("hover")) setTimeout(() => { const n = $(asked.get("hover")); if (n && pet) { pet.hideBubble(); explain(n); } }, 1500);
+    if (PREVIEW && asked.get("hover")) setTimeout(() => { const n = $(asked.get("hover")); if (n && pet) { pet.hideBubble(); explain(n); } }, 2000);
   });
   window.MayaGuide = { listen: listen };
 })();

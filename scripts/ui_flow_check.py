@@ -185,6 +185,9 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
     st4, _, raw4 = b.request("GET", "/chat")
     rep.check(st4 == 200 and b'id="pet-view"' in raw4 and b'id="pet-settings-btn"' in raw4,
               "Pet settings page reachable from the sidebar", f"HTTP {st4}")
+    st6, _, raw6 = Browserless(base).request("GET", "/signin")  # a fresh visitor, not signed in
+    rep.check(st6 == 200 and b'/static/guide.js' in raw6 and b'/static/pet.js' in raw6,
+              "the pet and its guide load on sign-in too", f"HTTP {st6}")
     rep.check(st4 == 200 and b'id="pet-help-consent"' in raw4 and b'id="pet-log"' in raw4,
               "pet help mode: consent card and action log on the settings page", f"HTTP {st4}")
     rep.check(st == 200 and st2 == 404, "pet.js served; test-only contact sheet not served", f"HTTP {st}/{st2}")

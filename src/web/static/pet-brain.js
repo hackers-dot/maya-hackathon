@@ -22,6 +22,12 @@
   const H = (en, enClick, hi, hiClick, effect) => ({ en: [en, enClick], hinglish: [hi, hiClick], effect: effect });
   // id (or ".class") -> [what it is, what a click does] per language, and the effect
   const HOVER = {
+    "tab-signin": H("Sign in", "shows the sign-in form.", "Sign in", "sign-in form dikhata hai.", "reads"),
+    "tab-signup": H("Create account", "shows the form to make a new account.", "Create account", "naya account banane ka form dikhata hai.", "reads"),
+    "signin-email": H("Email", "your account email; it stays on this computer.", "Email", "aapke account ka email; ye is computer par hi rehta hai.", "reads"),
+    "signin-password": H("Password", "stored only as a scrypt hash, never in plain text.", "Password", "sirf scrypt hash ki tarah store hota hai, kabhi plain text mein nahi.", "reads"),
+    "signup-email": H("Email", "the email for your new account; it stays on this computer.", "Email", "naye account ka email; ye is computer par hi rehta hai.", "reads"),
+    "signup-password": H("Password", "at least 10 characters, stored only as a scrypt hash.", "Password", "kam se kam 10 characters, sirf scrypt hash ki tarah store hota hai.", "reads"),
     "pet-call": H("Call pet", "brings me back to my corner.", "Call pet", "mujhe wapas corner mein le aata hai.", "reads"),
     "pet-settings-btn": H("Pet settings", "opens my settings: level, language, voice.", "Pet settings", "meri settings kholta hai: level, language, voice.", "reads"),
     "new-chat": H("New chat", "starts an empty chat.", "New chat", "ek naya khaali chat shuru karta hai.", "saves"),
@@ -81,6 +87,9 @@
     ".send": H("Send", "sends your message and your verified findings to the model provider.", "Send", "aapka message aur verified findings model provider ko bhejta hai.", "sendsModel"),
   };
   const GENERIC = { en: "This control is part of MAYA. Nothing happens until you click it.", hinglish: "Ye MAYA ka ek control hai. Click kiye bina kuch nahi hota." };
+  // for controls that are not in the registry: built from the control's own visible label
+  const GENERIC_LABEL = { en: ": I don't have notes on this one yet; nothing happens until you click it.",
+    hinglish: ": iske baare mein mere paas notes nahi hain; click kiye bina kuch nahi hota." };
   const NEW_MARK = { en: "New: ", hinglish: "Naya: " };
   // controls worth suggesting when the user is idle and has never tried them, most useful first
   const SUGGEST = ["fixfirst-panel", "role-developer", "dl-pack", "dl-client", "reminder-btn", "sum-hinglish", "dl-issues"];
@@ -93,20 +102,21 @@
     for (const c of classes || []) if (HOVER["." + c]) return "." + c;
     return null;
   }
-  // full the first time, one line after a couple of uses, nothing for well-known controls
-  function detailFor(count) {
-    if (!count) return "full";
-    return count < 5 ? "short" : "none";
-  }
-  function hoverText(key, lang, count) {
-    const level = detailFor(count);
-    if (level === "none") return null;
+  // the full explanation the first time, one line once the control has been used
+  function detailFor(count) { return count ? "short" : "full"; }
+  // {text (shown), spoken (one sentence: the full one only for a never-used control), isNew}
+  function hoverText(key, lang, count, label) {
     const e = HOVER[key];
-    if (!e) return { text: GENERIC[lang] || GENERIC.en, isNew: false };
+    if (!e) {
+      const name = String(label || "").replace(/\s+/g, " ").trim().slice(0, 60);
+      const text = name ? "\u201c" + name + "\u201d" + GENERIC_LABEL[lang] : (GENERIC[lang] || GENERIC.en);
+      return { text: text, spoken: text, isNew: false };
+    }
     const [what, click] = e[lang] || e.en;
     const effect = (EFFECTS[e.effect] || EFFECTS.reads)[lang] || EFFECTS[e.effect].en;
-    if (level === "short") return { text: what + ": " + effect + ".", isNew: false };
-    return { text: NEW_MARK[lang] + what + " " + click + " (" + effect + ")", isNew: true };
+    const short = what + ": " + effect + ".";
+    if (detailFor(count) === "short") return { text: short, spoken: short, isNew: false };
+    return { text: NEW_MARK[lang] + what + " " + click + " (" + effect + ")", spoken: what + " " + click.replace(/[.\s]+$/, "") + "; " + effect + ".", isNew: true };
   }
   function bump(used, key) {
     const out = Object.assign({}, used || {});
@@ -123,11 +133,12 @@
     return SUGGEST_LINE[lang] + name;
   }
 
-  // WORK while anything needs attention; PLAY only after 20 s of quiet
+  // WORK while something needs attention: a scan or re-test running, an approval pending, typing, or the pointer
+  // on a control in the last 6 s. Idle timing is the scheduler's job (idleTick), not the mode's.
   const WORK_STATES = ["scan_running", "proposals_not_approved", "approved_not_applied", "applied_not_retested"];
   function mode(s) {
     if (s.scanRunning || s.typing || WORK_STATES.indexOf(s.state) >= 0) return "work";
-    if (s.sinceHoverMs < 10000 || s.idleMs < 20000) return "work";
+    if (s.sinceHoverMs < 6000) return "work";
     return "play";
   }
   const ANTICS = ["wink", "dance", "look", "peek", "hide", "chase"];
@@ -135,6 +146,44 @@
   function nextAntic(s) {
     if (s.mode !== "play" || s.reduced || s.now - (s.lastAnticAt || 0) < ANTIC_GAP_MS) return null;
     return ANTICS[(s.count || 0) % ANTICS.length];
+  }
+
+  // ---------- idle life: one scheduler, ticked every second ----------
+  // phases: ACTIVE (input in the last 8 s) -> IDLE_WAIT (first antic 8-15 s into the idle time: look around or
+  // wave) -> PLAYING (one antic every 15-25 s) -> SLEEPY (45 s idle). The first input after SLEEPY is a "wake"
+  // (surprised). WORK pauses antics. Reduced motion keeps expression-only actions (wink, sleepy, wake).
+  const IDLE_ANTICS = ["wink", "wave", "dance", "lookPointer", "peek", "stretch"];
+  const QUIET_ANTICS = ["wink"];
+  function rand(seed, lo, hi) {  // deterministic: same seed, same delays (for tests and for calm behaviour)
+    const x = Math.sin(seed * 9301 + 49297) * 233280;
+    return lo + Math.floor((x - Math.floor(x)) * (hi - lo + 1));
+  }
+  function idleStart() { return { phase: "ACTIVE", nextAt: 0, count: 0 }; }
+  function idleTick(st, inp) {
+    const s = Object.assign({}, st);
+    if (inp.work) { s.workUntil = inp.now; return [s, null]; }  // the end of WORK counts like fresh input
+    const since = Math.max(inp.lastInputAt, s.workUntil || -Infinity);
+    const idle = inp.now - since;
+    if (idle < 1000) {  // fresh input
+      const woke = s.phase === "SLEEPY";
+      return [{ phase: "ACTIVE", nextAt: 0, count: s.count, workUntil: s.workUntil }, woke ? "wake" : null];
+    }
+    if (idle >= 45000 && s.phase !== "SLEEPY") return [Object.assign(s, { phase: "SLEEPY" }), "sleepy"];
+    if (s.phase === "SLEEPY") return [s, null];
+    if (s.phase === "ACTIVE" && idle >= 8000) {
+      s.phase = "IDLE_WAIT";
+      s.nextAt = since + rand(s.count + 1, 8, 15) * 1000;
+    }
+    if ((s.phase === "IDLE_WAIT" || s.phase === "PLAYING") && inp.now >= s.nextAt) {
+      const first = s.phase === "IDLE_WAIT";
+      const pool = inp.reduced ? QUIET_ANTICS : (first ? ["lookPointer", "wave"] : IDLE_ANTICS);
+      const name = pool[s.count % pool.length];
+      s.count += 1;
+      s.phase = "PLAYING";
+      s.nextAt = inp.now + rand(s.count + 7, 15, 25) * 1000;
+      return [s, name];
+    }
+    return [s, null];
   }
 
   // post-scan tour: score, then each finding in the order given (the code's severity order), then Fix first,
@@ -215,6 +264,7 @@
 
   const api = { EFFECTS, HOVER, GENERIC, SUGGEST, keyFor, detailFor, hoverText, bump, pickSuggestion, suggestText,
     mode, nextAntic, ANTICS, ANTIC_GAP_MS, tourStops, WORK_STATES, HELP_ACTIONS, NEVER_IDS, NEVER_CLASSES,
+    idleStart, idleTick, IDLE_ANTICS,
     checkAction, logLine, ActionQueue };
   if (typeof module === "object" && module.exports) { module.exports = api; return; }
   if (typeof window !== "undefined") window.MayaBrain = api;

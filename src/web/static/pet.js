@@ -433,7 +433,7 @@
     host.setAttribute("aria-label", "MAYA. Double-click or press Enter to open the speech bubble.");
     layer.appendChild(host);
     document.body.appendChild(layer);
-    const pet = create(host, { expression: "smiling", pose: "idle", loops: b.loops });
+    const pet = create(host, { expression: "smiling", pose: "idle", loops: true });  // blinking stays under reduced motion
     // the pet's own surface: only mute/unmute and hide
     const tools = document.createElement("div");
     tools.className = "pet-tools";
@@ -457,6 +457,8 @@
     bubble.hidden = true;
     bubble.setAttribute("role", "status");
     bubble.setAttribute("aria-live", "polite");
+    bubble.setAttribute("aria-label", "MAYA says");
+    bubble.tabIndex = 0;  // reachable with Tab; its chips are buttons (Enter / Space work)
     const bubbleText = document.createElement("p");
     bubbleText.className = "pet-bubble-text";
     const chipRow = document.createElement("div");
@@ -520,6 +522,13 @@
         chipRow.appendChild(chip);
       }
       chipRow.hidden = !(chips || []).length;
+      bubble.querySelectorAll(".pet-bubble-hint").forEach((n) => n.remove());
+      if (opt.hint) {
+        const h = document.createElement("p");
+        h.className = "pet-bubble-hint";
+        h.textContent = opt.hint;
+        bubble.appendChild(h);
+      }
       avoidEl = opt.avoid || null;
       bubble.hidden = false;
       positionBubble();
@@ -627,10 +636,6 @@
     function talkStart() { talking = true; host.classList.add("is-talking"); }
     function talkStop() { talking = false; host.classList.remove("is-talking", "mouth-open"); }
     function mouth(open) { host.classList.toggle("mouth-open", !!open); }
-    function wake() {
-      lastActive = Date.now();
-      if (sleeping) { sleeping = false; flash("surprised", null, 800); }
-    }
 
     // drag (desktop), click = laugh and hop, double-click = speech bubble, hover = wink
     host.addEventListener("pointerdown", (e) => {
@@ -664,63 +669,52 @@
     host.addEventListener("keydown", (e) => { if (e.key === "Enter" && opts.onOpen) opts.onOpen(); });
     host.addEventListener("pointerenter", () => { if (!drag) flash("wink", null, 900); });
 
-    // idle life: sleepy after ~45 s without interaction, look around, wave now and then
-    for (const ev of ["pointermove", "keydown", "pointerdown"]) document.addEventListener(ev, wake, { passive: true });
-    // WORK (scan running, approval pending, typing, recent hover): calm, no antics. PLAY (20 s of quiet):
-    // at most one small antic every ~25 s, only at home and never over another control; sleepy after ~45 s.
-    let anticCount = 0;
-    let lastAnticAt = 0;
+    // idle life: ONE scheduler (pet-brain.js idleTick) ticked every second. Any input resets it; after 8 s the pet
+    // looks around or waves, then one antic every 15-25 s, sleepy at 45 s, surprised when you come back.
+    // WORK (scan running, approval pending, typing, pointer on a control in the last 6 s) pauses antics.
+    // Reduced motion: no walking or dancing, only expression changes (wink, sleepy, wake).
+    let lastInputAt = Date.now();
     let lastPointer = null;
+    let idle = window.MayaBrain ? window.MayaBrain.idleStart() : null;
+    const markInput = () => { lastInputAt = Date.now(); lastActive = lastInputAt; };
+    for (const ev of ["pointermove", "pointerdown", "keydown", "touchstart", "wheel"]) {
+      document.addEventListener(ev, markInput, { passive: true, capture: true });
+    }
     document.addEventListener("pointermove", (e) => { lastPointer = { x: e.clientX, y: e.clientY }; }, { passive: true });
     function classFor(cls, ms) {
       host.classList.add(cls);
       setTimeout(() => host.classList.remove(cls), ms);
     }
-    function freeAt(box) {
-      for (const n of document.querySelectorAll(CONTROLS)) {
-        if (n.closest(".pet-layer")) continue;
-        const r = n.getBoundingClientRect();
-        if (r.width && r.height && overlaps(box, { x: r.left, y: r.top, w: r.width, h: r.height })) return false;
-      }
-      return true;
-    }
     function antic(name) {
       if (name === "wink") flash("wink", null, 1100);
+      else if (name === "wave") flash("happy", "waving", 1800);
       else if (name === "dance") flash("happy", "celebrating", 1600);
-      else if (name === "look") { classFor("look-l", 900); setTimeout(() => classFor("look-r", 900), 1000); }
+      else if (name === "stretch") { flash("tired", "celebrating", 1400); }
       else if (name === "peek") classFor("is-peeking", 1700);
-      else if (name === "hide") { classFor("is-hiding", 1200); setTimeout(() => flash("surprised", null, 900), 1200); }
-      else if (name === "chase" && lastPointer) {  // a few steps along the bottom towards the pointer, then home
-        const s = size();
-        const x0 = parseFloat(host.dataset.x || "0"), y0 = parseFloat(host.dataset.y || "0");
-        const x = Math.max(x0 - 140, Math.min(x0, lastPointer.x - s.w / 2));
-        host.classList.toggle("face-left", lastPointer.x < x0);
-        if (x !== x0 && freeAt({ x: x, y: y0, w: s.w, h: s.h })) {
-          pet.setPose("walking");
-          place(x, y0);
-          atHome = false;
-          returnTimer = setTimeout(() => goHome(false), 1400);
-        } else flash("curious", null, 900);
+      else if (name === "lookPointer") {  // turn towards the pointer and look at it
+        const x0 = parseFloat(host.dataset.x || "0");
+        if (lastPointer) host.classList.toggle("face-left", lastPointer.x < x0);
+        flash("curious", null, 1600);
+        classFor(lastPointer && lastPointer.x < x0 ? "look-l" : "look-r", 1500);
       }
+      host.setAttribute("data-antic", name);
     }
+    function idleLoop() {
+      if (!idle || drag) return;
+      const work = !!(opts.getMode && opts.getMode() === "work");
+      const [next, action] = window.MayaBrain.idleTick(idle, { now: Date.now(), lastInputAt: lastInputAt, work: work,
+        reduced: !b.loops });
+      if (next.phase !== idle.phase) host.setAttribute("data-idle", next.phase);
+      idle = next;
+      // a pet left beside a control comes home once things are quiet
+      if (!atHome && !work && Date.now() - lastInputAt >= 8000) goHome(false);
+      if (!action || talking) return;
+      if (action === "sleepy") { sleeping = true; pet.setExpression("sleepy"); pet.setPose("idle"); }
+      else if (action === "wake") { sleeping = false; flash("surprised", null, 900); }
+      else if (atHome) antic(action);
+    }
+    if (window.MayaBrain) setInterval(idleLoop, 1000);
     if (b.loops) {
-      setInterval(() => {
-        if (talking || drag || !atHome) return;
-        if (opts.getMode && opts.getMode() === "work") {
-          if (sleeping) { sleeping = false; restore(); }
-          return;
-        }
-        if (!sleeping && Date.now() - lastActive > 45000) {
-          sleeping = true;
-          pet.setExpression("sleepy");
-          pet.setPose("idle");
-          return;
-        }
-        if (sleeping || !window.MayaBrain) return;
-        const next = window.MayaBrain.nextAntic({ mode: "play", reduced: false, now: Date.now(), lastAnticAt: lastAnticAt,
-          count: anticCount });
-        if (next) { lastAnticAt = Date.now(); anticCount += 1; antic(next); }
-      }, 2500);
       document.addEventListener("scroll", () => {
         host.classList.add("is-scrolling");
         clearTimeout(scrollTimer);
@@ -736,7 +730,7 @@
     place(start.x, start.y);
     return { el: host, layer: layer, behavior: b, setEmotion: setEmotion, flash: flash, moveTo: moveTo, goHome: goHome,
       hop: hop, talkStart: talkStart, talkStop: talkStop, mouth: mouth, rehome: rehome, say: say,
-      hideBubble: hideBubble, setMuted: setMuted, bubble: bubble,
+      hideBubble: hideBubble, setMuted: setMuted, bubble: bubble, antic: antic,
       expression() { return pet.expression; },
       isHome() { return atHome; },
       show(visible) { layer.hidden = !visible; if (!visible) hideBubble(); } };

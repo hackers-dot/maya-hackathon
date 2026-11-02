@@ -45,6 +45,16 @@
       hinglish: "Theek hai, maine rok diya. Aap control mein ho.",
       spoken_hi: "ठीक है, मैंने रोक दिया। आप कंट्रोल में हो।",
     },
+    tapToTalk: {
+      en: "Click anywhere and I'll start talking.",
+      hinglish: "Kahin bhi click karo, main bolna shuru karti hoon.",
+      spoken_hi: "कहीं भी क्लिक करो, मैं बोलना शुरू करती हूँ।",
+    },
+    signinStep: {
+      en: "First, sign in, or create an account with the tab above. Then I'll guide you step by step.",
+      hinglish: "Pehle sign in karo, ya upar wale tab se account banao. Phir main step by step guide karungi.",
+      spoken_hi: "पहले साइन इन करो, या ऊपर वाले टैब से अकाउंट बनाओ। फिर मैं स्टेप बाय स्टेप गाइड करूँगी।",
+    },
     hidden: {
       en: "Okay, I'll stay out of the way. Press Call pet when you need me.",
       hinglish: "Theek hai, main side mein rehti hoon. Zaroorat ho to Call pet dabana.",
