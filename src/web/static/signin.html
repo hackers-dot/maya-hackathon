@@ -5,18 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <title>MAYA · Sign in</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/theme.js"></script>
 <script src="/static/app.js" defer></script>
 </head>
-<body class="center-page">
+<body class="auth-page">
 <div class="corner">
 <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">&#9680;</button>
 </div>
-<main class="card">
+<div class="auth">
+<section class="hero" aria-label="About MAYA">
 <div class="brand brand-lg"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></div>
-<h1 class="title">Welcome to MAYA</h1>
-<p class="sub">Your AI security agent for websites you own.</p>
+<h1 class="hero-title">Security checks you can trust, <span class="grad">with proof for every finding</span></h1>
+<p class="hero-lead">Your AI security agent for websites you own.</p>
+<ul class="hero-points">
+<li><span class="hp-icon" data-icon="eye" aria-hidden="true"></span><span><strong>Read-only checks</strong><span class="hp-text">Only on sites you own and verified. Nothing is changed.</span></span></li>
+<li><span class="hp-icon" data-icon="proof" aria-hidden="true"></span><span><strong>Evidence for every claim</strong><span class="hp-text">Each finding links to the stored response that proves it.</span></span></li>
+<li><span class="hp-icon" data-icon="check" aria-hidden="true"></span><span><strong>You approve every fix</strong><span class="hp-text">Fixes apply only after your approval, then MAYA re-tests.</span></span></li>
+</ul>
+</section>
+<main class="card auth-card">
+<h2 class="title">Welcome to MAYA</h2>
+<p class="sub">Sign in or create an account to start.</p>
 <div class="tabs" role="tablist" aria-label="Sign in or create an account">
 <button id="tab-signin" class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="signin-form">Sign in</button>
 <button id="tab-signup" class="tab" type="button" role="tab" aria-selected="false" aria-controls="signup-form">Create account</button>
@@ -33,6 +44,7 @@
 </form>
 <p id="message" class="message" role="status"></p>
 </main>
+</div>
 <p class="footnote">MAYA runs read-only checks on sites you own. Nothing changes without your approval.</p>
 </body>
 </html>

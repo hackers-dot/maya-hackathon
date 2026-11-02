@@ -2,7 +2,8 @@
 
 Starts the web app in UI preview mode on a free 127.0.0.1 port with a throwaway data directory, then drives
 one headless Chrome over the DevTools protocol (minimal stdlib WebSocket client) so each page is rendered
-at an exact viewport: 1280x800 and 390x844 (mobile emulation), plus light-theme shots. PNGs go to
+at an exact viewport: 1280x720 and 390x844 (mobile emulation), plus 1440x900 and light-theme shots.
+--only name1,name2 shoots just those pages (less memory on a small machine). PNGs go to
 data/ui_screens/ (git-ignored).
 
 Why not `chrome --screenshot --window-size=390,...`: headless Chrome never lays a page out narrower than
@@ -33,7 +34,8 @@ sys.path.insert(0, str(ROOT))
 from src.web.server import make_server  # noqa: E402
 
 OUT = ROOT / "data" / "ui_screens"
-SIZES = [("desktop", 1280, 800, False), ("mobile", 390, 844, True)]
+SIZES = [("desktop", 1280, 720, False), ("mobile", 390, 844, True)]
+WIDE = [("signin", "/signin"), ("result-finished", "/__preview/chat.html?view=finished")]  # also at 1440x900
 PAGES = [  # (name, path) - signed-in pages come through the test-only preview route
     ("signin", "/signin"),
     ("choose-type", "/__preview/onboarding.html"),
@@ -74,6 +76,8 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("reminder", "/__preview/chat.html?view=finished&scroll=reminder-panel"),
     ("chat", "/__preview/chat.html?view=chat"),
     ("chat-nokey", "/__preview/chat.html?view=chat-nokey"),
+    ("connect", "/__preview/connect.html"),
+    ("empty-asset", "/__preview/chat.html?view=empty-asset"),
 ]
 LIGHT = [("signin", "/signin"), ("shell", "/__preview/chat.html"), ("result-finished", "/__preview/chat.html?view=finished")]
 CANDIDATES = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
@@ -238,7 +242,10 @@ def shoot(cdp: CDP, url: str, out: Path, width: int, height: int, mobile: bool):
 
 
 def main(argv=None) -> int:
-    argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args(argv)
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--only", default="", help="comma-separated page names to shoot (default: all)")
+    args = ap.parse_args(argv)
+    only = {n for n in args.only.split(",") if n}
     chrome = find_chrome()
     if chrome is None:
         print("chrome.exe not found; screenshot step skipped")
@@ -257,9 +264,12 @@ def main(argv=None) -> int:
               f"server: {base} (UI preview mode, throwaway data dir)")
         cdp.call("Page.enable")
         jobs = [(f"{name}-{label}", path, w, h, m) for name, path in PAGES for label, w, h, m in SIZES]
-        jobs += [(f"{name}-desktop-light", path + ("&" if "?" in path else "?") + "theme=light", 1280, 800, False)
+        jobs += [(f"{name}-desktop-light", path + ("&" if "?" in path else "?") + "theme=light", 1280, 720, False)
                  for name, path in LIGHT]
         jobs += [(f"{name}-mobile-light", path + "?theme=light", 390, 844, True) for name, path in LIGHT[1:2]]
+        jobs += [(f"{name}-wide", path, 1440, 900, False) for name, path in WIDE]
+        if only:
+            jobs = [j for j in jobs if any(j[0] == n or j[0].startswith(n + "-") for n in only)]
         for shot, path, w, h, mobile in jobs:
             out = OUT / f"{shot}.png"
             m = shoot(cdp, base + path, out, w, h, mobile)

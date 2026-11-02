@@ -129,6 +129,13 @@ Demo flow:
   - "Download client report": one self-contained HTML file to share by hand (masked evidence, fixes, what changed, re-test, the evidence pack's manifest hash and its disclaimer). Print or save it as PDF from the browser.
   - Re-scan reminders in 7, 14 or 30 days: "re-scan due" when overdue, and an .ics file for your calendar. Nothing runs by itself.
   - Offline eval not regenerated: finding and claim counts are unchanged (checked row by row).
+- **2026-11-02 (Visual polish):** Design system, score ring, trace timeline, chat bubbles. No new features, no behavior changes.
+  - Design tokens in CSS variables: one indigo-to-cyan accent, a 4/8/12/16/24 px spacing scale, a radius scale, soft shadows, severity colors and a type scale. System fonts only, no external assets.
+  - Sign in: a two-column hero (stacks on phones) on a slowly moving gradient that stops under reduced motion.
+  - Results: a score card with a circular grade ring (SVG built in code) and severity chips, "Fix first" as three numbered cards, finding cards with shaped severity badges and an evidence block, a timeline trace with a pulsing running step, before/after rings for the re-test, and a Proposed / Approved / Applied / Re-tested progress bar.
+  - Chat: message bubbles, citation chips, a muted "unverified model text" badge, a typing indicator. Sidebar icons, an active-item highlight, empty states, loading skeletons, toasts, and a favicon served as /static/favicon.svg.
+  - Contrast (WCAG ratio), dark theme: body text on the page 16.1, on panels 14.9; muted text 8.2 on panels; captions 5.4 on the darkest panels. Light theme: body text 17.7, muted 7.7, captions 5.1, status green 6.4. Every severity badge is at least 5.2.
+  - Offline eval not regenerated: no finding or claim logic changed.
 
 ## License
 

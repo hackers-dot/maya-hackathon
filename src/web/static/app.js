@@ -26,6 +26,72 @@
     n.className = "chip" + (kind ? " chip-" + kind : "");
   }
 
+  // ---------- icons: inline SVG built with createElementNS (no markup strings, no external assets) ----------
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const ICONS = {
+    plus: ["M12 5v14M5 12h14"],
+    chat: ["M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"],
+    globe: [{ c: [12, 12, 9] }, "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"],
+    demo: ["M4 5h16v10H4zM8 19h8M12 15v4"],
+    code: ["M8 7l-5 5 5 5M16 7l5 5-5 5"],
+    logs: ["M4 6h16M4 12h16M4 18h10"],
+    message: ["M4 5h16v11H8l-4 4z"],
+    branch: [{ c: [6, 5, 2] }, { c: [6, 19, 2] }, { c: [18, 7, 2] }, "M6 7v10M18 9c0 5-12 3-12 8"],
+    eye: ["M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z", { c: [12, 12, 3] }],
+    api: ["M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"],
+    mobile: ["M7 2h10v20H7zM11 18h2"],
+    cloud: ["M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z"],
+    data: ["M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"],
+    signout: ["M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"],
+    check: ["M5 12l5 5 9-10"],
+    proof: ["M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"],
+    scan: ["M4 8V5h4M16 4h4v4M20 16v4h-4M8 20H4v-4M7 12h10"],
+    search: [{ c: [11, 11, 7] }, "M20 20l-4-4"],
+  };
+  function icon(name) {
+    const s = document.createElementNS(SVG_NS, "svg");
+    s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("class", "ico");
+    s.setAttribute("aria-hidden", "true");
+    for (const part of ICONS[name] || []) {
+      const n = document.createElementNS(SVG_NS, typeof part === "string" ? "path" : "circle");
+      if (typeof part === "string") n.setAttribute("d", part);
+      else { n.setAttribute("cx", part.c[0]); n.setAttribute("cy", part.c[1]); n.setAttribute("r", part.c[2]); }
+      s.appendChild(n);
+    }
+    return s;
+  }
+  // static markup asks for icons with data-icon; sidebar controls get theirs by id or label
+  const SIDE_ICONS = { "new-chat": "plus", "add-asset": "globe", "data-link": "data", "signout": "signout",
+    "investigate-btn": "search", "chats-empty-btn": "chat", "scan-empty-btn": "scan" };
+  const CONNECTOR_ICONS = { "Website": "globe", "Source code ZIP": "code", "Logs": "logs", "Suspicious message": "message",
+    "GitHub repo": "branch", "Lookalike watch": "eye", "API": "api", "Mobile": "mobile", "Cloud": "cloud" };
+  function decorateIcons() {
+    for (const n of document.querySelectorAll("[data-icon]")) n.appendChild(icon(n.getAttribute("data-icon")));
+    for (const id of Object.keys(SIDE_ICONS)) {
+      const n = $(id);
+      if (n && $("assets-list")) {
+        // the button's own glyph (e.g. "+ New chat") is replaced by the icon; the label text stays
+        if (n.firstChild && n.firstChild.nodeType === 3) n.firstChild.textContent = n.firstChild.textContent.replace(/^\uFF0B\s*/, "");
+        n.insertBefore(icon(SIDE_ICONS[id]), n.firstChild);
+      }
+    }
+    for (const c of document.querySelectorAll(".connectors .connector")) {
+      const name = c.firstElementChild ? c.firstElementChild.textContent : "";
+      if (CONNECTOR_ICONS[name]) c.insertBefore(icon(CONNECTOR_ICONS[name]), c.firstChild);
+    }
+  }
+
+  function toast(text, isError) {
+    const box = $("toasts");
+    if (!box) return;
+    const t = el("div", "toast" + (isError ? " is-error" : ""), text);
+    box.appendChild(t);
+    setTimeout(() => { t.classList.add("is-leaving"); setTimeout(() => t.remove(), 220); }, 2600);
+  }
+
+  function setTitle(part) { document.title = part ? "MAYA · " + part : "MAYA"; }
+
   function say(text, isError) {
     const n = $("message");
     if (!n) return;
@@ -212,14 +278,23 @@
     if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
   }
 
+  const ASSET_ICONS = { demo: "demo", website: "globe", code: "code", logs: "logs", image: "message", watch: "eye" };
+  function markCurrentAsset() {
+    for (const b of document.querySelectorAll("#assets-list .asset-item")) {
+      b.classList.toggle("is-current", !!currentAsset && b.getAttribute("data-id") === currentAsset.id);
+    }
+  }
+
   function renderAssetList(assets) {
     const list = $("assets-list");
     if (!list) return;
     clear(list);
     for (const a of assets) {
       const li = el("li");
-      const btn = el("button", "asset-item");
+      const btn = el("button", "asset-item" + (currentAsset && currentAsset.id === a.id ? " is-current" : ""));
       btn.type = "button";
+      btn.setAttribute("data-id", a.id);
+      btn.appendChild(icon(ASSET_ICONS[a.kind] || "globe"));
       const prefix = a.kind === "code" ? "Code: " : a.kind === "logs" ? "Logs: " : a.kind === "image" ? "Message: "
         : a.kind === "watch" ? "Watch: " : "";
       btn.appendChild(el("span", "asset-name", a.kind === "demo" ? "Demo app (loopback)" : prefix + a.label));
@@ -318,9 +393,11 @@
     fact(meta, "Severity", f.severity + " (fixed table)");
     body.appendChild(meta);
     body.appendChild(el("p", "owasp", f.owasp));
-    const ev = el("div", "claim-line");
+    const ev = el("div", "evidence");
     ev.appendChild(el("span", "label", "Evidence (from code)"));
-    ev.appendChild(el("code", "", f.evidence_line));
+    const pre = el("pre");
+    pre.appendChild(el("code", "", f.evidence_line));
+    ev.appendChild(pre);
     body.appendChild(ev);
     const copy = el("button", "btn btn-quiet copy-issue", "Copy as GitHub issue");
     copy.type = "button";
@@ -347,6 +424,7 @@
     try {
       navigator.clipboard.writeText(text).then(() => {
         button.textContent = "Copied";
+        toast("Issue text copied to the clipboard.");
         setTimeout(() => { button.textContent = "Copy as GitHub issue"; }, 1500);
       }, () => say("Copy failed: your browser blocked clipboard access.", true));
     } catch (e) { say("Copy failed: your browser blocked clipboard access.", true); }
@@ -356,15 +434,63 @@
   function scoreText(s) {
     return "Grade " + s.grade + " · " + s.score + "/100";
   }
+  // circular ring: the arc length is the score out of 100, the color follows the grade (CSS)
+  function scoreRing(s, size) {
+    const wrap = el("div", "ring grade-" + s.grade + (size < 100 ? " is-small" : ""));
+    const stroke = size < 100 ? 8 : 10;
+    const r = (size - stroke) / 2;
+    const len = 2 * Math.PI * r;
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("width", size);
+    svg.setAttribute("height", size);
+    svg.setAttribute("viewBox", "0 0 " + size + " " + size);
+    svg.setAttribute("aria-hidden", "true");
+    for (const cls of ["ring-track", "ring-value"]) {
+      const c = document.createElementNS(SVG_NS, "circle");
+      c.setAttribute("class", cls);
+      c.setAttribute("cx", size / 2);
+      c.setAttribute("cy", size / 2);
+      c.setAttribute("r", r);
+      c.setAttribute("fill", "none");
+      c.setAttribute("stroke-width", stroke);
+      if (cls === "ring-value") {
+        c.setAttribute("stroke-linecap", "round");
+        c.setAttribute("stroke-dasharray", len.toFixed(1));
+        c.setAttribute("stroke-dashoffset", (len * (1 - Math.max(0, Math.min(100, s.score)) / 100)).toFixed(1));
+      }
+      svg.appendChild(c);
+    }
+    wrap.appendChild(svg);
+    const mid = el("div", "ring-center");
+    mid.appendChild(el("span", "ring-grade", s.grade));
+    mid.appendChild(el("span", "ring-score", s.score + "/100"));
+    wrap.appendChild(mid);
+    wrap.setAttribute("role", "img");
+    wrap.setAttribute("aria-label", "Grade " + s.grade + ", " + s.score + " out of 100, " + s.label);
+    return wrap;
+  }
+  const SEVERITIES = ["critical", "high", "medium", "low", "info"];
   function renderScore(s) {
-    const badge = $("score-badge");
-    if (!badge) return;
-    clear(badge);
-    show("score-badge", !!s);
+    const holder = $("score-ring");
+    if (!holder) return;
+    clear(holder);
+    show("score-card", !!s);
     show("score-note", !!s);
     if (!s) return;
-    badge.appendChild(el("span", "grade grade-" + s.grade, s.grade));
-    badge.appendChild(el("span", "", s.score + "/100 · " + s.label));
+    holder.appendChild(scoreRing(s, 116));
+    setText("score-label", s.label);
+    setText("score-line", "Grade " + s.grade + " · " + s.score + "/100");
+    const chips = $("sev-chips");
+    clear(chips);
+    const counts = s.deductions || {};
+    for (const sev of SEVERITIES) {
+      if (!counts[sev]) continue;
+      const chip = el("span", "sev sev-" + sev);
+      chip.appendChild(el("span", "sev-count", counts[sev]));
+      chip.appendChild(document.createTextNode(" " + sev));
+      chips.appendChild(chip);
+    }
+    if (!chips.firstChild) chips.appendChild(el("span", "chip chip-ok", "no issues detected in the checks run"));
     const byStatus = {};  // group the checks that did not run by why, e.g. "not applicable (loopback demo)"
     for (const c of s.checks_not_run || []) (byStatus[c.status] = byStatus[c.status] || []).push(c.check);
     const parts = Object.keys(byStatus).map((st) => byStatus[st].join(", ") + ": " + st);
@@ -372,6 +498,20 @@
       : "Every check ran and is in the score.");
   }
   function renderRetestScore(before, after) {
+    const rings = $("retest-rings");
+    if (rings) {
+      clear(rings);
+      show("retest-rings", !!(before && after));
+      if (before && after) {
+        for (const [s, label] of [[before, "Before"], [after, "After the re-test"]]) {
+          const col = el("div", "ring-col");
+          col.appendChild(scoreRing(s, 92));
+          col.appendChild(el("span", "caption", label));
+          rings.appendChild(col);
+          if (label === "Before") rings.appendChild(el("span", "ring-arrow", "\u2192"));
+        }
+      }
+    }
     show("retest-score", !!(before && after));
     if (before && after) setText("retest-score", "Heuristic score of the checks run: " + scoreText(before) +
       " before → " + scoreText(after) + " after the re-test.");
@@ -439,10 +579,9 @@
     clear(list);
     for (const f of items || []) {
       const li = el("li", "fixfirst-item");
-      const head = el("div", "claim-head");
-      head.appendChild(el("span", "sev sev-" + f.severity, f.severity));
-      head.appendChild(el("span", "f-title", f.title + " at " + f.location));
-      li.appendChild(head);
+      li.appendChild(el("span", "sev sev-" + f.severity, f.severity));
+      li.appendChild(el("span", "f-title", f.title));
+      li.appendChild(el("span", "f-where", f.location));
       li.appendChild(richText("p", "hint", f.fix));
       list.appendChild(li);
     }
@@ -473,6 +612,7 @@
     try {
       await navigator.clipboard.writeText(text);
       btn.textContent = "Copied";
+      toast("Copied to the clipboard.");
     } catch (e) {
       btn.textContent = "Copy failed: select the text";
     }
@@ -492,7 +632,29 @@
     return box;
   }
 
+  // Proposed -> Approved -> Applied -> Re-tested, derived only from the server's proposal statuses and re-test
+  const flow = { proposals: [], retest: null };
+  function renderProgress() {
+    const ps = flow.proposals;
+    const done = {
+      proposed: ps.length > 0,
+      approved: ps.some((p) => p.status === "APPROVED" || p.status === "APPLIED"),
+      applied: ps.some((p) => p.status === "APPLIED"),
+      retested: !!flow.retest,
+    };
+    let next = true;
+    for (const li of document.querySelectorAll("#fix-progress li")) {
+      const ok = done[li.getAttribute("data-stage")];
+      li.classList.toggle("is-done", ok);
+      li.classList.toggle("is-next", !ok && next);
+      if (!ok) next = false;
+      li.setAttribute("aria-current", !ok && li.classList.contains("is-next") ? "step" : "false");
+    }
+  }
+
   function renderProposals(run, proposals) {
+    flow.proposals = proposals || [];
+    renderProgress();
     const list = $("proposals-list");
     if (!list) return;
     clear(list);
@@ -545,6 +707,8 @@
   }
 
   function renderRetest(r) {
+    flow.retest = r || null;
+    renderProgress();
     show("retest-panel", !!r);
     if (!r) return;
     setChip("retest-status", r.status === "FIXED" ? "FIXED" : "STILL PRESENT", r.status === "FIXED" ? "ok" : "failed");
@@ -664,7 +828,7 @@
     if (!currentRunId) return;
     const name = $("approver") ? $("approver").value : "";
     const d = await post("/api/runs/" + currentRunId + "/proposals/" + proposalId + "/approve", { approver: name });
-    if (d) { renderFull(d); say("Approved by " + name.trim() + ". Recorded in the audit log.", false); }
+    if (d) { renderFull(d); say("Approved by " + name.trim() + ". Recorded in the audit log.", false); toast("Fix approved by " + name.trim() + "."); }
   }
 
   async function applyFixes() {
@@ -675,6 +839,7 @@
       renderFull(d);
       const rolled = (d.proposals || []).some((p) => p.status === "ROLLED_BACK");
       say(rolled ? "Health check failed; the change was rolled back." : "Applied. Press Re-test to confirm.", rolled);
+      toast(rolled ? "Health check failed: rolled back." : "Approved fixes applied to the demo app.", rolled);
     }
   }
 
@@ -682,7 +847,7 @@
     if (!currentRunId) return;
     say("Re-running the same checks...", false);
     const d = await post("/api/runs/" + currentRunId + "/retest", {});
-    if (d) { renderFull(d); say("Re-test finished: " + (d.retest ? d.retest.status : "-"), false); }
+    if (d) { renderFull(d); say("Re-test finished: " + (d.retest ? d.retest.status : "-"), false); toast("Re-test finished."); }
   }
 
   function renderRunMeta(run) {
@@ -691,6 +856,9 @@
     setChip("run-status", c[0], c[1]);
     setText("run-model", run.mode === "model" ? "Model: " + run.model : run.mode_label);
     setText("mode-label", run.mode_label);
+    const trace = $("trace-list");
+    if (trace) trace.classList.toggle("is-running", run.status === "running");
+    show("result-skeleton", run.status === "running");
     show("demo-banner", !!run.demo);
     if (run.error) say(run.error, true);
     // one scan at a time: the button follows the run, not just the asset
@@ -792,7 +960,7 @@
     traceNext = 0;
     for (const id of ["run-panel", "findings-panel", "result-panel", "fixfirst-panel", "proposals-panel",
       "retest-panel", "downloads-panel", "items-panel", "notes-panel", "candidates-panel", "diff-panel", "summary-panel",
-      "score-badge",
+      "score-card", "scan-empty", "result-skeleton", "retest-rings",
       "score-note",
       "demo-banner"]) show(id, false);
     show("trace-empty", true);
@@ -837,6 +1005,8 @@
     stopPolling();
     resetRunPanels();
     showView("asset");
+    markCurrentAsset();
+    setTitle((asset.kind === "demo" ? "Demo app" : asset.label) + " · Results");
     setText("av-label", asset.kind === "demo" ? "Demo app (loopback)" : asset.label);
     statusChip("av-status", asset.status);
     setText("av-hint", asset.scannable
@@ -856,6 +1026,7 @@
     show("reset-demo-btn", asset.kind === "demo");
     renderReminder(asset);
     if (btn) btn.textContent = asset.last_run ? "Re-scan" : "Run security scan";
+    show("scan-empty", !asset.last_run && !upload && !!asset.scannable);
     setResetEnabled(true);
     say("", false);
     if (asset.last_run && !PREVIEW) startPolling(asset.last_run);
@@ -1279,6 +1450,8 @@
     const avatar = $("avatar");
     if (avatar) avatar.textContent = user && user.email ? user.email.charAt(0).toUpperCase() : (PREVIEW ? "P" : "?");
     onClick("scan-btn", startScan);
+    onClick("scan-empty-btn", startScan);
+    onClick("chats-empty-btn", () => { setSidebar(false); if (!PREVIEW) newChat(); });
     onClick("reset-demo-btn", resetDemo);
     onClick("disconnect-btn", disconnectAsset);
     onClick("summarize-btn", summarize);
@@ -1328,6 +1501,7 @@
       }
       if (view === "upload-code" || view === "upload-logs" || view === "upload-image") openUpload(view.slice(7));
       if (view === "github" || view === "watch") openSimpleView(view);
+      if (view === "empty-asset") selectAsset(Object.assign({}, r.data.assets[0], { last_run: null, reminder: null }));
       if (view === "data") openData();
       if (view === "logs" || view === "message" || view === "lookalike") {
         const s = r.data[view];
@@ -1386,7 +1560,12 @@
     show("data-view", view === "data");
     show("github-view", view === "github");
     show("watch-view", view === "watch");
-    if (view !== "asset") stopPolling();
+    const titles = { home: "Home", chat: "Chat", data: "Your data", upload: "Upload", github: "GitHub repo", watch: "Lookalike watch" };
+    if (titles[view]) setTitle(titles[view]);
+    if (view !== "asset") {
+      stopPolling();
+      for (const b of document.querySelectorAll("#assets-list .asset-item")) b.classList.remove("is-current");
+    }
   }
 
   function composerHint(text, kind) {
@@ -1442,8 +1621,13 @@
       box.appendChild(el("strong", "", "Checked against your data:"));
       const ul = el("ul");
       for (const c of inv.claims) {
-        const ids = (c.findings || []).map((f) => f.id + " (" + f.severity + ")").concat(c.run_ids || []);
-        ul.appendChild(el("li", "", c.text + " [" + ids.join(", ") + "]"));
+        const li = el("li", "inv-claim");
+        li.appendChild(el("span", "", c.text));
+        const ids = el("span", "msg-cites");
+        for (const f of c.findings || []) ids.appendChild(el("span", "cite", f.id + " · " + f.severity));
+        for (const r of c.run_ids || []) ids.appendChild(el("span", "cite", "run " + r));
+        li.appendChild(ids);
+        ul.appendChild(li);
       }
       box.appendChild(ul);
     }
@@ -1467,23 +1651,34 @@
     return box;
   }
 
+  function citeRow(text, ids, unknown) {
+    const row = el("div", "msg-cites" + (unknown ? " is-warning" : ""));
+    row.appendChild(el("span", "", text));
+    for (const id of ids) row.appendChild(el("span", "cite" + (unknown ? " is-unknown" : ""), id));
+    return row;
+  }
+
   function messageItem(m) {
     const li = el("li", "msg msg-" + m.role);
-    li.appendChild(el("div", "msg-body", m.content));
-    if (m.role === "assistant" && m.meta && m.meta.investigation) li.appendChild(investigationBlock(m.meta.investigation));
+    let col = li;
+    if (m.role === "assistant") {
+      li.appendChild(el("span", "mark"));
+      col = el("div", "msg-col");
+      li.appendChild(col);
+    }
+    col.appendChild(el("div", "msg-body", m.content));
+    if (m.role === "assistant" && m.meta && m.meta.investigation) col.appendChild(investigationBlock(m.meta.investigation));
     if (m.role === "assistant" && m.meta) {
       const meta = el("div", "msg-meta");
       const restates = m.meta.label === "restates verified findings";
-      meta.appendChild(el("span", "chip " + (restates ? "chip-ok" : "chip-forced"), m.meta.label));
+      meta.appendChild(el("span", "label-unverified" + (restates ? " badge-ok" : ""), m.meta.label));
       const t = m.meta.tokens || {};
       meta.appendChild(el("span", "", "Model that ran: " + (m.meta.model || "-")));
       meta.appendChild(el("span", "", (t.prompt || 0) + " in / " + (t.completion || 0) + " out (" +
         (t.reasoning || 0) + " reasoning)"));
-      li.appendChild(meta);
-      if ((m.meta.cited || []).length) li.appendChild(el("div", "msg-cites", "Cites your findings: " + m.meta.cited.join(", ")));
-      if ((m.meta.cited_unknown || []).length) {
-        li.appendChild(el("div", "msg-cites is-warning", "Not in your verified findings: " + m.meta.cited_unknown.join(", ")));
-      }
+      col.appendChild(meta);
+      if ((m.meta.cited || []).length) col.appendChild(citeRow("Cites your findings:", m.meta.cited, false));
+      if ((m.meta.cited_unknown || []).length) col.appendChild(citeRow("Not in your verified findings:", m.meta.cited_unknown, true));
     }
     return li;
   }
@@ -1491,6 +1686,7 @@
   function renderChat(chat) {
     currentChatId = chat.id;
     showView("chat");
+    setTitle(chat.title || "Chat");
     setText("chat-title", chat.title);
     const list = $("chat-messages");
     clear(list);
@@ -1533,8 +1729,15 @@
     show("chat-empty", false);
     const pending = messageItem({ role: "user", content: text });
     $("chat-messages").appendChild(pending);
-    const thinking = el("li", "msg msg-pending", mode === "investigate"
-      ? "MAYA is investigating with read-only tools..." : "MAYA is thinking...");
+    const thinking = el("li", "msg msg-assistant msg-pending");
+    thinking.appendChild(el("span", "mark"));
+    const typing = el("div", "typing");
+    const dots = el("span", "dots");
+    for (let i = 0; i < 3; i++) dots.appendChild(el("span"));
+    typing.appendChild(dots);
+    typing.appendChild(el("span", "", mode === "investigate"
+      ? "MAYA is investigating with read-only tools..." : "MAYA is thinking..."));
+    thinking.appendChild(typing);
     $("chat-messages").appendChild(thinking);
     scrollConversation();
     const box = $("prompt");
@@ -1574,10 +1777,15 @@
     if (!currentRunId) return;
     const name = $("approver") ? $("approver").value : "";
     const d = await post("/api/runs/" + currentRunId + "/approve-all", { approver: name });
-    if (d) { renderFull(d); say("All open proposals approved by " + name.trim() + "; each approval is in the audit log.", false); }
+    if (d) {
+      renderFull(d);
+      say("All open proposals approved by " + name.trim() + "; each approval is in the audit log.", false);
+      toast("All open fixes approved by " + name.trim() + ".");
+    }
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
+    decorateIcons();
     onClick("theme-toggle", toggleTheme);
     onClick("tab-signin", () => showTab("signin"));
     onClick("tab-signup", () => showTab("signup"));

@@ -28,9 +28,9 @@ DEFAULT_PORT = 8090
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 EVAL_SUMMARY = Path(__file__).resolve().parent.parent.parent / "docs" / "eval_results.json"
-STATIC_NAME = re.compile(r"^[a-z0-9_-]+\.(html|js|css)$")
+STATIC_NAME = re.compile(r"^[a-z0-9_-]+\.(html|js|css|svg)$")
 CONTENT_TYPES = {"html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8",
-                 "css": "text/css; charset=utf-8"}
+                 "css": "text/css; charset=utf-8", "svg": "image/svg+xml"}
 COOKIE = "maya_session"
 MAX_BODY = 16 * 1024
 DRAIN_MAX = 1024 * 1024  # larger bodies are not read at all; the connection is closed

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <title>MAYA · Chat</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/theme.js"></script>
 <script src="/static/app.js" defer></script>
@@ -20,7 +21,7 @@
 <nav class="side-lists" aria-label="History">
 <h3 class="side-heading">Chats</h3>
 <ul id="chats-list" class="side-list"></ul>
-<p id="chats-empty" class="side-empty">No chats yet</p>
+<div id="chats-empty" class="side-empty-action"><p class="side-empty">No chats yet.</p><button id="chats-empty-btn" class="btn btn-quiet" type="button">Start a chat</button></div>
 <h3 class="side-heading">Connected assets</h3>
 <ul id="assets-list" class="side-list"></ul>
 <p id="assets-empty" class="side-empty">Nothing connected yet</p>
@@ -134,8 +135,7 @@
 <section id="asset-view" class="asset-view" hidden aria-live="polite">
 <p id="demo-banner" class="banner" hidden>DEMO: these results come from MAYA's deliberately vulnerable demo app on loopback, not a real site.</p>
 <div class="asset-head">
-<div class="asset-title"><h1 id="av-label" class="title"></h1><span id="av-status" class="chip"></span>
-<span id="score-badge" class="score-badge" hidden></span></div>
+<div class="asset-title"><h1 id="av-label" class="title"></h1><span id="av-status" class="chip"></span></div>
 <div class="asset-actions"><span id="mode-label" class="mode-label"></span>
 <button id="reset-demo-btn" class="btn btn-quiet" type="button" hidden disabled>Reset demo app</button>
 <button id="disconnect-btn" class="btn btn-quiet" type="button">Disconnect</button>
@@ -144,12 +144,30 @@
 </div>
 <p id="reminder-banner" class="banner" hidden></p>
 <p id="av-hint" class="hint"></p>
-<p id="score-note" class="hint" hidden></p>
 <p id="message" class="message" role="status"></p>
+<section id="score-card" class="panel score-card" hidden aria-label="Heuristic score">
+<div id="score-ring"></div>
+<div class="score-info">
+<p id="score-label" class="caption"></p>
+<p id="score-line" class="score-line"></p>
+<div id="sev-chips" class="chips"></div>
+<p id="score-note" class="hint" hidden></p>
+</div>
+</section>
+<section id="scan-empty" class="empty-card" hidden>
+<span class="empty-icon" data-icon="scan" aria-hidden="true"></span>
+<h2>No scans yet</h2>
+<p>Run a read-only scan. Every finding comes with the stored response that proves it.</p>
+<button id="scan-empty-btn" class="btn btn-primary" type="button">Run your first scan</button>
+</section>
 <section id="run-panel" class="panel" hidden>
 <div class="panel-head"><h2>Live trace</h2><span id="run-status" class="chip"></span><span id="run-model" class="panel-meta"></span></div>
 <ol id="trace-list" class="trace"></ol>
-<p id="trace-empty" class="side-empty">Waiting for the first step...</p>
+<div id="trace-empty" class="skeleton" aria-label="Waiting for the first step"><div class="skel is-card"></div><div class="skel w80"></div><div class="skel w60"></div></div>
+</section>
+<section id="result-skeleton" class="panel" hidden aria-label="Checks in progress">
+<div class="panel-head"><h2>Checks in progress</h2><span class="panel-meta">findings appear as each check finishes</span></div>
+<div class="skeleton"><div class="skel is-card"></div><div class="skel is-card"></div><div class="skel w40"></div></div>
 </section>
 <section id="fixfirst-panel" class="panel" hidden>
 <div class="panel-head"><h2>Fix first</h2><span class="panel-meta">top 3 by severity (from the code table)</span></div>
@@ -167,6 +185,12 @@
 </section>
 <section id="proposals-panel" class="panel" hidden>
 <div class="panel-head"><h2>Fix proposals</h2><span class="panel-meta">fixed templates; nothing changes without approval</span></div>
+<ol id="fix-progress" class="progress" aria-label="Fix progress">
+<li data-stage="proposed"><span>Proposed</span></li>
+<li data-stage="approved"><span>Approved</span></li>
+<li data-stage="applied"><span>Applied</span></li>
+<li data-stage="retested"><span>Re-tested</span></li>
+</ol>
 <div class="approver-row">
 <div class="field approver-field"><label for="approver">Approver name (recorded in the audit log)</label>
 <input id="approver" name="approver" type="text" autocomplete="name" maxlength="80" placeholder="Your name"></div>
@@ -181,9 +205,10 @@
 </section>
 <section id="retest-panel" class="panel" hidden>
 <div class="panel-head"><h2>Re-test: before / after</h2><span id="retest-status" class="chip"></span></div>
+<div id="retest-rings" class="rings" hidden></div>
 <p id="retest-score" class="hint" hidden></p>
 <div class="diff-grid">
-<div class="diff-col"><h3 class="sub-heading">Resolved</h3><ul id="retest-resolved" class="diff-list"></ul></div>
+<div class="diff-col"><h3 class="sub-heading">Resolved</h3><ul id="retest-resolved" class="diff-list is-resolved"></ul></div>
 <div class="diff-col"><h3 class="sub-heading">Still present</h3><ul id="retest-still" class="diff-list"></ul></div>
 <div class="diff-col"><h3 class="sub-heading">New</h3><ul id="retest-new" class="diff-list"></ul></div>
 </div>
@@ -302,5 +327,6 @@
 </footer>
 </main>
 </div>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 </body>
 </html>

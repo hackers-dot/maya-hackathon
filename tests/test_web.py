@@ -214,14 +214,34 @@ SINKS = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|document\.write|\bev
 
 
 EXPECTED_STATIC = {"app.js", "theme.js", "style.css", "signin.html", "onboarding.html", "company.html",
-                   "connect.html", "consent.html", "connect-website.html", "chat.html", "print.js", "report-print.css"}
+                   "connect.html", "consent.html", "connect-website.html", "chat.html", "print.js", "report-print.css",
+                   "favicon.svg"}
+# The SVG namespace is an identifier, never fetched. It is allowed ONLY in these exact spots: once as the
+# createElementNS constant in app.js and once as the xmlns of favicon.svg. Anything else with a URL still fails.
+SVG_NS_ALLOWED = {"app.js": 'const SVG_NS = "http://www.w3.org/2000/svg";',
+                  "favicon.svg": '<svg xmlns="http://www.w3.org/2000/svg" '}
 
 
 def test_static_files_have_no_injection_sinks_or_external_urls():
     files = sorted(STATIC_DIR.glob("*"))
     assert {p.name for p in files} == EXPECTED_STATIC  # a new file must be added here, and so gets scanned
-    hits = [(p.name, m.group()) for p in files for m in SINKS.finditer(p.read_text(encoding="utf-8"))]
+    texts = {p.name: p.read_text(encoding="utf-8") for p in files}
+    for name, exact in SVG_NS_ALLOWED.items():
+        assert texts[name].count(exact) == 1 and texts[name].count("://") == 1, name
+        texts[name] = texts[name].replace(exact, "")
+    hits = [(n, m.group()) for n, t in texts.items() for m in SINKS.finditer(t)]
     assert hits == []
+
+
+def test_favicon_is_a_plain_static_svg(web):
+    client, _, _ = web
+    svg = (STATIC_DIR / "favicon.svg").read_text(encoding="utf-8")
+    for bad in ("<script", "href=", "<foreignObject", "<image", " on"):
+        assert bad not in svg, bad
+    r = client.get("/static/favicon.svg")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/svg+xml"
+    for p in STATIC_DIR.glob("*.html"):
+        assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in p.read_text(encoding="utf-8"), p.name
 
 
 def test_local_storage_only_inside_try_catch():
