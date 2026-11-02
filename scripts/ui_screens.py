@@ -88,6 +88,8 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("guide-collapsed", "/__preview/chat.html?view=finished&guide=concerned&level=new"),
     ("guide-running", "/__preview/chat.html?view=running&guide=running&level=new&expand=1"),
     ("guide-speaking", "/__preview/chat.html?view=chat&guide=chat&level=new&expand=1&talk=1"),
+    ("pet-greeting", "/__preview/onboarding.html?greet=1"),
+    ("pet-settings", "/__preview/chat.html?view=pet&level=new"),
     ("guide-reduced", "/__preview/chat.html?view=finished&guide=concerned&level=new&expand=1&motion=reduce"),
 ]
 LIGHT = [("signin", "/signin"), ("shell", "/__preview/chat.html"), ("result-finished", "/__preview/chat.html?view=finished")]

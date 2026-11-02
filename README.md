@@ -35,21 +35,23 @@ Demo flow:
 
 ## Guide pet
 
-MAYA, the project's own character, lives on every signed-in page: a small figure with a white cat-ear helmet, a black visor face screen, a green suit and a shield "M" emblem. She guides you one step at a time, shows how things are going on her face, and can speak.
-- **What she does:** says what to press next and why it matters, walks to that button and points at it (never covering another control), and goes home again. You can drag her anywhere; her position is remembered. "Call pet" and "Hide pet" are in the sidebar.
-- **Idle life:** she blinks, looks around, waves now and then, and gets sleepy if you leave her alone. Click her and she laughs; double-click her for the speech bubble. With reduced motion turned on she stays docked and only her face changes. On phones she is smaller, docked above the composer, and the bubble is a bottom sheet.
+MAYA, the project's own character, lives on every signed-in page as a small pet: a white cat-ear helmet, a black visor face screen, a green suit and a shield "M" emblem. She guides you one step at a time, shows how things are going on her face, and can speak.
+- **Small and out of the way:** about 80 px tall (56 px on phones). What she says appears in a small bubble beside her, with choices as chips ("Show me", "Next tip", your level), and it hides after you have had time to read it. The bubble never covers the control she is talking about and tries not to cover any other control nearby. On her own surface there are only two buttons, mute and hide; "Call pet" and "Pet settings" are in the sidebar.
+- **Pet settings** (sidebar): experience level, language, voice picker with Preview, speed, pitch, speak the steps, speak answers, microphone (optional), "Let the pet help me" (not available yet) and "Reset what the pet learned".
+- **What she does:** she walks to the button she is talking about and points at it without covering any other control, then goes home. You can drag her anywhere. With reduced motion turned on she stays docked and only her face changes.
 - **Steps and emotions are not from a model.** They come from a fixed state machine over your own stored data: account, consent, verification, scan, findings, proposals, apply, re-test.
-  - It explains what was found before it asks for any approval, never approves anything for you, never says a site is "safe" or "secure", and gives no time or cost estimates.
-  - Same situation, same face: alert then nervous for critical or high findings, curious for medium only, proud when the checks run found no issues, excited and celebrating when a re-test confirms the fix.
-- **Level and language:** pick "I'm new to security", "I know some" or "I'm technical". It changes the wording and the default findings view. English or Hinglish. The Hinglish text still needs review by a native speaker.
-- **"Ask me":** uses the normal chat, with the same rules and labels, and asks the model to answer for your level. Without a model key it says "Model not configured".
+  - She explains what was found before she asks for any approval. She never approves or applies anything for you, never says a site is "safe" or "secure", and gives no time or cost estimates.
+  - Her greeting and guide lines are fixed templates, so they carry no "unverified model text" badge. Only real model answers in the chat carry it.
+- **First visit:** on a new device or account she waves, says hello ("Hii! Main MAYA hoon...", or the English version) and asks your level. She speaks only after you turn the voice on.
+- **Language:** English or Hinglish, written as MAYA herself (first person, female). Every Hinglish line also has a Devanagari version that is spoken only with a Hindi (hi-IN) voice; the screen always shows the Roman text. The Hinglish and Devanagari text still needs review by a native speaker.
 - **Voice is your browser's built-in text-to-speech, not a Meta model, and not MAYA's server.**
-  - It is off until you press "Turn on voice" or the speaker button: browsers only allow speech after a click.
-  - A local voice on your computer is picked first (en-IN if present). If only a network voice fits, the status line says that your browser sends the spoken text to its provider.
-  - She speaks only a short, cleaned summary: no ids, paths, code or masked values.
-  - The microphone is optional and off by default; your browser may send the audio to its speech provider. MAYA never receives or stores audio.
-- **Checked here:** headless Chrome on this Windows machine found 24 voices, including Microsoft Ravi and Heera (en-IN, local). A test sentence fired start, word-boundary and end events. MAYA's "Test voice" button spoke with Microsoft Ravi while her mouth opened and closed.
-- **Not tested live:** how the voice actually sounds, the microphone, the feel of the animations, dragging by hand, and "Ask me" against a real model. The tests cover the state machine and emotions, the API, the chat level line (with a scripted fake model), and the pet and speech helpers in Node.
+  - It is off until you turn it on: browsers only allow speech after a click.
+  - By default she picks a female-sounding voice in your language (hi-IN for Hinglish if there is one, then en-IN, then other English) and never a male-sounding one. The default pitch is slightly high (1.2). You can pick any installed voice yourself.
+  - If no female-sounding voice is installed, the settings page says so; install one in Windows Settings > Speech.
+  - Some browser voices are online voices: the browser may send the spoken text to the voice provider. MAYA itself sends nothing.
+  - She speaks only a cleaned summary (no ids, paths, code or masked values). The microphone is optional; your browser may send the audio to its speech provider.
+- **Checked here:** headless Chrome on this Windows machine found 24 voices, including Microsoft Heera (en-IN, female) and Zira (en-US, female); there is no female-named hi-IN voice, so Hinglish uses Heera with the Roman text. A test sentence fired start, word-boundary and end events.
+- **Not tested live:** how the voices actually sound, the Devanagari lines with a real hi-IN voice, the microphone, the feel of the animations and dragging by hand.
 
 ## Build log
 
@@ -163,6 +165,11 @@ MAYA, the project's own character, lives on every signed-in page: a small figure
   - Speech: a "Turn on voice" gesture, voice loading with retries and a status line, local voices first, sentence queueing, and lip-sync from boundary events with a timed fallback.
   - The shield "M" emblem is now the logo mark and favicon, and MAYA stands on the sign-in hero.
   - Offline eval not regenerated: no scan, finding or claim logic changed.
+- **2026-11-02 (Pet v2, tier 1):** Compact pet, settings page, female voice, Hinglish rewrite.
+  - The pet is about 80 px and speaks through a small bubble with chips, placed so it never covers the control it is talking about. She has only mute and hide on her; everything else moved to a Pet settings page.
+  - Voice: a picker with Preview, a female-sounding default (never a male-sounding one), pitch 1.2 and the user's choice remembered.
+  - Lines: every line rewritten as MAYA in the first person, with Devanagari spoken versions for a hi-IN voice. A first-visit greeting asks for your level.
+  - The main chat now sends the chosen level, so answers are worded for it.
 
 ## License
 

@@ -461,6 +461,18 @@ See `src/models.py`:
   - **Lip-sync:** the mouth follows `onboundary`, with a timed fallback when a voice sends none.
 - **Contact sheet.** `static/pet-sheet.html` and `pet-sheet.js` render every expression and pose. They are served only in `--ui-preview` mode (404 otherwise; tested).
 
+### Pet v2 (tier 1): compact pet, settings page, voice
+
+- **Layout.** The pet is 64x80 px (45x56 on phones). The old docked panel is gone.
+  - `pet.say(text, chips)` shows a small bubble (max 260 px) beside the pet. `placeBubble` tries left, right, above and below the pet, plus above or below both the pet and the target, clamped to the viewport.
+  - The bubble never covers the pet or the target. Among the free spots it picks the one covering the fewest nearby controls.
+  - The bubble hides after a reading time based on the number of words.
+  - The pet's own surface has two buttons only: mute and hide.
+- **Settings page** (`#pet-view` in `chat.html`, sidebar "Pet settings"): level, language, voice picker, speed and pitch, speak steps and answers, microphone, help switch (disabled until tier 3), Test voice and reset. All of it is stored in localStorage (guarded).
+- **Voice choice** (`guide.js core.pickVoice`): the user's saved `voiceURI` comes first. Otherwise the default is a female-sounding name in the language order (hinglish: hi-IN, en-IN, en; en: en-IN, en), voices on this device before online ones. Then a voice whose name is not male-sounding. Otherwise none (the status line says so). Male-sounding names are never a default.
+- **Lines.** `src/guide.py` templates carry `(English, Hinglish, Devanagari)`; `step()` returns `spoken_hi` for Hinglish. The browser's own lines (greeting, chips, reactions) live in `static/pet-lines.js`. All of them are fixed templates without the model badge.
+- **Greeting.** A "greeted" flag per account per device, under a key derived from a SHA-256 prefix of the email (the email is never stored).
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

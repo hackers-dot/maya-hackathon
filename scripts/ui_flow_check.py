@@ -179,6 +179,11 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
               "MAYA pet: emotion from the same state (ready to scan = determined, pointing)", str(emo))
     st, _, _ = b.request("GET", "/static/pet.js")
     st2, _, _ = b.request("GET", "/static/pet-sheet.html")
+    st3, _, _ = b.request("GET", "/static/pet-lines.js")
+    rep.check(st3 == 200, "pet-lines.js (fixed pet lines) served", f"HTTP {st3}")
+    st4, _, raw4 = b.request("GET", "/chat")
+    rep.check(st4 == 200 and b'id="pet-view"' in raw4 and b'id="pet-settings-btn"' in raw4,
+              "Pet settings page reachable from the sidebar", f"HTTP {st4}")
     rep.check(st == 200 and st2 == 404, "pet.js served; test-only contact sheet not served", f"HTTP {st}/{st2}")
     status, _, data = b.request("GET", "/api/assets")
     labels = [a["label"] for a in json.loads(data)["assets"]] if status == 200 else []

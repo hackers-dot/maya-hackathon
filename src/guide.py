@@ -17,193 +17,245 @@ ROLE_FOR_LEVEL = {"new": "owner", "some": "developer", "technical": "technical"}
 MOODS = ("idle", "talking", "thinking", "happy", "concerned", "pointing")
 UPLOAD_KINDS = ("code", "logs", "image", "watch")
 
-# Each state: plain line (levels new/some) and technical line, each (English, Hinglish); a "why" pair or None
-# (None for findings: the why comes from the report template of the top finding); targets; mood.
-# HINGLISH strings below NEED NATIVE-SPEAKER REVIEW before they are relied on.
+# Each state: plain line (levels new/some) and technical line, each (English, Hinglish, spoken Hindi); a "why"
+# pair (English, Hinglish) or None (for findings the why comes from the report template of the top finding);
+# targets; mood. MAYA speaks as herself, warm and in the first person (female persona).
+# HINGLISH and DEVANAGARI strings below NEED NATIVE-SPEAKER REVIEW before they are relied on. The Devanagari
+# ("spoken") versions are only for a hi-IN voice; the screen always shows the Roman text.
 T = {
     "no_account_type": {
-        "plain": ("Hi, I am your MAYA guide. First, tell MAYA who you are: a company with a website, or a person "
-                  "who wants to learn.",
-                  "Namaste, main aapka MAYA guide hoon. Pehle batayein: aap ek company hain jiski website hai, ya "
-                  "aap seekhna chahte hain?"),
-        "tech": ("Start by choosing an account type. Company accounts can connect a website for read-only checks.",
-                 "Shuru karne ke liye account type chunein. Company account website connect karke read-only checks "
-                 "chala sakta hai."),
-        "why": ("MAYA only checks sites you own, so it needs to know whether you have one.",
-                "MAYA sirf aapki apni sites check karta hai, isliye use pata hona chahiye ki aapki site hai ya nahi."),
+        "plain": ("Hi, I'm MAYA! First, tell me who you are: a company with a website, or someone who wants to learn.",
+                  "Hii! Main MAYA hoon. Pehle batao, aap company ho jiski website hai, ya bas seekhna hai?",
+                  "हाय! मैं माया हूँ। पहले बताओ, आप कंपनी हो जिसकी वेबसाइट है, या बस सीखना है?"),
+        "tech": ("Hi, I'm MAYA. Pick an account type first; company accounts can connect a website for read-only "
+                 "checks.",
+                 "Hii, main MAYA. Pehle account type chuno; company account se website connect karke read-only "
+                 "checks chala sakte ho.",
+                 "हाय, मैं माया। पहले अकाउंट टाइप चुनो; कंपनी अकाउंट से वेबसाइट कनेक्ट करके रीड-ओनली चेक्स चला "
+                 "सकते हो।"),
+        "why": ("I only check sites you own, so I need to know if you have one.",
+                "Main sirf aapki apni sites check karti hoon, isliye ye jaanna zaroori hai."),
         "targets": ("choose-company",), "mood": "pointing"},
     "no_asset_type": {
-        "plain": ("Choose Website: that is what MAYA can check today. The other options come later.",
-                  "Website chunein: abhi MAYA wahi check kar sakta hai. Baaki options baad mein aayenge."),
-        "tech": ("Select Website. Other asset types (API, mobile, cloud) are not available yet.",
-                 "Website select karein. Baaki asset types (API, mobile, cloud) abhi available nahi hain."),
-        "why": ("The type decides which read-only checks MAYA can run.",
-                "Type se tay hota hai ki MAYA kaunse read-only checks chala sakta hai."),
+        "plain": ("Choose Website. That's what I can check today; the other options are coming later.",
+                  "Website chuno. Abhi main wahi check kar sakti hoon, baaki options baad mein aayenge.",
+                  "वेबसाइट चुनो। अभी मैं वही चेक कर सकती हूँ, बाकी ऑप्शन्स बाद में आएँगे।"),
+        "tech": ("Select Website. API, mobile and cloud assets aren't available yet.",
+                 "Website select karo. API, mobile aur cloud abhi available nahi hain.",
+                 "वेबसाइट सिलेक्ट करो। एपीआई, मोबाइल और क्लाउड अभी अवेलेबल नहीं हैं।"),
+        "why": ("The type decides which read-only checks I can run.",
+                "Type se decide hota hai ki main kaunse read-only checks chala sakti hoon."),
         "targets": ("asset-website",), "mood": "pointing"},
     "no_connect": {
-        "plain": ("Before anything runs, MAYA asks if you want to connect. Saying yes only shows the next step; "
-                  "nothing is scanned yet.",
-                  "Kuch bhi chalne se pehle MAYA poochta hai ki aap connect karna chahte hain. Haan kehne se sirf "
-                  "agla step dikhega; abhi kuch scan nahi hoga."),
-        "tech": ("Confirm the connection to continue. No request is sent to your site at this step.",
-                 "Aage badhne ke liye connection confirm karein. Is step par aapki site ko koi request nahi jaati."),
+        "plain": ("Before anything runs, I ask if you want to connect. Saying yes just shows the next step; nothing "
+                  "gets scanned yet.",
+                  "Kuch bhi chalane se pehle main poochti hoon. Haan bolne se bas agla step khulega, abhi kuch scan "
+                  "nahi hoga.",
+                  "कुछ भी चलाने से पहले मैं पूछती हूँ। हाँ बोलने से बस अगला स्टेप खुलेगा, अभी कुछ स्कैन नहीं होगा।"),
+        "tech": ("Confirm the connection to continue. No request goes to your site at this step.",
+                 "Aage badhne ke liye connection confirm karo. Is step par aapki site ko koi request nahi jaati.",
+                 "आगे बढ़ने के लिए कनेक्शन कन्फ़र्म करो। इस स्टेप पर आपकी साइट को कोई रिक्वेस्ट नहीं जाती।"),
         "why": ("You stay in control: every step waits for you.",
-                "Control aapke haath mein rehta hai: har step aapka intezaar karta hai."),
+                "Control aapke haath mein hai, har step aapka wait karta hai."),
         "targets": ("connect-yes",), "mood": "pointing"},
     "no_consent": {
-        "plain": ("Please read what MAYA will and will not do. If you agree, press Allow; MAYA only reads, it never "
-                  "changes your site.",
-                  "Padhiye MAYA kya karega aur kya nahi karega. Agar aap sahmat hain to Allow dabayein; MAYA sirf "
-                  "padhta hai, site ko badalta nahi."),
+        "plain": ("Have a look at what I will and won't do. If it's okay with you, press Allow. I only read; I never "
+                  "change your site.",
+                  "Dekh lo main kya karungi aur kya nahi. Theek lage to Allow dabao. Main sirf padhti hoon, site "
+                  "kabhi nahi badalti.",
+                  "देख लो मैं क्या करूँगी और क्या नहीं। ठीक लगे तो अलाउ दबाओ। मैं सिर्फ़ पढ़ती हूँ, साइट कभी नहीं "
+                  "बदलती।"),
         "tech": ("Review the scope list, then give consent. Checks are read-only requests inside the verified "
                  "scope.",
-                 "Scope list dekhein, phir consent dein. Checks sirf verified scope ke andar read-only requests hain."),
-        "why": ("Your consent is recorded, so it is always clear what you agreed to.",
-                "Aapka consent record hota hai, taaki hamesha saaf rahe ki aapne kya manjoor kiya."),
+                 "Scope list dekho, phir consent do. Saare checks verified scope ke andar read-only requests hain.",
+                 "स्कोप लिस्ट देखो, फिर कंसेंट दो। सारे चेक्स वेरिफ़ाइड स्कोप के अंदर रीड-ओनली रिक्वेस्ट्स हैं।"),
+        "why": ("Your consent is recorded, so it's always clear what you agreed to.",
+                "Aapka consent record hota hai, taaki hamesha clear rahe ki aapne kya allow kiya."),
         "targets": ("consent-allow",), "mood": "pointing"},
     "no_asset": {
-        "plain": ("Now add your website address, or try MAYA's demo shop first. The demo is a practice site that "
-                  "runs only on this computer.",
-                  "Ab apni website ka address daalein, ya pehle MAYA ki demo shop try karein. Demo ek practice site "
-                  "hai jo sirf is computer par chalti hai."),
+        "plain": ("Now add your website address, or try my demo shop first. The demo is a practice site that runs "
+                  "only on this computer.",
+                  "Ab apni website ka address daalo, ya pehle meri demo shop try karo. Demo ek practice site hai jo "
+                  "sirf is computer par chalti hai.",
+                  "अब अपनी वेबसाइट का एड्रेस डालो, या पहले मेरी डेमो शॉप ट्राय करो। डेमो एक प्रैक्टिस साइट है जो "
+                  "सिर्फ़ इस कंप्यूटर पर चलती है।"),
         "tech": ("Add a site address (ownership must be verified) or use the loopback demo app, which needs no "
                  "verification.",
-                 "Site address add karein (ownership verify karni hogi) ya loopback demo app use karein, jise "
-                 "verification nahi chahiye."),
-        "why": ("MAYA never checks a site until it knows the site is yours.",
-                "Jab tak MAYA ko pata na ho ki site aapki hai, woh use check nahi karta."),
+                 "Site address add karo (ownership verify karni hogi), ya loopback demo app lo, usme verification "
+                 "nahi chahiye.",
+                 "साइट एड्रेस ऐड करो, ओनरशिप वेरिफ़ाई करनी होगी, या लूपबैक डेमो ऐप लो, उसमें वेरिफ़िकेशन नहीं "
+                 "चाहिए।"),
+        "why": ("I never check a site until I know it's yours.",
+                "Jab tak mujhe pata na ho ki site aapki hai, main use check nahi karti."),
         "targets": ("asset-url", "use-demo", "add-asset"), "mood": "pointing"},
     "verification_pending": {
-        "plain": ("MAYA needs proof that this site is yours. Put the small token shown here on your site, then "
-                  "press Verify ownership.",
-                  "MAYA ko saboot chahiye ki yeh site aapki hai. Yahan dikha chhota token apni site par lagayein, "
-                  "phir Verify ownership dabayein."),
+        "plain": ("I need proof that this site is yours. Put the small token shown here on your site, then press "
+                  "Verify ownership.",
+                  "Mujhe proof chahiye ki ye site aapki hai. Yahan dikha chhota token apni site par lagao, phir Verify "
+                  "ownership dabao.",
+                  "मुझे प्रूफ़ चाहिए कि ये साइट आपकी है। यहाँ दिखा छोटा टोकन अपनी साइट पर लगाओ, फिर वेरिफ़ाई "
+                  "ओनरशिप दबाओ।"),
         "tech": ("Publish the token as a meta tag, a /.well-known/maya-verify.txt file or a DNS TXT record, then "
                  "verify.",
-                 "Token ko meta tag, /.well-known/maya-verify.txt file ya DNS TXT record ke roop mein publish karein, "
-                 "phir verify karein."),
-        "why": ("This stops anyone from using MAYA on a site that is not theirs.",
-                "Isse koi bhi MAYA ko kisi aur ki site par use nahi kar sakta."),
+                 "Token ko meta tag, /.well-known/maya-verify.txt file ya DNS TXT record mein daalo, phir verify "
+                 "karo.",
+                 "टोकन को मेटा टैग, वेल-नोन फ़ाइल या डीएनएस टीएक्सटी रिकॉर्ड में डालो, फिर वेरिफ़ाई करो।"),
+        "why": ("This way nobody can use me on a site that isn't theirs.",
+                "Isse koi bhi mujhe kisi aur ki site par use nahi kar sakta."),
         "targets": ("verify-btn", "add-asset"), "mood": "pointing"},
     "verification_failed": {
-        "plain": ("The last ownership check did not find the token. Check that it is on the live site, then press "
-                  "Verify ownership again.",
-                  "Pichhle ownership check mein token nahi mila. Dekhein ki woh live site par hai, phir Verify "
-                  "ownership dobara dabayein."),
-        "tech": ("Verification failed: the token was not found at any accepted location. Fix the placement and "
+        "plain": ("I couldn't find the token yet. Check that it's on the live site, then press Verify ownership "
+                  "again.",
+                  "Mujhe abhi token nahi mila. Dekho live site par laga hai ya nahi, phir Verify ownership dobara "
+                  "dabao.",
+                  "मुझे अभी टोकन नहीं मिला। देखो लाइव साइट पर लगा है या नहीं, फिर वेरिफ़ाई ओनरशिप दोबारा दबाओ।"),
+        "tech": ("Verification failed: the token wasn't found at any accepted location. Fix the placement and "
                  "retry.",
-                 "Verification fail hua: token kisi bhi sahi jagah nahi mila. Jagah theek karke dobara try karein."),
-        "why": ("This stops anyone from using MAYA on a site that is not theirs.",
-                "Isse koi bhi MAYA ko kisi aur ki site par use nahi kar sakta."),
+                 "Verification fail ho gaya: token kisi sahi jagah nahi mila. Jagah theek karke phir try karo.",
+                 "वेरिफ़िकेशन फ़ेल हो गया: टोकन किसी सही जगह नहीं मिला। जगह ठीक करके फिर ट्राय करो।"),
+        "why": ("This way nobody can use me on a site that isn't theirs.",
+                "Isse koi bhi mujhe kisi aur ki site par use nahi kar sakta."),
         "targets": ("verify-btn", "add-asset"), "mood": "concerned"},
     "ready_to_scan": {
-        "plain": ("Everything is ready. Press Run security scan: MAYA looks at your site the way a visitor's "
-                  "browser does, without changing anything.",
-                  "Sab tayyar hai. Run security scan dabayein: MAYA aapki site ko waise hi dekhta hai jaise visitor "
-                  "ka browser, bina kuch badle."),
-        "tech": ("Ready to scan. The run makes read-only requests inside the scope and stores each response as "
-                 "evidence.",
-                 "Scan ke liye tayyar. Run scope ke andar read-only requests karta hai aur har response evidence ke "
-                 "roop mein store hota hai."),
+        "plain": ("All set! Press Run security scan. I'll look at your site the way a visitor's browser does, "
+                  "without changing anything.",
+                  "Sab ready hai! Run security scan dabao. Main aapki site waise hi dekhungi jaise visitor ka browser "
+                  "dekhta hai, kuch badle bina.",
+                  "सब रेडी है! रन सिक्योरिटी स्कैन दबाओ। मैं आपकी साइट वैसे ही देखूँगी जैसे विज़िटर का ब्राउज़र "
+                  "देखता है, कुछ बदले बिना।"),
+        "tech": ("Ready to scan. I make read-only requests inside the scope and store each response as evidence.",
+                 "Scan ke liye ready. Main scope ke andar read-only requests karti hoon aur har response evidence ki "
+                 "tarah save hota hai.",
+                 "स्कैन के लिए रेडी। मैं स्कोप के अंदर रीड-ओनली रिक्वेस्ट्स करती हूँ और हर रिस्पॉन्स एविडेंस की "
+                 "तरह सेव होता है।"),
         "why": ("Every finding comes with the stored response that proves it.",
-                "Har finding ke saath woh stored response hota hai jo use saabit karta hai."),
+                "Har finding ke saath wo response hota hai jo use prove karta hai."),
         "targets": ("scan-empty-btn", "scan-btn"), "mood": "pointing"},
     "scan_running": {
-        "plain": ("The scan is running. You can watch each step in the live trace as it happens.",
-                  "Scan chal raha hai. Live trace mein har step hote hue dekh sakte hain."),
+        "plain": ("I'm scanning now. You can watch every step in the live trace.",
+                  "Main abhi scan kar rahi hoon. Live trace mein har step dekh sakte ho.",
+                  "मैं अभी स्कैन कर रही हूँ। लाइव ट्रेस में हर स्टेप देख सकते हो।"),
         "tech": ("Scan in progress. Each trace step shows the tool, its arguments and the token use.",
-                 "Scan chal raha hai. Har trace step mein tool, uske arguments aur token use dikhta hai."),
-        "why": ("Nothing is hidden: the trace is the record of what MAYA actually did.",
-                "Kuch chhupa nahi hai: trace hi record hai ki MAYA ne asal mein kya kiya."),
+                 "Scan chal raha hai. Har trace step mein tool, uske arguments aur token use dikhta hai.",
+                 "स्कैन चल रहा है। हर ट्रेस स्टेप में टूल, उसके आर्ग्युमेंट्स और टोकन यूज़ दिखता है।"),
+        "why": ("Nothing is hidden: the trace is the record of what I actually did.",
+                "Kuch chhupa nahi hai, trace hi record hai ki maine asal mein kya kiya."),
         "targets": ("run-panel",), "mood": "thinking"},
     "scan_failed": {
-        "plain": ("The last scan stopped before it finished. The message on screen says why; press Re-scan when "
-                  "you are ready.",
-                  "Pichhla scan poora hone se pehle ruk gaya. Screen par wajah likhi hai; jab tayyar hon tab Re-scan "
-                  "dabayein."),
+        "plain": ("The last scan stopped before it finished. The message on screen says why; press Re-scan "
+                  "whenever you're ready.",
+                  "Pichla scan beech mein ruk gaya. Screen par wajah likhi hai; jab ready ho tab Re-scan dabao.",
+                  "पिछला स्कैन बीच में रुक गया। स्क्रीन पर वजह लिखी है; जब रेडी हो तब री-स्कैन दबाओ।"),
         "tech": ("The run ended early ({status}). Read the error, then start a new scan.",
-                 "Run jaldi khatam hua ({status}). Error padhein, phir naya scan shuru karein."),
-        "why": ("MAYA reports only what finished checks found.",
-                "MAYA sirf poore hue checks ka result batata hai."),
+                 "Run jaldi khatam ho gaya ({status}). Error padho, phir naya scan chalao.",
+                 "रन जल्दी ख़त्म हो गया ({status})। एरर पढ़ो, फिर नया स्कैन चलाओ।"),
+        "why": ("I only report what finished checks found.",
+                "Main sirf poore hue checks ka result batati hoon."),
         "targets": ("scan-btn",), "mood": "concerned"},
     "scan_finished": {
-        "plain": ("The scan is done. The checks found {total} issue(s): {sev}. Start with the first card under Fix "
+        "plain": ("Scan done! The checks found {total} issue(s): {sev}. Let's start with the first card under Fix "
                   "first: {top}.",
-                  "Scan ho gaya. Checks ne {total} issue(s) dhoondhe: {sev}. Fix first ke pehle card se shuru karein: "
-                  "{top}."),
+                  "Scan ho gaya! Checks ne {total} issue(s) dhoondhe: {sev}. Fix first ke pehle card se shuru karte "
+                  "hain: {top}.",
+                  "स्कैन हो गया! चेक्स ने {total} इश्यू ढूँढे: {sev}। फ़िक्स फ़र्स्ट के पहले कार्ड से शुरू करते हैं: "
+                  "{top}।"),
         "tech": ("Scan finished: {total} finding(s) ({sev}). Highest priority by the severity table: {top}.",
-                 "Scan poora: {total} finding(s) ({sev}). Severity table ke hisaab se sabse pehle: {top}."),
+                 "Scan poora: {total} finding(s) ({sev}). Severity table ke hisaab se sabse pehle: {top}.",
+                 "स्कैन पूरा: {total} फ़ाइंडिंग्स ({sev})। सिवेरिटी टेबल के हिसाब से सबसे पहले: {top}।"),
         "why": None, "targets": ("score-card", "fixfirst-panel", "findings-panel"), "mood": "idle"},
     "proposals_not_approved": {
-        "plain": ("Below are fix proposals written from fixed templates. Read each one first: approving only "
-                  "records your decision, and nothing changes until you also press Apply.",
-                  "Neeche fix proposals hain jo fixed templates se bane hain. Pehle har ek padhein: approve karne se "
-                  "sirf aapka faisla record hota hai, jab tak Apply na dabayein kuch nahi badalta."),
+        "plain": ("Here are my fix proposals, made from fixed templates. Read each one first: approving only records "
+                  "your decision, and nothing changes until you also press Apply.",
+                  "Ye mere fix proposals hain, fixed templates se bane. Pehle har ek padho: approve karne se bas aapka "
+                  "decision record hota hai, Apply dabane tak kuch nahi badalta.",
+                  "ये मेरे फ़िक्स प्रपोज़ल्स हैं, फ़िक्स्ड टेम्पलेट्स से बने। पहले हर एक पढ़ो: अप्रूव करने से बस आपका "
+                  "फ़ैसला रिकॉर्ड होता है, अप्लाई दबाने तक कुछ नहीं बदलता।"),
         "tech": ("Each proposal is a fixed template (nginx, Apache, Python) with a risk level and a rollback. "
                  "Approval is written to the hash-chained audit log; it applies nothing.",
                  "Har proposal ek fixed template hai (nginx, Apache, Python), risk level aur rollback ke saath. "
-                 "Approval hash-chained audit log mein likha jaata hai; isse kuch apply nahi hota."),
-        "why": ("The decision is always yours; MAYA never approves for you.",
-                "Faisla hamesha aapka hai; MAYA aapki jagah kabhi approve nahi karta."),
+                 "Approval hash-chained audit log mein jaata hai; isse kuch apply nahi hota.",
+                 "हर प्रपोज़ल एक फ़िक्स्ड टेम्पलेट है, रिस्क लेवल और रोलबैक के साथ। अप्रूवल हैश-चेन्ड ऑडिट लॉग में "
+                 "जाता है; इससे कुछ अप्लाई नहीं होता।"),
+        "why": ("The decision is always yours; I never approve for you.",
+                "Decision hamesha aapka hai; main aapki jagah kabhi approve nahi karti."),
         "targets": ("proposals-panel", "approver"), "mood": "pointing"},
     "approved_not_applied": {
-        "plain": ("You approved {approved} fix(es). On the demo app, Apply makes the change and checks that the app "
+        "plain": ("You approved {approved} fix(es). On the demo app, Apply makes the change and checks the app "
                   "still works; on your own site, copy the snippet and apply it yourself.",
-                  "Aapne {approved} fix approve kiye. Demo app par Apply badlaav karta hai aur check karta hai ki app "
-                  "chal raha hai; apni site par snippet copy karke khud lagayein."),
+                  "Aapne {approved} fix approve kiye. Demo app par Apply change karta hai aur check karta hai ki app "
+                  "theek chal raha hai; apni site par snippet copy karke khud lagao.",
+                  "आपने {approved} फ़िक्स अप्रूव किए। डेमो ऐप पर अप्लाई चेंज करता है और चेक करता है कि ऐप ठीक चल रहा "
+                  "है; अपनी साइट पर स्निपेट कॉपी करके ख़ुद लगाओ।"),
         "tech": ("{approved} approved, not applied. Apply (demo app only) runs a health check and rolls back on "
                  "failure; on your own server, apply the snippet by hand.",
                  "{approved} approved, apply nahi hue. Apply (sirf demo app) health check chalata hai aur fail hone "
-                 "par rollback karta hai; apne server par snippet khud lagayein."),
+                 "par rollback karta hai; apne server par snippet khud lagao.",
+                 "{approved} अप्रूव्ड, अप्लाई नहीं हुए। अप्लाई, सिर्फ़ डेमो ऐप पर, हेल्थ चेक चलाता है और फ़ेल होने पर "
+                 "रोलबैक करता है; अपने सर्वर पर स्निपेट ख़ुद लगाओ।"),
         "why": ("If the health check fails, the change is rolled back automatically.",
-                "Health check fail ho to badlaav apne aap wapas ho jaata hai."),
+                "Health check fail hua to change apne aap wapas ho jaata hai."),
         "targets": ("apply-btn",), "mood": "pointing"},
     "applied_not_retested": {
-        "plain": ("The fix is applied but not confirmed yet. Press Re-test: MAYA runs the same checks again to see "
-                  "whether the issue is really gone.",
-                  "Fix lag gaya hai, par abhi confirm nahi hua. Re-test dabayein: MAYA wahi checks dobara chalata hai "
-                  "yeh dekhne ke liye ki issue sach mein gaya ya nahi."),
+        "plain": ("The fix is applied, but not confirmed yet. Press Re-test and I'll run the same checks again to "
+                  "see if the issue is really gone.",
+                  "Fix lag gaya, par abhi confirm nahi hua. Re-test dabao, main wahi checks dobara chalaungi aur "
+                  "dekhungi ki issue sach mein gaya ya nahi.",
+                  "फ़िक्स लग गया, पर अभी कन्फ़र्म नहीं हुआ। री-टेस्ट दबाओ, मैं वही चेक्स दोबारा चलाऊँगी और देखूँगी "
+                  "कि इश्यू सच में गया या नहीं।"),
         "tech": ("Applied but not verified. Re-test runs the same checks again; only a re-test can mark a finding "
                  "FIXED.",
-                 "Applied par verify nahi hua. Re-test wahi checks dobara chalata hai; sirf re-test hi finding ko "
-                 "FIXED mark kar sakta hai."),
+                 "Applied hai par verify nahi hua. Re-test wahi checks dobara chalata hai; sirf re-test hi finding ko "
+                 "FIXED mark kar sakta hai.",
+                 "अप्लाइड है पर वेरिफ़ाई नहीं हुआ। री-टेस्ट वही चेक्स दोबारा चलाता है; सिर्फ़ री-टेस्ट ही फ़ाइंडिंग "
+                 "को फ़िक्स्ड मार्क कर सकता है।"),
         "why": ("A fix only counts when the same check proves it.",
-                "Fix tabhi maana jaata hai jab wahi check use saabit kare."),
+                "Fix tabhi maana jaata hai jab wahi check use prove kare."),
         "targets": ("retest-btn",), "mood": "pointing"},
     "retest_fixed": {
-        "plain": ("Good news: the re-test no longer sees the {resolved} issue(s) you fixed. That is what the checks "
-                  "run found, not a promise about anything else.",
-                  "Achhi khabar: re-test ko ab woh {resolved} issue(s) nahi dikhe jo aapne fix kiye. Yeh sirf chalaye "
-                  "gaye checks ka result hai, baaki kisi cheez ka vaada nahi."),
+        "plain": ("Yay! The re-test no longer sees the {resolved} issue(s) you fixed. That's what the checks run "
+                  "found, not a promise about anything else.",
+                  "Yay! Re-test ko ab wo {resolved} issue(s) nahi dikhe jo aapne fix kiye. Ye bas chalaye gaye checks "
+                  "ka result hai, baaki cheezon ka promise nahi.",
+                  "ये! री-टेस्ट को अब वो {resolved} इश्यू नहीं दिखे जो आपने फ़िक्स किए। ये बस चलाए गए चेक्स का "
+                  "रिज़ल्ट है, बाकी चीज़ों का वादा नहीं।"),
         "tech": ("Re-test result FIXED: {resolved} finding(s) resolved, none still present in the checks run.",
-                 "Re-test result FIXED: {resolved} finding(s) resolved, chalaye gaye checks mein koi baaki nahi."),
+                 "Re-test result FIXED: {resolved} finding(s) resolved, chalaye gaye checks mein koi baaki nahi.",
+                 "री-टेस्ट रिज़ल्ट फ़िक्स्ड: {resolved} फ़ाइंडिंग्स रिज़ॉल्व्ड, चलाए गए चेक्स में कोई बाकी नहीं।"),
         "why": ("You can download the evidence pack or a client report to show what changed.",
-                "Kya badla, yeh dikhane ke liye evidence pack ya client report download kar sakte hain."),
+                "Kya badla, ye dikhane ke liye evidence pack ya client report download kar sakte ho."),
         "targets": ("retest-panel", "downloads-panel"), "mood": "happy"},
     "retest_still_present": {
-        "plain": ("The re-test confirmed {resolved} fix(es), and {still} issue(s) are still there. The proposals "
-                  "for the remaining ones are below.",
-                  "Re-test ne {resolved} fix confirm kiye, aur {still} issue(s) abhi bhi hain. Baaki issues ke "
-                  "proposals neeche hain."),
+        "plain": ("The re-test confirmed {resolved} fix(es), and {still} issue(s) are still there. The proposals for "
+                  "those are just below.",
+                  "Re-test ne {resolved} fix confirm kiye, aur {still} issue(s) abhi bhi hain. Unke proposals neeche "
+                  "hi hain.",
+                  "री-टेस्ट ने {resolved} फ़िक्स कन्फ़र्म किए, और {still} इश्यू अभी भी हैं। उनके प्रपोज़ल्स नीचे ही "
+                  "हैं।"),
         "tech": ("Re-test: {resolved} resolved, {still} still present. Approve and apply the remaining proposals, "
                  "then re-test.",
                  "Re-test: {resolved} resolved, {still} abhi bhi present. Baaki proposals approve aur apply karke "
-                 "dobara re-test karein."),
+                 "dobara re-test karo.",
+                 "री-टेस्ट: {resolved} रिज़ॉल्व्ड, {still} अभी भी प्रेज़ेंट। बाकी प्रपोज़ल्स अप्रूव और अप्लाई करके "
+                 "दोबारा री-टेस्ट करो।"),
         "why": ("Each remaining issue keeps its stored evidence, so you can see exactly what was found.",
-                "Har baaki issue ka stored evidence rehta hai, taaki aap dekh sakein ki asal mein kya mila."),
+                "Har baaki issue ka evidence save hai, taaki aap dekh sako ki asal mein kya mila."),
         "targets": ("retest-panel", "proposals-panel"), "mood": "concerned"},
     "nothing_to_do": {
-        "plain": ("Nothing is waiting for you right now. You can ask me a security question below; a scan only "
-                  "covers the checks it ran, so re-scanning later is a good habit.",
-                  "Abhi aapke liye kuch baaki nahi hai. Neeche mujhse security ka koi bhi sawaal poochein; scan sirf "
-                  "chalaye gaye checks ko cover karta hai, isliye baad mein re-scan karna achhi aadat hai."),
+        "plain": ("Nothing's waiting for you right now. Ask me a security question in the chat; a scan only covers "
+                  "the checks it ran, so re-scanning later is a good habit.",
+                  "Abhi kuch pending nahi hai. Chat mein mujhse security ka koi bhi sawaal poochho; scan sirf chalaye "
+                  "gaye checks cover karta hai, isliye baad mein re-scan karna achhi aadat hai.",
+                  "अभी कुछ पेंडिंग नहीं है। चैट में मुझसे सिक्योरिटी का कोई भी सवाल पूछो; स्कैन सिर्फ़ चलाए गए चेक्स "
+                  "कवर करता है, इसलिए बाद में री-स्कैन करना अच्छी आदत है।"),
         "tech": ("No pending actions. Results cover only the checks run; set a re-scan reminder or ask a question.",
-                 "Koi pending action nahi. Results sirf chalaye gaye checks ke hain; re-scan reminder set karein ya "
-                 "sawaal poochein."),
-        "why": ("MAYA never calls a site fully fixed; it says what its checks did and did not find.",
-                "MAYA kabhi nahi kehta ki site poori tarah theek hai; woh batata hai ki checks ko kya mila aur kya "
-                "nahi."),
-        "targets": ("reminder-panel", "guide-ask"), "mood": "idle"},
+                 "Koi pending action nahi. Results sirf chalaye gaye checks ke hain; re-scan reminder set karo ya "
+                 "sawaal poochho.",
+                 "कोई पेंडिंग एक्शन नहीं। रिज़ल्ट्स सिर्फ़ चलाए गए चेक्स के हैं; री-स्कैन रिमाइंडर सेट करो या सवाल "
+                 "पूछो।"),
+        "why": ("I never call a site fully fixed; I say what my checks did and did not find.",
+                "Main kabhi nahi kehti ki site poori tarah theek hai; main bas batati hoon ki checks ko kya mila aur "
+                "kya nahi."),
+        "targets": ("reminder-panel", "prompt"), "mood": "idle"},
 }
 STATES = tuple(T)
 # The pet's face and pose per state: a fixed sequence (ms = how long a step shows; None = it holds).
@@ -232,7 +284,7 @@ EMOTION = {
     "applied_not_retested": [E("determined", "pointing")],
     "retest_still_present": [E("confused", "protecting")],
 }
-WHY_PREFIX = {"en": "Why this matters: ", "hinglish": "Yeh kyon zaroori hai: "}
+WHY_PREFIX = {"en": "Why this matters: ", "hinglish": "Ye kyon zaroori hai: "}
 # English report templates are reused for findings; the Hinglish guide says so instead of translating them
 TEMPLATE_NOTE = {"en": "", "hinglish": "(English mein) "}
 
@@ -299,7 +351,9 @@ def step(state: str, level: str, lang: str, facts: dict) -> dict:
               "resolved": len((run.get("retest") or {}).get("resolved", [])),
               "still": len((run.get("retest") or {}).get("still_present", [])),
               "status": run.get("status", "")}
-    line = (t["tech"] if level == "technical" else t["plain"])[i].format(**values)
+    texts = t["tech"] if level == "technical" else t["plain"]
+    line = texts[i].format(**values)
+    spoken = texts[2].format(**values) if lang == "hinglish" else None  # Devanagari, for a hi-IN voice only
     if t["why"]:
         why = t["why"][i]
     elif top and top["check"] in TEXT:
@@ -318,7 +372,8 @@ def step(state: str, level: str, lang: str, facts: dict) -> dict:
     if state == "approved_not_applied" and not run.get("can_apply"):
         targets = ("retest-btn",)  # own site: the user applies the snippet, then re-tests
     return {"state": state, "level": level, "lang": lang, "line": line,
-            "why": (WHY_PREFIX[lang] + why) if why else None, "targets": list(targets), "mood": mood,
+            "spoken_hi": spoken, "why": (WHY_PREFIX[lang] + why) if why else None, "targets": list(targets),
+            "mood": mood,
             "emotion": emotion, "role": ROLE_FOR_LEVEL[level]}
 
 

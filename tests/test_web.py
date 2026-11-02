@@ -215,7 +215,8 @@ SINKS = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|document\.write|\bev
 
 EXPECTED_STATIC = {"app.js", "theme.js", "style.css", "signin.html", "onboarding.html", "company.html",
                    "connect.html", "consent.html", "connect-website.html", "chat.html", "print.js", "report-print.css",
-                   "favicon.svg", "guide.js", "pet.js", "pet-sheet.html", "pet-sheet.js"}
+                   "favicon.svg", "guide.js", "pet.js", "pet-sheet.html", "pet-sheet.js",
+                   "pet-lines.js"}
 # The SVG namespace is an identifier, never fetched. It is allowed ONLY in these exact spots: once as the
 # createElementNS constant in app.js and once as the xmlns of favicon.svg. Anything else with a URL still fails.
 SVG_NS_ALLOWED = {"app.js": 'const SVG_NS = "http://www.w3.org/2000/svg";',

@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/theme.js"></script>
 <script src="/static/app.js" defer></script>
+<script src="/static/pet-lines.js" defer></script>
 <script src="/static/pet.js" defer></script>
 <script src="/static/guide.js" defer></script>
 </head>
@@ -20,7 +21,7 @@
 <button id="sidebar-close" class="icon-btn only-mobile" type="button" aria-label="Close sidebar">&#10005;</button>
 </div>
 <button id="new-chat" class="btn btn-secondary new-chat" type="button">&#65291; New chat</button>
-<div class="pet-controls"><button id="pet-call" class="btn btn-quiet" type="button">Call pet</button><button id="pet-hide" class="btn btn-quiet" type="button" aria-pressed="false">Hide pet</button></div>
+<div class="pet-controls"><button id="pet-call" class="btn btn-quiet" type="button">Call pet</button><button id="pet-settings-btn" class="btn btn-quiet" type="button">Pet settings</button></div>
 <nav class="side-lists" aria-label="History">
 <h3 class="side-heading">Chats</h3>
 <ul id="chats-list" class="side-list"></ul>
@@ -117,6 +118,46 @@
 <input id="watch-domain" type="text" autocomplete="off" maxlength="253" placeholder="your-shop.example"></div>
 <div class="actions"><button id="watch-btn" class="btn btn-primary" type="button">Start the watch</button></div>
 <p id="watch-message" class="message" role="status"></p>
+</section>
+<section id="pet-view" class="asset-view pet-settings" hidden aria-labelledby="pet-settings-title">
+<h1 id="pet-settings-title" class="title">Pet settings</h1>
+<p class="hint">How MAYA, your guide, talks to you. Everything here is saved in this browser only.</p>
+<section class="panel">
+<div class="panel-head"><h2>How MAYA explains</h2></div>
+<div class="settings-grid">
+<div class="field"><label for="pet-level">Experience level</label>
+<select id="pet-level"><option value="new">I'm new to security</option><option value="some">I know some</option><option value="technical">I'm technical</option></select></div>
+<div class="field"><label for="pet-lang">Language</label>
+<select id="pet-lang"><option value="en">English</option><option value="hinglish">Hinglish</option></select></div>
+</div>
+<p class="hint">Hinglish lines are written in-house and still need review by a native speaker.</p>
+</section>
+<section class="panel">
+<div class="panel-head"><h2>Voice</h2><span class="panel-meta">your browser's built-in text-to-speech</span></div>
+<div class="settings-grid">
+<div class="field field-wide"><label for="pet-voice">Voice</label>
+<div class="voice-row"><select id="pet-voice"></select><button id="pet-voice-preview" class="btn btn-quiet" type="button">Preview</button></div></div>
+<div class="field"><label for="pet-rate">Speed</label><input id="pet-rate" type="range" min="0.7" max="1.5" step="0.05"></div>
+<div class="field"><label for="pet-pitch">Pitch</label><input id="pet-pitch" type="range" min="0.6" max="1.8" step="0.05"></div>
+</div>
+<label class="check-row"><input id="pet-speak-steps" type="checkbox"> <span>Speak the steps</span></label>
+<label class="check-row"><input id="pet-speak-answers" type="checkbox"> <span>Speak answers (a one-line summary of the model's reply in the chat)</span></label>
+<div class="actions"><button id="pet-voice-test" class="btn btn-secondary" type="button">Test voice</button><button id="pet-voice-stop" class="btn btn-quiet" type="button">Stop</button></div>
+<p id="pet-voice-status" class="hint" role="status"></p>
+<p id="pet-voice-note" class="hint"></p>
+</section>
+<section class="panel">
+<div class="panel-head"><h2>Microphone (optional)</h2></div>
+<label class="check-row"><input id="pet-mic" type="checkbox"> <span>Use the microphone to ask questions</span></label>
+<p id="pet-mic-note" class="hint"></p>
+</section>
+<section class="panel">
+<div class="panel-head"><h2>Help and memory</h2></div>
+<label class="check-row"><input id="pet-help" type="checkbox" disabled> <span>Let the pet help me (scroll, open read-only panels). Not available yet.</span></label>
+<p id="pet-learn-note" class="hint">The pet remembers which buttons you have used, on this device only. Nothing is sent to MAYA's server.</p>
+<div class="actions"><button id="pet-reset" class="btn btn-quiet" type="button">Reset what the pet learned</button></div>
+<p id="pet-reset-message" class="hint" role="status"></p>
+</section>
 </section>
 <section id="data-view" class="asset-view" hidden aria-live="polite">
 <h1 class="title">Your data</h1>

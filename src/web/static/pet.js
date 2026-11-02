@@ -104,8 +104,37 @@
     return null;
   }
 
+  // Where the small speech bubble goes next to the pet: left, right, above or below (or above/below both the pet
+  // and the target when they sit side by side), clamped inside the viewport. It never covers the pet or the
+  // `must` rects (the control the pet is talking about); among those spots it picks the one that covers the
+  // fewest `prefer` rects (other controls nearby). `covers` is true only if every spot covers a `must` rect.
+  function placeBubble(pet, size, viewport, must, prefer) {
+    const m = 8, gap = 6;
+    const clamp = (x, y) => ({ x: Math.round(Math.min(Math.max(m, x), Math.max(m, viewport.w - size.w - m))),
+      y: Math.round(Math.min(Math.max(m, y), Math.max(m, viewport.h - size.h - m))) });
+    const hard = (must || []).filter(Boolean);
+    const soft = (prefer || []).filter(Boolean);
+    const top = Math.min.apply(null, [pet.y].concat(hard.map((a) => a.y)));
+    const bottom = Math.max.apply(null, [pet.y + pet.h].concat(hard.map((a) => a.y + a.h)));
+    const tries = [["left", pet.x - size.w - gap, pet.y], ["right", pet.x + pet.w + gap, pet.y],
+      ["above", pet.x + pet.w - size.w, pet.y - size.h - gap], ["below", pet.x + pet.w - size.w, pet.y + pet.h + gap],
+      ["above", pet.x + pet.w - size.w, top - size.h - gap], ["below", pet.x + pet.w - size.w, bottom + gap]];
+    let best = null;
+    let first = null;
+    for (const [side, x, y] of tries) {
+      const p = clamp(x, y);
+      const box = { x: p.x, y: p.y, w: size.w, h: size.h };
+      if (!first) first = { x: p.x, y: p.y, side: side, covers: true };
+      if (overlaps(box, pet) || hard.some((a) => overlaps(box, a))) continue;
+      const cost = soft.filter((a) => overlaps(box, a)).length;
+      if (!best || cost < best.cost) best = { x: p.x, y: p.y, side: side, covers: false, cost: cost };
+      if (cost === 0) break;
+    }
+    return best || first;
+  }
+
   const core = { EXPRESSIONS, POSES, EVENT_EMOTION, splitSentences, clampPos, readPos, writePos, behavior,
-    placeBeside, overlaps, EYE_SHAPES: null, MOUTHS: null, EFFECTS: null };
+    placeBeside, placeBubble, overlaps, EYE_SHAPES: null, MOUTHS: null, EFFECTS: null };
 
   // ---------- drawing primitives (shape name -> list of [tag, attrs]) ----------
   const G = "#00FF66", INK = "#0B1F16", MOUTH = "#5E1A1F", TONGUE = "#F2878F", TEAR = "#7CF5D0", PINK = "#FF8FB6";
@@ -405,6 +434,38 @@
     layer.appendChild(host);
     document.body.appendChild(layer);
     const pet = create(host, { expression: "smiling", pose: "idle", loops: b.loops });
+    // the pet's own surface: only mute/unmute and hide
+    const tools = document.createElement("div");
+    tools.className = "pet-tools";
+    const tool = (cls, label, onClick) => {
+      const t = document.createElement("button");
+      t.type = "button";
+      t.className = "pet-tool " + cls;
+      t.setAttribute("aria-label", label);
+      t.title = label;
+      t.addEventListener("click", (e) => { e.stopPropagation(); onClick(); });
+      tools.appendChild(t);
+      return t;
+    };
+    const muteBtn = tool("pet-mute", "Mute or unmute MAYA", () => opts.onMute && opts.onMute());
+    tool("pet-hide-btn", "Hide MAYA", () => opts.onHide && opts.onHide()).textContent = "\u2715";
+    host.appendChild(tools);
+    // the small speech bubble beside the pet; choices appear as chips on it
+    const bubble = document.createElement("div");
+    bubble.className = "pet-bubble";
+    bubble.id = "pet-bubble";
+    bubble.hidden = true;
+    bubble.setAttribute("role", "status");
+    bubble.setAttribute("aria-live", "polite");
+    const bubbleText = document.createElement("p");
+    bubbleText.className = "pet-bubble-text";
+    const chipRow = document.createElement("div");
+    chipRow.className = "pet-chips";
+    bubble.appendChild(bubbleText);
+    bubble.appendChild(chipRow);
+    layer.appendChild(bubble);
+    let bubbleTimer = null;
+    let avoidEl = null;
     let base = { expression: "smiling", pose: "idle" };
     let timers = [];
     let flashTimer = null;
@@ -421,14 +482,64 @@
       host.style.transform = "translate3d(" + Math.round(x) + "px," + Math.round(y) + "px,0)";
       host.dataset.x = String(Math.round(x));
       host.dataset.y = String(Math.round(y));
+      positionBubble();
+      setTimeout(positionBubble, b.roam ? 950 : 0);  // again once the walk has finished
+    }
+    function rectOf(n) { const r = n.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }
+    function positionBubble() {
+      if (bubble.hidden) return;
+      const s = size();
+      const petBox = { x: parseFloat(host.dataset.x || "0"), y: parseFloat(host.dataset.y || "0"), w: s.w, h: s.h };
+      const bsize = { w: bubble.offsetWidth, h: bubble.offsetHeight };
+      const vp = { w: window.innerWidth, h: window.innerHeight };
+      const must = avoidEl ? [rectOf(avoidEl)] : [];
+      // first try to keep every nearby control free too; the target itself is never covered if any spot allows it
+      const near = [];
+      for (const n of document.querySelectorAll(CONTROLS)) {
+        if (n.closest(".pet-layer") || n === avoidEl) continue;
+        const r = n.getBoundingClientRect();
+        if (r.width && r.height && Math.abs(r.left - petBox.x) < 700 && Math.abs(r.top - petBox.y) < 400) near.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+      }
+      const spot = placeBubble(petBox, bsize, vp, must, near);
+      bubble.style.left = spot.x + "px";  // left/top, not transform: the entry animation owns transform
+      bubble.style.top = spot.y + "px";
+      bubble.setAttribute("data-side", spot.side);
+    }
+    // say(text, chips, {ms, avoid, sticky}): chips are [{label, onClick}]; the bubble hides after reading time
+    function say(text, chips, o) {
+      const opt = o || {};
+      clearTimeout(bubbleTimer);
+      bubbleText.textContent = String(text || "");
+      while (chipRow.firstChild) chipRow.removeChild(chipRow.firstChild);
+      for (const c of chips || []) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "pet-chip";
+        chip.textContent = c.label;
+        chip.addEventListener("click", (e) => { e.stopPropagation(); c.onClick(); });
+        chipRow.appendChild(chip);
+      }
+      chipRow.hidden = !(chips || []).length;
+      avoidEl = opt.avoid || null;
+      bubble.hidden = false;
+      positionBubble();
+      const words = String(text || "").split(/\s+/).length;
+      const ms = opt.ms || Math.min(16000, Math.max(3500, words * 320 + ((chips || []).length ? 5000 : 0)));
+      if (!opt.sticky) bubbleTimer = setTimeout(hideBubble, ms);
+    }
+    function hideBubble() { clearTimeout(bubbleTimer); bubble.hidden = true; }
+    function setMuted(muted) {
+      muteBtn.textContent = muted ? "\u{1F507}" : "\u{1F50A}";
+      muteBtn.setAttribute("aria-pressed", muted ? "false" : "true");
+      muteBtn.setAttribute("aria-label", muted ? "Voice is off: turn it on" : "Voice is on: mute");
     }
     function homePos() {
       const s = size();
       const saved = b.drag ? clampPos(readPos(store, POS_KEY), window.innerWidth, window.innerHeight, s.w, s.h) : null;
       if (saved) return saved;
       const anchor = opts.homeAnchor ? opts.homeAnchor() : null;
-      const x = window.innerWidth - s.w - (opts.mobile ? 8 : 20);
-      const y = anchor ? anchor.top - s.h + (opts.mobile ? 4 : 10) : window.innerHeight - s.h - 16;
+      const x = window.innerWidth - s.w - (opts.mobile ? 10 : 22);
+      const y = anchor ? anchor.top - s.h - 6 : window.innerHeight - s.h - 18;
       return { x: x, y: Math.max(8, y) };
     }
     function restore() {
@@ -523,7 +634,7 @@
 
     // drag (desktop), click = laugh and hop, double-click = speech bubble, hover = wink
     host.addEventListener("pointerdown", (e) => {
-      if (!b.drag || e.button !== 0) return;
+      if (!b.drag || e.button !== 0 || e.target.closest("button")) return;
       drag = { sx: e.clientX, sy: e.clientY, x: parseFloat(host.dataset.x || "0"), y: parseFloat(host.dataset.y || "0"), moved: false };
       host.setPointerCapture(e.pointerId);
     });
@@ -536,7 +647,8 @@
       const p = clampPos({ x: drag.x + dx, y: drag.y + dy }, window.innerWidth, window.innerHeight, s.w, s.h);
       place(p.x, p.y);
     });
-    host.addEventListener("pointerup", () => {
+    host.addEventListener("pointerup", (e) => {
+      if (e.target.closest("button")) return;
       const moved = drag && drag.moved;
       drag = null;
       host.classList.remove("is-dragging");
@@ -548,7 +660,7 @@
         hop();
       }
     });
-    host.addEventListener("dblclick", () => { if (opts.onOpen) opts.onOpen(); });
+    host.addEventListener("dblclick", (e) => { if (!e.target.closest("button") && opts.onOpen) opts.onOpen(); });
     host.addEventListener("keydown", (e) => { if (e.key === "Enter" && opts.onOpen) opts.onOpen(); });
     host.addEventListener("pointerenter", () => { if (!drag) flash("wink", null, 900); });
 
@@ -587,9 +699,10 @@
     const start = homePos();
     place(start.x, start.y);
     return { el: host, layer: layer, behavior: b, setEmotion: setEmotion, flash: flash, moveTo: moveTo, goHome: goHome,
-      hop: hop, talkStart: talkStart, talkStop: talkStop, mouth: mouth, rehome: rehome,
+      hop: hop, talkStart: talkStart, talkStop: talkStop, mouth: mouth, rehome: rehome, say: say,
+      hideBubble: hideBubble, setMuted: setMuted, bubble: bubble,
       expression() { return pet.expression; },
-      show(visible) { layer.hidden = !visible; } };
+      show(visible) { layer.hidden = !visible; if (!visible) hideBubble(); } };
   }
 
   window.MayaPet = { core: core, create: create, live: live };

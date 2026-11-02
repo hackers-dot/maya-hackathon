@@ -92,7 +92,7 @@ def test_hinglish_differs_and_is_marked_for_review():
         hi = step(state, "new", "hinglish", FACTS[state])["line"]
         assert en != hi, state
     assert "NEED NATIVE-SPEAKER REVIEW" in (STATIC_DIR.parent.parent / "guide.py").read_text(encoding="utf-8")
-    assert "NEED NATIVE-SPEAKER REVIEW" in (STATIC_DIR / "guide.js").read_text(encoding="utf-8")
+    assert "NEED NATIVE-SPEAKER REVIEW" in (STATIC_DIR / "pet-lines.js").read_text(encoding="utf-8")
 
 
 def test_explains_before_asking_and_never_approves_for_the_user():
@@ -266,9 +266,9 @@ const out = {
   speak: core.speakable("Start with [exposed_env_file:/.env]: block `/.env` at https-free /admin/path. Then more text here."),
   masked: core.speakable("The key sk_live_************ was found in config. It is masked."),
   long: core.speakable("word ".repeat(100)).length,
-  voiceEn: (core.pickVoice([{lang: "hi-IN"}, {lang: "en-US"}, {lang: "en-IN"}], "en") || {}).lang,
-  voiceHi: (core.pickVoice([{lang: "en-US"}, {lang: "hi_IN"}], "hinglish") || {}).lang,
-  voiceNone: core.pickVoice([], "en"),
+  voiceEn: (core.pickVoice([{lang: "hi-IN"}, {lang: "en-US"}, {lang: "en-IN"}], "en").voice || {}).lang,
+  voiceHi: (core.pickVoice([{lang: "en-US"}, {lang: "hi_IN"}], "hinglish").voice || {}).lang,
+  voiceNone: core.pickVoice([], "en").voice,
   noSpeech: core.speechSupported({}),
   noWindow: core.speechSupported(undefined),
   speech: core.speechSupported({speechSynthesis: {}, SpeechSynthesisUtterance: function () {}}),

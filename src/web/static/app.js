@@ -64,7 +64,7 @@
   }
   // static markup asks for icons with data-icon; sidebar controls get theirs by id or label
   const SIDE_ICONS = { "new-chat": "plus", "add-asset": "globe", "data-link": "data", "signout": "signout",
-    "investigate-btn": "search", "chats-empty-btn": "chat", "scan-empty-btn": "scan", "pet-call": "spark", "pet-hide": "eye" };
+    "investigate-btn": "search", "chats-empty-btn": "chat", "scan-empty-btn": "scan", "pet-call": "spark", "pet-settings-btn": "data" };
   const CONNECTOR_ICONS = { "Website": "globe", "Source code ZIP": "code", "Logs": "logs", "Suspicious message": "message",
     "GitHub repo": "branch", "Lookalike watch": "eye", "API": "api", "Mobile": "mobile", "Cloud": "cloud" };
   function decorateIcons() {
@@ -1486,6 +1486,7 @@
     if (msgConfirm) msgConfirm.addEventListener("change", uploadChosen);
     onClick("up-btn", uploadFile);
     onClick("data-link", () => { setSidebar(false); openData(); });
+    onClick("pet-settings-btn", () => { setSidebar(false); stopPolling(); showView("pet"); });
     onClick("delete-btn", deleteData);
     const upInput = $("up-file");
     if (upInput) upInput.addEventListener("change", uploadChosen);
@@ -1516,6 +1517,7 @@
       if (view === "github" || view === "watch") openSimpleView(view);
       if (view === "empty-asset") selectAsset(Object.assign({}, r.data.assets[0], { last_run: null, reminder: null }));
       if (view === "data") openData();
+      if (view === "pet") showView("pet");
       if (view === "logs" || view === "message" || view === "lookalike") {
         const s = r.data[view];
         selectAsset(s.asset);
@@ -1573,7 +1575,9 @@
     show("data-view", view === "data");
     show("github-view", view === "github");
     show("watch-view", view === "watch");
-    const titles = { home: "Home", chat: "Chat", data: "Your data", upload: "Upload", github: "GitHub repo", watch: "Lookalike watch" };
+    show("pet-view", view === "pet");
+    const titles = { home: "Home", chat: "Chat", data: "Your data", upload: "Upload", github: "GitHub repo", watch: "Lookalike watch",
+      pet: "Pet settings" };
     if (titles[view]) setTitle(titles[view]);
     emit("view", { view: view });
     if (view !== "asset") {
@@ -1761,7 +1765,7 @@
       r = await fetch("/api/chats/" + currentChatId + (mode === "investigate" ? "/investigate" : "/messages"), {
         method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf || "" },
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify(Object.assign({ content: text }, readerLevel())),
       });
     } catch (e) { r = null; }
     thinking.remove();
@@ -1777,9 +1781,16 @@
     }
     pending.replaceWith(messageItem(data.user_message));  // shows the stored (redacted) text
     $("chat-messages").appendChild(messageItem(data.reply));
+    emit("answered", { text: data.reply.content });
     setComposer(chatStatus);
     scrollConversation();
     loadChats();
+  }
+
+  function readerLevel() {
+    let level = null;
+    try { level = window.localStorage.getItem("maya-guide-level"); } catch (e) { level = null; }
+    return ["new", "some", "technical"].indexOf(level) >= 0 ? { level: level } : {};
   }
 
   async function startChatWith(prompt) {

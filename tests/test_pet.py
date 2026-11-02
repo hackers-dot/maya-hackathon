@@ -17,7 +17,7 @@ needs_node = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 def node(script: str):
     r = subprocess.run([NODE, "-e", script, str(STATIC_DIR / "pet.js"), str(STATIC_DIR / "guide.js")],
-                       capture_output=True, text=True, timeout=30)
+                       capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)
 
@@ -109,9 +109,9 @@ console.log(JSON.stringify({
     [{x: 180, y: 50, w: 100, h: 150}]),
   nowhere: p.placeBeside({x: 0, y: 0, w: 800, h: 600}, {w: 60, h: 80}, {w: 800, h: 600}, []),
   noSpeech: g.speechSupported({}), est: g.estimateMs('Hello there friend.', 1),
-  localFirst: g.pickVoice([{lang: 'en-IN', name: 'net', localService: false}, {lang: 'en-IN', name: 'local', localService: true}], 'en').name,
-  networkOnly: g.pickVoice([{lang: 'hi-IN', name: 'net', localService: false}], 'hinglish').name,
-  hinglishLocal: g.pickVoice([{lang: 'hi-IN', name: 'hi', localService: false}, {lang: 'en-IN', name: 'ravi', localService: true}], 'hinglish').name,
+  localFirst: g.pickVoice([{lang: 'en-IN', name: 'Heera net', localService: false}, {lang: 'en-IN', name: 'Heera local', localService: true}], 'en').voice.name,
+  networkOnly: g.pickVoice([{lang: 'hi-IN', name: 'Swara', localService: false}], 'hinglish').voice.name,
+  hinglishLocal: g.pickVoice([{lang: 'hi-IN', name: 'Google hi', localService: false}, {lang: 'en-IN', name: 'Heera', localService: true}], 'hinglish').voice.name,
 }));
 """)
     assert out["split"] == ["Hello there.", "This is MAYA!", "Ready?", "ok"]
@@ -128,7 +128,8 @@ console.log(JSON.stringify({
     assert out["besideBlocked"]["side"] != "right"  # another control is there: it stands elsewhere
     assert out["nowhere"] is None  # no free spot: it stays home
     assert out["noSpeech"] is False and out["est"] > 300
-    assert (out["localFirst"], out["networkOnly"], out["hinglishLocal"]) == ("local", "net", "ravi")
+    # a female-sounding voice wins over a neutral hi-IN one; on-device voices before online ones
+    assert (out["localFirst"], out["networkOnly"], out["hinglishLocal"]) == ("Heera local", "Swara", "Heera")
 
 
 @needs_node
@@ -171,10 +172,12 @@ def test_pet_on_every_page_and_contact_sheet_only_in_preview(tmp_path):
 
 
 def test_voice_and_mic_disclosures_are_in_the_ui():
-    js = (STATIC_DIR / "guide.js").read_text(encoding="utf-8")
+    js = "\n".join((STATIC_DIR / n).read_text(encoding="utf-8") for n in ("guide.js", "pet-lines.js", "chat.html"))
     for text in ("Voice uses your browser's built-in text-to-speech, not a Meta model",
-                 "No voice found: install a Windows speech voice; text still works", "Turn on voice", "Test voice",
-                 "onvoiceschanged", "onboundary", "splitSentences", "may send the audio to its speech provider"):
+                 "No female-sounding voice found: pick one manually or install a speech voice in Windows Settings > "
+                 "Speech; text still works", "Turn on voice", "Test voice",
+                 "onvoiceschanged", "onboundary", "splitSentences", "may send the audio to its speech provider",
+                 "the browser may send the spoken text to the voice provider. MAYA itself sends nothing"):
         assert text in js, text
     # speech only after the user's own gesture, and only browser APIs (no audio ever reaches the server)
     assert "|| !gesture) return;" in js and "getUserMedia" not in js and "MediaRecorder" not in js
