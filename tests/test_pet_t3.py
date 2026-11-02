@@ -69,19 +69,17 @@ console.log(JSON.stringify({
 
 
 def test_every_state_changing_control_in_the_registry_is_on_the_never_list():
-    out = brain("console.log(JSON.stringify({hover: b.HOVER, ids: b.NEVER_IDS, classes: b.NEVER_CLASSES}));")
-    for key, e in out["hover"].items():
-        if e["effect"] == "reads":
-            continue
-        if key.startswith("."):
-            assert key[1:] in out["classes"], key
-        else:
+    out = brain("console.log(JSON.stringify({g: b.G, ids: b.NEVER_IDS, classes: b.NEVER_CLASSES}));")
+    harmless = {"reads", "view", "nowhere", "field"}  # fields: checkAction refuses every INPUT/TEXTAREA/SELECT anyway
+    for key, e in out["g"].items():
+        if e["e"] not in harmless:
             assert key in out["ids"], key
     for id_ in FORBIDDEN_CONTROLS:
         assert id_ in out["ids"], id_
-    pages = "".join(p.read_text(encoding="utf-8") for p in STATIC_DIR.glob("*.html"))
+    from test_pet_t2 import page_keys
+    keys = page_keys()
     for id_ in out["ids"]:
-        assert f'id="{id_}"' in pages, id_
+        assert id_ in keys, id_
 
 
 def test_esc_or_a_manual_click_cancels_pending_actions():

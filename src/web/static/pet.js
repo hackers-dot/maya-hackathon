@@ -48,7 +48,9 @@
   // Sentences of at most `max` characters (Chrome stops a single utterance after about 15 s).
   function splitSentences(text, max) {
     const limit = max || 160;
-    const parts = String(text || "").replace(/\s+/g, " ").trim().match(/[^.!?]+[.!?]*/g) || [];
+    // a dot inside a word (cloudflare-dns.com, issues.md, /.env) is not the end of a sentence
+    const safe = String(text || "").replace(/\s+/g, " ").trim().replace(/\.(?=\S)/g, "\u2024");
+    const parts = (safe.match(/[^.!?]+[.!?]*/g) || []).map((x) => x.replace(/\u2024/g, "."));
     const out = [];
     for (let p of parts) {
       p = p.trim();

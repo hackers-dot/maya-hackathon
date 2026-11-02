@@ -404,7 +404,8 @@ def _preview_guide() -> dict:
     site = {"account_type": "company", "asset_choice": "website", "connect": True, "consented": True,
             "asset": {"id": "0" * 16, "kind": "demo", "status": "loopback"}}
     run = {"status": "finished", "can_apply": True, "counts": counts, "top": top, "proposals": ["PROPOSED"] * 3,
-           "retest": None, "score_improved": False}
+           "retest": None, "score_improved": False, "score_line": "Grade D · 47/100",
+           "open": [{k: f[k] for k in ("id", "check", "title", "location", "severity")} for f in findings]}
     facts = {
         "no_account_type": {"account_type": None},
         "no_connect": {"account_type": "company", "asset_choice": "website", "connect": None},
@@ -699,21 +700,27 @@ class WebHandler(BaseHTTPRequestHandler):
                 "retest": ({k: run.retest[k] for k in ("status", "resolved", "still_present")} if run.retest
                            else None),
                 "score_improved": bool(before and after and after["score"] > before["score"]),
+                # the open findings in the code's severity order, for the post-scan tour lines
+                "open": [{k: f[k] for k in ("id", "check", "title", "location", "severity")} for f in open_items],
+                "score_line": f"Grade {before['grade']} · {before['score']}/100" if before else "",
                 "after_grade": after["grade"] if after else None}
         return facts
 
     def _guide(self, user) -> dict:
         """GET /api/guide?level=&lang=&asset=: the guide pet's next steps (src/guide.py, never the model)."""
         from urllib.parse import parse_qs
-        from src.guide import LANGS, LEVELS, guide
+        from src.guide import AUDIENCES, LANGS, LEVELS, guide
         q = parse_qs(urlsplit(self.path).query)
         level, lang = (q.get("level") or ["new"])[0], (q.get("lang") or ["en"])[0]
+        audience = (q.get("audience") or ["other"])[0]
         asset_id = (q.get("asset") or [None])[0]
         if level not in LEVELS or lang not in LANGS:
             raise Reply(400, "level must be new, some or technical; lang must be en or hinglish")
+        if audience not in AUDIENCES:
+            raise Reply(400, "audience must be shop, company, clinic, developer or other")
         if asset_id is not None and not re.fullmatch(r"[0-9a-f]{16}", asset_id):
             raise Reply(400, "bad asset id")
-        return guide(self._guide_facts(user, asset_id), level, lang)
+        return guide(self._guide_facts(user, asset_id), level, lang, audience)
 
     def _asset_get(self, user, asset_id: str, what: str):
         """GET /api/assets/<id>/diff?from=&to= and /history. Another user's asset or run is "not found"."""

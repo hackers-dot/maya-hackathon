@@ -30,7 +30,6 @@ RECORDER = """(() => {
   s.speak = (u) => { window.__speak.push({ t: Math.round(performance.now()), text: u.text, volume: u.volume,
     voice: u.voice ? u.voice.name : null }); };
   s.cancel = () => { window.__cancel += 1; };
-  try { localStorage.setItem('maya-guide-lang', 'hinglish'); } catch (e) {}
 })();"""
 
 
@@ -93,17 +92,17 @@ def main() -> int:
         goto("/signin")
         print("bubble:", ev(bubble))
         hint = ev("(() => { const h = document.querySelector('.pet-bubble-hint'); return h ? h.textContent : null; })()")
-        c.ok(hint == "Kahin bhi click karo, main bolna shuru karti hoon.", "unlock hint shown before any gesture", hint)
+        c.ok(hint == "Click anywhere and I'll start talking.", "unlock hint shown before any gesture", hint)
         c.ok(ev(speaks) == [], "nothing spoken before a gesture", ev(speaks))
         click(640, 690)  # an empty spot: a real pointerdown
         time.sleep(0.6)
         said = " ".join(ev(speaks))  # one line is spoken as sentence-sized utterances (Chrome cuts long ones)
-        greeting = "Hii! Main MAYA hoon. Aapki website ki security samjhane aur check karne mein main help karungi."
+        greeting = "Hi! I'm MAYA. I'll help you understand and check your website's security, one small step at a time."
         c.ok(said == greeting, "first gesture speaks the greeting exactly once", said)
         c.ok(ev("window.__speak.some((s) => s.volume === 0)"), "a silent utterance unlocked audio in the gesture")
         c.ok(ev("document.querySelector('.pet-bubble-hint') === null"), "hint removed after unlock")
 
-        # 5: the "Bilkul new" chip with a real mouse click
+        # 5: the "I'm new" chip with a real mouse click, then the audience question
         chips = ev("Array.from(document.querySelectorAll('.pet-chip')).map((x) => x.textContent)")
         print("chips:", chips)
         pos = center(".pet-chip")
@@ -114,16 +113,27 @@ def main() -> int:
         expr_after = ev(expression)
         line_after = ev(bubble)
         c.ok(ev("localStorage.getItem('maya-guide-level')") == "new", "chip saved the level", "new")
-        c.ok(expr_after == "happy", "expression after choosing the level", expr_after)
-        c.ok(line_after and line_after.startswith("Pehle sign in karo"), "the guide continued at once (next line)", line_after)
+        c.ok(expr_after == "happy" or expr_after == "curious", "expression after choosing the level", expr_after)
+        c.ok(line_after and line_after.startswith("One more thing: what do you run?"), "next: what do you run?", line_after)
+        chips = ev("Array.from(document.querySelectorAll('.pet-chip')).map((x) => x.textContent)")
+        c.ok(chips == ["Shop or small business", "Company or team", "Clinic or healthcare practice", "Developer", "Something else"],
+             "audience chips", chips)
+        shop = ev("(() => { const c = Array.from(document.querySelectorAll('.pet-chip')).find((x) => x.textContent === 'Shop or small business'); const r = c.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()")
+        click(*shop)
+        time.sleep(0.5)
+        c.ok(ev("localStorage.getItem('maya-guide-audience')") == "shop", "audience chip saved the audience", "shop")
+        c.ok(ev(expression) == "happy", "happy after choosing what you run", ev(expression))
+        line_after = ev(bubble)
+        c.ok(line_after and line_after.startswith("First, sign in"), "the guide continued at once (next line)", line_after)
         spoken_now = " ".join(ev(speaks))
-        c.ok(spoken_now.endswith("Pehle sign in karo, ya upar wale tab se account banao. Phir main step by step guide karungi."),
+        c.ok(spoken_now.endswith("First, sign in, or create an account with the tab above. Then I'll guide you step by step."),
              "the next line was spoken", spoken_now[-100:])
 
         # 6: hover explanations on 15 controls across three screens
         hovered = []
 
         def hover(selector, rest=1.3):
+            ev(f"(() => {{ const n = document.querySelector({json.dumps(selector)}); if (n) n.scrollIntoView({{block: 'nearest'}}); return 1; }})()")
             pos = center(selector)
             if not pos:
                 c.ok(False, "control present", selector)
@@ -160,16 +170,34 @@ def main() -> int:
         time.sleep(0.4)
         for sel in ["#choose-individual", "#choose-company"]:
             hover(sel)
+        # a company account with consent sees the sidebar connectors; one demo asset gives an asset item to hover
         ev("""(async () => { const s = await (await fetch('/api/session')).json();
-          await fetch('/api/profile', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': s.csrf},
-            body: JSON.stringify({account_type: 'individual'})}); return 1; })()""")
+          const h = {'Content-Type': 'application/json', 'X-CSRF-Token': s.csrf};
+          for (const [path, body] of [['/api/profile', {account_type: 'company'}], ['/api/asset', {asset: 'website'}],
+                                      ['/api/connect', {connect: true}], ['/api/consent', {allow: true}], ['/api/assets', {demo: true}]])
+            await fetch(path, {method: 'POST', headers: h, body: JSON.stringify(body)});
+          return 1; })()""")
         goto("/chat")
         click(700, 700)
         time.sleep(0.4)
         for sel in ["#new-chat", "#pet-call", "#pet-settings-btn", "#data-link", "#signout",
-                    ".suggestion:nth-of-type(1)", ".suggestion:nth-of-type(2)", "#investigate-btn"]:
+                    ".suggestion:nth-of-type(1)", ".suggestion:nth-of-type(2)", "#investigate-btn",
+                    "[data-guide=conn-website]", "#conn-code", "#conn-logs", "#conn-msg", "#conn-github", "#conn-watch",
+                    "#add-asset", "[data-guide=brand-home]", "#theme-toggle", "[data-guide=asset-item]"]:
             hover(sel)
-        c.ok(len(hovered) >= 15, "hovered at least 15 controls across sign-in, onboarding and chat", len(hovered))
+        c.ok(len(hovered) >= 25, "hovered at least 25 controls across sign-in, onboarding and chat", len(hovered))
+        # every hover line was a real sentence: no "no notes" fallback and no text glued from child elements
+        texts = ev("window.__speak.map((s) => s.text).join(' | ')")
+        c.ok("no notes" not in texts and "Websiteworks" not in texts, "no useless fallback, no glued labels", "")
+        # a click reacts to what happened: the Website connector line is said on the next page
+        click(*center("[data-guide=conn-website]"))
+        time.sleep(3.0)
+        said = " ".join(ev(speaks)[-3:])
+        c.ok("This is where you connect a website you own." in (ev(bubble) or "") + said,
+             "clicking the Website connector: the pet explains what this page is for", (ev(bubble) or "")[:90])
+        goto("/chat")
+        click(700, 700)
+        time.sleep(0.4)
 
         # 7: mute (the speaker on the pet), hover again: no audio, bubble and mouth animation continue; unmute
         mute = center("#maya-pet .pet-mute")
@@ -213,6 +241,9 @@ def main() -> int:
         time.sleep(0.8)
         c.ok(ev("localStorage.getItem('maya-guide-level')") == "new" and ev(bubble) != before_text,
              f"keyboard: Enter on the chip {label!r} works", ev(bubble))
+        english = ev("window.__speak.map((s) => s.text).join(' ')")
+        c.ok(not __import__("re").search(r"[\u0900-\u097F]|\b(hai|nahi|karo|aapki)\b", english),
+             "everything the pet said was English", english[-80:])
 
         # 8: idle for 30 s of virtual time: antics happen
         ev("""window.__antics = []; new MutationObserver((m) => m.forEach((x) => window.__antics.push(

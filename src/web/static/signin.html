@@ -42,12 +42,12 @@
 <form id="signin-form" class="form">
 <div class="field"><label for="signin-email">Email</label><input id="signin-email" name="email" type="email" autocomplete="username" required></div>
 <div class="field"><label for="signin-password">Password</label><input id="signin-password" name="password" type="password" autocomplete="current-password" required minlength="10"></div>
-<button class="btn btn-primary btn-block" type="submit">Sign in</button>
+<button class="btn btn-primary btn-block" type="submit" data-guide="signin-submit">Sign in</button>
 </form>
 <form id="signup-form" class="form" hidden>
 <div class="field"><label for="signup-email">Email</label><input id="signup-email" name="email" type="email" autocomplete="username" required></div>
 <div class="field"><label for="signup-password">Password (at least 10 characters)</label><input id="signup-password" name="password" type="password" autocomplete="new-password" required minlength="10"></div>
-<button class="btn btn-primary btn-block" type="submit">Create account</button>
+<button class="btn btn-primary btn-block" type="submit" data-guide="signup-submit">Create account</button>
 </form>
 <p id="message" class="message" role="status"></p>
 </main>

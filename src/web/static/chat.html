@@ -18,7 +18,7 @@
 <div class="shell">
 <aside id="sidebar" class="sidebar" aria-label="Sidebar">
 <div class="side-top">
-<a class="brand" href="/chat"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></a>
+<a class="brand" href="/chat" data-guide="brand-home"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></a>
 <button id="sidebar-close" class="icon-btn only-mobile" type="button" aria-label="Close sidebar">&#10005;</button>
 </div>
 <button id="new-chat" class="btn btn-secondary new-chat" type="button">&#65291; New chat</button>
@@ -34,7 +34,7 @@
 <div id="connectors" hidden>
 <h3 class="side-heading">Connectors</h3>
 <ul class="side-list connectors">
-<li><a class="connector" href="/connect-website"><span>Website</span><span class="chip chip-ok">works</span></a></li>
+<li><a class="connector" href="/connect-website" data-guide="conn-website"><span>Website</span><span class="chip chip-ok">works</span></a></li>
 <li><button id="conn-code" class="connector" type="button"><span>Source code ZIP</span><span class="chip chip-ok">works</span></button></li>
 <li><button id="conn-logs" class="connector" type="button"><span>Logs</span><span class="chip chip-ok">works</span></button></li>
 <li><button id="conn-msg" class="connector" type="button"><span>Suspicious message</span><span class="chip chip-ok">works</span></button></li>
@@ -73,10 +73,10 @@
 <span class="chip">Fixes need your approval</span>
 </div>
 <div class="suggestions">
-<button class="suggestion" type="button" data-prompt="How can MAYA check my website's security, and what will it look at?"><span class="suggestion-title">Check my website's security</span><span class="suggestion-desc">Run read-only checks on a site you own.</span></button>
-<button class="suggestion" type="button" data-prompt="Explain what a missing Content-Security-Policy header means, in simple words."><span class="suggestion-title">Explain a vulnerability simply</span><span class="suggestion-desc">Plain-language answers, no jargon.</span></button>
-<button class="suggestion" type="button" data-prompt="Based on my verified findings, what should I fix first?"><span class="suggestion-title">What should I fix first?</span><span class="suggestion-desc">Prioritize findings by severity.</span></button>
-<button class="suggestion" type="button" data-prompt="What does MAYA do and never do when it checks my site?"><span class="suggestion-title">How does MAYA stay safe?</span><span class="suggestion-desc">What it does and never does.</span></button>
+<button class="suggestion" type="button" data-guide="suggest-scan" data-prompt="How can MAYA check my website's security, and what will it look at?"><span class="suggestion-title">Check my website's security</span><span class="suggestion-desc">Run read-only checks on a site you own.</span></button>
+<button class="suggestion" type="button" data-guide="suggest-explain" data-prompt="Explain what a missing Content-Security-Policy header means, in simple words."><span class="suggestion-title">Explain a vulnerability simply</span><span class="suggestion-desc">Plain-language answers, no jargon.</span></button>
+<button class="suggestion" type="button" data-guide="suggest-fix-first" data-prompt="Based on my verified findings, what should I fix first?"><span class="suggestion-title">What should I fix first?</span><span class="suggestion-desc">Prioritize findings by severity.</span></button>
+<button class="suggestion" type="button" data-guide="suggest-how" data-prompt="What does MAYA do and never do when it checks my site?"><span class="suggestion-title">How does MAYA stay safe?</span><span class="suggestion-desc">What it does and never does.</span></button>
 </div>
 </div>
 <section id="chat-view" class="chat-view" hidden aria-label="Chat">
@@ -92,7 +92,7 @@
 <label class="check-row"><input id="msg-confirm" type="checkbox"> <span>I understand this image will be sent to the model provider</span></label>
 <label class="check-row"><input id="msg-include" type="checkbox"> <span>Include the image itself in the evidence pack (its hash and size are always included)</span></label>
 <details id="official-box" class="official-box">
-<summary>Your official domains and phone numbers</summary>
+<summary data-guide="official-box">Your official domains and phone numbers</summary>
 <p class="hint">Verified websites count automatically. One entry per line. Saved lists are shown masked.</p>
 <div class="field"><label for="official-domains">Official domains</label><textarea id="official-domains" rows="3" maxlength="4000"></textarea></div>
 <div class="field"><label for="official-numbers">Official phone numbers</label><textarea id="official-numbers" rows="3" maxlength="4000"></textarea></div>
@@ -128,10 +128,12 @@
 <div class="settings-grid">
 <div class="field"><label for="pet-level">Experience level</label>
 <select id="pet-level"><option value="new">I'm new to security</option><option value="some">I know some</option><option value="technical">I'm technical</option></select></div>
-<div class="field"><label for="pet-lang">Language</label>
-<select id="pet-lang"><option value="en">English</option><option value="hinglish">Hinglish</option></select></div>
+<div class="field"><label for="pet-audience">What do you run?</label>
+<select id="pet-audience"><option value="shop">Shop or small business</option><option value="company">Company or team</option><option value="clinic">Clinic or healthcare practice</option><option value="developer">Developer</option><option value="other">Something else</option></select></div>
+<div class="field" hidden><label for="pet-lang">Language</label>
+<select id="pet-lang"><option value="en">English</option></select></div>
 </div>
-<p class="hint">Hinglish lines are written in-house and still need review by a native speaker.</p>
+<p class="hint">English only for now. Your choice of business only changes the examples MAYA uses. For clinics: security guidance about the website only, never medical advice, and no claims about privacy law.</p>
 </section>
 <section class="panel">
 <div class="panel-head"><h2>Voice</h2><span class="panel-meta">your browser's built-in text-to-speech</span></div>
@@ -202,7 +204,7 @@
 <p id="reminder-banner" class="banner" hidden></p>
 <p id="av-hint" class="hint"></p>
 <p id="message" class="message" role="status"></p>
-<section id="score-card" class="panel score-card" hidden aria-label="Heuristic score">
+<section id="score-card" class="panel score-card" hidden aria-label="Heuristic score" data-guide="score-card">
 <div id="score-ring"></div>
 <div class="score-info">
 <p id="score-label" class="caption"></p>
@@ -378,7 +380,7 @@
 <form id="composer" class="composer" aria-label="Message composer">
 <textarea id="prompt" rows="1" placeholder="Message MAYA..." aria-label="Message" aria-describedby="composer-hint" maxlength="2000" disabled></textarea>
 <button id="investigate-btn" class="investigate" type="button" disabled title="Ask MAYA to investigate with read-only tools">Investigate</button>
-<button class="send" type="submit" aria-label="Send" disabled>&#8593;</button>
+<button class="send" type="submit" aria-label="Send" disabled data-guide="send">&#8593;</button>
 </form>
 <p id="composer-hint" class="composer-hint">Checking whether a model is configured... MAYA only runs read-only checks on sites you own.</p>
 </footer>

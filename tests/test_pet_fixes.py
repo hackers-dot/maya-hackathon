@@ -80,7 +80,7 @@ def test_speech_unlock_mute_and_defaults_in_the_page_code():
     assert "else briefTalk(text, true);" in js
     # hover: capture-phase delegation on document from startup, the wide selector, generic labels
     assert '"button, a, [role=button], [role=tab], input, select, summary, label, .finding-card, .tab, "' in js
-    assert js.count("}, true);") >= 2 and "visibleLabel(el)" in js
+    assert js.count("}, true);") >= 2 and "accessibleName(el)" in js
     assert "now - (lastHoverSpoken[id] || 0) > 30000" in js and "if (hoverSpeaking) { hoverSpeaking = false; stopSpeech(); }" in js
     # chips: clickable above the page, focusable bubble, the level chip continues the guide with a happy face
     assert ".pet-bubble {" in css and "pointer-events: auto;" in css.split(".pet-bubble {", 1)[1].split("}", 1)[0]

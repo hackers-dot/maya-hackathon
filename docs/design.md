@@ -509,6 +509,20 @@ See `src/models.py`:
 - **Idle scheduler.** `pet-brain.js idleTick()` runs every 1 s: ACTIVE, then IDLE_WAIT after 8 s, then PLAYING (the first antic is look or wave at 8-15 s, then every 15-25 s), then SLEEPY at 45 s; the next input is "wake". WORK pauses it, and the end of WORK counts as input. Reduced motion allows only wink, sleepy and wake. A pet away from home walks back after 8 s of quiet.
 - **Proof.** `scripts/pet_check.py` uses real mouse and key events, with speech calls recorded and none played. `tests/test_pet_fixes.py` runs it when Chrome is installed, and runs the scheduler for 90 s on a fake clock.
 
+### Pet v3: complete explanations, audience-aware English lines
+
+- **English only.** `guide.js` always asks `/api/guide` with `lang=en`; the language field in Pet settings is hidden. Voice order: en-IN, then other English.
+- **Registry (`pet-brain.js` `G`).** One entry per `data-guide` id: name, what a click does, an effect key, optional technical wording, a full-line override (`f`), a short line (`s`), a where-the-data-goes sentence (`x`) and an after-click line (`a`). `EFFECTS` holds the label and sentence for each effect; the destinations match the code:
+  - scan: read-only requests to the target; with a model key the masked results go to the AI provider; a verified real host also gets one DoH lookup and one TLS handshake.
+  - re-test only reads; Approve / Approve all write only the audit log; Apply changes only the demo app's control file.
+  - Disconnect removes the asset, its reminder and its verified status (past runs stay); Delete my data removes assets, runs, evidence and chats.
+  - Pet settings and the learned-controls memory are browser-only.
+- **Fallback** only for dynamic items, from `data-guide-name` / `aria-label` (never child text): "This is the finding for <title>. Open it to see the evidence and the fix."
+- **Hover.** The first hover gives the full line (what it does + where the data goes); later hovers one sentence. Speech uses the same text, is cancelled when the pointer leaves and is not repeated for the same control within 30 s. A hover within 1.5 s after a click does not overwrite the click reaction; after-click lines that navigate are carried over in localStorage.
+- **Audiences (`src/guide_text.py`).** `AUDIENCES` = shop, company, clinic, developer, other. `STEP_CONTEXT` adds one sentence per state group x audience x (new, technical); `FINDING_CONTEXT` one per finding category x audience x level. In a tour the first finding of each category gets the audience sentence, later ones the check's own plain text (or its fix for technical readers), so lines do not repeat. `/api/guide?audience=` (400 for unknown values) returns `steps` and `tour`.
+- **Clinic lines** carry no medical advice and no compliance or privacy-law claims (tested).
+- **Checks:** `scripts/pet_registry_check.py` opens every screen in headless Chrome and fails on any interactive element without an entry; `scripts/pet_review.py` walks every audience x {new, technical} with real mouse events, records every bubble and spoken line to `docs/pet_lines_review.md`, and checks the facts against the API (tour order = severity order, Approve changes nothing, Apply touches only the demo app, re-test only reads).
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

@@ -16,6 +16,12 @@
     if (text !== undefined && text !== null) node.textContent = String(text);
     return node;
   }
+  // a stable id for the guide pet (data-guide) and, for dynamic items, a clean accessible name (data-guide-name)
+  function guide(node, key, name) {
+    node.setAttribute("data-guide", key);
+    if (name) node.setAttribute("data-guide-name", String(name).slice(0, 120));
+    return node;
+  }
   function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
   function show(id, visible) { const n = $(id); if (n) n.hidden = !visible; }
   function setText(id, text) { const n = $(id); if (n) n.textContent = text === null || text === undefined ? "" : String(text); }
@@ -301,6 +307,7 @@
       const btn = el("button", "asset-item" + (currentAsset && currentAsset.id === a.id ? " is-current" : ""));
       btn.type = "button";
       btn.setAttribute("data-id", a.id);
+      guide(btn, "asset-item", a.kind === "demo" ? "Demo app" : a.label);
       btn.appendChild(icon(ASSET_ICONS[a.kind] || "globe"));
       const prefix = a.kind === "code" ? "Code: " : a.kind === "logs" ? "Logs: " : a.kind === "image" ? "Message: "
         : a.kind === "watch" ? "Watch: " : "";
@@ -336,7 +343,7 @@
     for (const s of steps) {
       let g = stepGroups.get(s.step);
       if (!g) {
-        const li = el("li", "trace-step");
+        const li = guide(el("li", "trace-step"), "trace-step", "Step " + s.step);
         const head = el("div", "trace-head");
         head.appendChild(el("span", "step-no", "Step " + s.step));
         head.appendChild(el("span", "trace-tokens", tokensText(s.tokens)));
@@ -380,7 +387,8 @@
   const findingCards = new Map();
   function findingCard(f) {
     const card = el("details", "finding");
-    const sum = el("summary", "finding-sum");
+    const sum = guide(el("summary", "finding-sum"), "finding", f.title);
+    sum.setAttribute("data-finding-id", f.id);
     sum.appendChild(el("span", "sev sev-" + f.severity, f.severity));
     sum.appendChild(el("span", "f-title", f.title));
     sum.appendChild(el("span", "f-where", f.location));
@@ -406,7 +414,7 @@
     pre.appendChild(el("code", "", f.evidence_line));
     ev.appendChild(pre);
     body.appendChild(ev);
-    const copy = el("button", "btn btn-quiet copy-issue", "Copy as GitHub issue");
+    const copy = guide(el("button", "btn btn-quiet copy-issue", "Copy as GitHub issue"), "copy-issue");
     copy.type = "button";
     copy.addEventListener("click", () => copyIssue(f.id, copy));
     body.appendChild(copy);
@@ -585,7 +593,7 @@
     if (!list) return;
     clear(list);
     for (const f of items || []) {
-      const li = el("li", "fixfirst-item");
+      const li = guide(el("li", "fixfirst-item"), "fixfirst-card", f.title);
       li.appendChild(el("span", "sev sev-" + f.severity, f.severity));
       li.appendChild(el("span", "f-title", f.title));
       li.appendChild(el("span", "f-where", f.location));
@@ -630,7 +638,7 @@
     const box = el("div", "snippet");
     const head = el("div", "snippet-head");
     head.appendChild(el("span", "label", label));
-    const btn = el("button", "btn btn-quiet copy-btn", "Copy");
+    const btn = guide(el("button", "btn btn-quiet copy-btn", "Copy"), "copy-snippet", label);
     btn.type = "button";
     btn.addEventListener("click", () => copyText(text, btn));
     head.appendChild(btn);
@@ -666,7 +674,7 @@
     if (!list) return;
     clear(list);
     for (const p of proposals || []) {
-      const card = el("article", "proposal");
+      const card = guide(el("article", "proposal"), "proposal-card", p.check_id.replace(/_/g, " "));
       const head = el("div", "proposal-head");
       head.appendChild(el("h3", "proposal-title", p.check_id));
       head.appendChild(el("span", "chip", p.kind));
@@ -681,7 +689,7 @@
       card.appendChild(richText("p", "hint rollback", "Rollback: " + p.rollback));
       const foot = el("div", "proposal-foot");
       if (p.status === "PROPOSED") {
-        const btn = el("button", "btn btn-secondary", "Approve");
+        const btn = guide(el("button", "btn btn-secondary", "Approve"), "proposal-approve", p.check_id.replace(/_/g, " "));
         btn.type = "button";
         btn.addEventListener("click", () => approve(p.id));
         foot.appendChild(btn);
@@ -1018,7 +1026,7 @@
     resetRunPanels();
     showView("asset");
     markCurrentAsset();
-    emit("asset", { id: asset.id });
+    emit("asset", { id: asset.id, kind: asset.kind });
     setTitle((asset.kind === "demo" ? "Demo app" : asset.label) + " · Results");
     setText("av-label", asset.kind === "demo" ? "Demo app (loopback)" : asset.label);
     statusChip("av-status", asset.status);
@@ -1189,7 +1197,7 @@
         if (it.dns) row.appendChild(el("span", "muted", it.dns.resolves ? "DNS: the domain exists"
           : "DNS: no such domain (" + it.dns.status + ")"));
         else {
-          const b = el("button", "btn btn-quiet", "Check DNS");
+          const b = guide(el("button", "btn btn-quiet", "Check DNS"), "check-dns", it.domain);
           b.type = "button";
           b.addEventListener("click", () => dnsCheck(it.domain));
           row.appendChild(b);
@@ -1221,12 +1229,12 @@
       card.appendChild(head);
       card.appendChild(el("pre", "codebox note-text", n.text));
       const foot = el("div", "item-head");
-      const copy = el("button", "btn btn-quiet", "Copy");
+      const copy = guide(el("button", "btn btn-quiet", "Copy"), "copy-note");
       copy.type = "button";
       copy.addEventListener("click", () => { try { navigator.clipboard.writeText(n.text); } catch (e) { /* no clipboard */ } });
       foot.appendChild(copy);
       if (n.status === "DRAFT") {
-        const ok = el("button", "btn btn-secondary", "Approve (mark READY)");
+        const ok = guide(el("button", "btn btn-secondary", "Approve (mark READY)"), "note-approve");
         ok.type = "button";
         ok.addEventListener("click", () => approveNote(n.id));
         foot.appendChild(ok);
@@ -1624,7 +1632,7 @@
     clear(list);
     for (const c of chats) {
       const li = el("li");
-      const btn = el("button", "asset-item" + (c.id === currentChatId ? " is-current" : ""));
+      const btn = guide(el("button", "asset-item" + (c.id === currentChatId ? " is-current" : "")), "chat-item", c.title);
       btn.type = "button";
       btn.appendChild(el("span", "asset-name", c.title));
       btn.addEventListener("click", () => { openChat(c.id); setSidebar(false); });
@@ -1665,7 +1673,7 @@
       box.appendChild(ul);
     }
     const det = el("details");
-    det.appendChild(el("summary", "", "Tool calls (" + (inv.trace || []).length + ", read-only) · " + inv.stop_reason));
+    det.appendChild(guide(el("summary", "", "Tool calls (" + (inv.trace || []).length + ", read-only) · " + inv.stop_reason), "tool-calls"));
     const ol = el("ol");
     for (const t of inv.trace || []) {
       const tok = t.tokens || {};

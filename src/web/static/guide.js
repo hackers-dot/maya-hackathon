@@ -95,7 +95,8 @@
   const prefs = {
     petHidden: load("maya-pet-hidden", "0") === "1",
     level: load("maya-guide-level", ""),
-    lang: load("maya-guide-lang", "en") === "hinglish" ? "hinglish" : "en",
+    lang: "en",  // English only for now (the Hinglish lines stay in the code, out of the UI)
+    audience: load("maya-guide-audience", ""),
     voice: load("maya-voice", "on") === "off" ? "off" : "on",  // "off" only when the user pressed mute
     voiceURI: load("maya-voice-uri", ""),
     speakSteps: load("maya-speak-steps", "1") === "1",
@@ -118,6 +119,9 @@
   let hoverSpeaking = false;
   let lastHoverSpoken = {};   // control -> time: the same control is not spoken again within 30 s
   let chosenLevelJustNow = false;
+  let tourLines = null;
+  let lastClickAt = 0;
+  let currentAssetKind = null;
   const SIGNIN = document.body ? document.body.classList.contains("auth-page") : false;
   let greetKey = null;
   // tier 2: hover guide, what the pet learned on this device, work/play mode, post-scan tour
@@ -138,7 +142,7 @@
   let helpOn = load("maya-pet-help", "0") === "1";
   let actions = null;
   const L = () => (window.MayaLines || { LINES: {}, CHIPS: {} });
-  const line = (name) => { const x = L().LINES[name] || {}; return { text: x[prefs.lang] || x.en || "", spoken: prefs.lang === "hinglish" ? x.spoken_hi : null }; };
+  const line = (name) => { const x = L().LINES[name] || {}; return { text: x.en || "", spoken: null }; };
   const chip = (name, onClick) => ({ label: (L().CHIPS[name] || {})[prefs.lang] || name, onClick: onClick });
 
   // ---------- what MAYA says ----------
@@ -186,6 +190,7 @@
 
   async function refresh() {
     if (!prefs.level) return askLevel();
+    if (!prefs.audience) return askAudience();
     let data = null;
     if (SIGNIN) {
       const x = line("signinStep");
@@ -196,12 +201,13 @@
       const sample = r.ok ? await r.json() : {};
       data = (sample.guide || {})[new URLSearchParams(window.location.search).get("guide") || "no_account_type"] || null;
     } else {
-      const q = "?level=" + encodeURIComponent(prefs.level) + "&lang=" + encodeURIComponent(prefs.lang) +
+      const q = "?level=" + encodeURIComponent(prefs.level) + "&lang=en&audience=" + encodeURIComponent(prefs.audience || "other") +
         (assetId ? "&asset=" + encodeURIComponent(assetId) : "");
       const r = await fetch("/api/guide" + q, { credentials: "same-origin" });
       data = r.ok ? await r.json() : null;
     }
     if (!data) return;
+    tourLines = data.tour || null;
     steps = data.steps || [];
     stepIndex = 0;
     if (pendingTour) { pendingTour = false; offerTour(); } else showStep();
@@ -220,25 +226,28 @@
   function chipsOpen() { return !!pet && !pet.bubble.hidden && !!pet.bubble.querySelector(".pet-chip"); }
   function hoverKey(el) {
     const b = brain();
-    return b ? b.keyFor(el.id, Array.from(el.classList)) : null;
+    return b ? b.keyFor(el.getAttribute("data-guide"), el.id) : null;
   }
-  function visibleLabel(el) {
-    const own = el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("placeholder") || "";
-    const lab = el.id && document.querySelector('label[for="' + el.id + '"]');
-    return (own || (lab ? lab.textContent : "") || el.textContent || el.value || "").replace(/\s+/g, " ").trim();
+  // a clean accessible name: data-guide-name or aria-label only, never the concatenated text of child elements
+  function accessibleName(el) {
+    return (el.getAttribute("data-guide-name") || el.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim();
+  }
+  function hoverFor(el, key) {
+    return brain().hoverText(key, { count: key ? used[key] || 0 : 0, name: accessibleName(el), audience: prefs.audience || "other",
+      level: prefs.level || "new", demo: currentAssetKind === "demo" });
   }
   function explain(el) {
     const b = brain();
     if (!b || !pet || prefs.petHidden || tour || typing() || !document.contains(el)) return;
     const key = hoverKey(el);
-    const t = b.hoverText(key, prefs.lang, key ? used[key] || 0 : 0, visibleLabel(el));
+    const t = hoverFor(el, key);
     lastHoverAt = Date.now();
     hoverShown = true;
     pet.setEmotion([{ expression: t.isNew ? "excited" : "curious", pose: "pointing", ms: null }]);
     pet.moveTo(el, Infinity);
     pet.say(t.text, [], { avoid: el, ms: 9000, hint: unlockHint() });
-    // one entry per control: a class key (e.g. ".suggestion") is shared by several buttons, so add the label
-    const id = key && key.charAt(0) !== "." ? key : (key || "") + ":" + visibleLabel(el);
+    // one entry per control: dynamic items share a key, so their clean name tells them apart
+    const id = (key || "") + ":" + accessibleName(el);
     const now = Date.now();
     if (prefs.voice === "on" && prefs.speakHover && now - (lastHoverSpoken[id] || 0) > 30000) {
       lastHoverSpoken[id] = now;
@@ -261,6 +270,7 @@
     document.addEventListener("pointerover", (e) => {
       const el = e.target.closest && e.target.closest(INTERACTIVE);
       if (!el || el.closest(".pet-layer") || el === hoverEl) return;
+      if (Date.now() - lastClickAt < 1500) return;  // the page is reacting to a click: let the reaction show
       hoverEl = el;
       clearTimeout(hoverTimer);
       clearTimeout(leaveTimer);
@@ -280,10 +290,19 @@
     document.addEventListener("click", (e) => {
       const el = e.target.closest && e.target.closest(INTERACTIVE);
       if (!el || el.closest(".pet-layer") || !brain()) return;
+      lastClickAt = Date.now();
+      clearTimeout(hoverTimer);
       const key = hoverKey(el);
       if (key) used = brain().bump(used, key);
       if (el.closest("#fixfirst-panel")) used = brain().bump(used, "fixfirst-panel");
       if (key || el.closest("#fixfirst-panel")) saveUsed();
+      const after = key ? brain().afterText(key, prefs.audience || "other") : null;
+      if (!after) return;
+      if (el.tagName === "A" && el.getAttribute("href") && el.getAttribute("href").charAt(0) === "/") {
+        save("maya-pet-after", JSON.stringify({ text: after, at: Date.now() }));  // said when the next page opens
+      } else {
+        setTimeout(() => { clearTimeout(leaveTimer); hoverShown = false; say(after, null, [], { avoid: el }); }, 350);
+      }
     }, true);
     for (const ev of ["pointermove", "pointerdown", "scroll", "keydown"]) {
       document.addEventListener(ev, () => { lastActiveAt = Date.now(); }, { passive: true, capture: true });
@@ -371,16 +390,17 @@
   function tourInput() {
     const findings = Array.from(document.querySelectorAll("#findings-list .finding")).map((card) => {
       const txt = (sel) => { const n = card.querySelector(sel); return n ? n.textContent.trim() : ""; };
-      return { target: card, severity: txt(".finding-sum .sev").toLowerCase(), title: txt(".finding-sum .f-title"),
-        location: txt(".finding-sum .f-where"), plain: core.speakable(txt(".finding-body .role-owner"), 220, true) };
+      const sum = card.querySelector(".finding-sum");
+      return { target: card, id: sum ? sum.getAttribute("data-finding-id") : "", severity: txt(".finding-sum .sev").toLowerCase(),
+        title: txt(".finding-sum .f-title"), location: txt(".finding-sum .f-where") };
     }).filter((f) => f.severity);
     const line = $("score-line");
-    return { findings: findings, scoreLine: line ? line.textContent.trim() : "" };
+    return { findings: findings, scoreLine: line ? line.textContent.trim() : "", lines: tourLines || {} };
   }
   function startTour(from) {
     const b = brain();
     if (!b || !pet) return;
-    tour = { stops: b.tourStops(tourInput(), prefs.lang), i: typeof from === "number" ? from : 0 };
+    tour = { stops: b.tourStops(tourInput()), i: typeof from === "number" ? from : 0 };
     showStop();
   }
   function showStop() {
@@ -428,6 +448,24 @@
   function askLevel() {
     const a = line("askLevel");
     say(a.text, a.spoken, levelChips(), { sticky: true });
+  }
+  function audienceChips() {
+    return ["shop", "company", "clinic", "developer", "other"].map((a) => chip("aud-" + a, () => setAudience(a)));
+  }
+  function askAudience() {
+    const a = line("askAudience");
+    if (pet) pet.setEmotion([{ expression: "curious", pose: "idle", ms: null }]);
+    say(a.text, null, audienceChips(), { sticky: true });
+  }
+  function setAudience(a) {
+    if (["shop", "company", "clinic", "developer", "other"].indexOf(a) < 0) return;
+    prefs.audience = a;
+    save("maya-guide-audience", a);
+    syncSettings();
+    sticky = null;
+    if (pet) pet.setEmotion([{ expression: "happy", pose: "idle", ms: null }]);
+    chosenLevelJustNow = true;
+    refresh();
   }
   function setLevel(level) {
     if (["new", "some", "technical"].indexOf(level) < 0) return;
@@ -605,7 +643,7 @@
   function syncSettings() {
     const set = (id, prop, value) => { const n = $(id); if (n) n[prop] = value; };
     set("pet-level", "value", prefs.level || "new");
-    set("pet-lang", "value", prefs.lang);
+    set("pet-audience", "value", prefs.audience || "other");
     set("pet-rate", "value", String(prefs.rate));
     set("pet-pitch", "value", String(prefs.pitch));
     set("pet-speak-steps", "checked", prefs.speakSteps);
@@ -621,7 +659,7 @@
     const test = () => { unlock(); const t = line("voiceTest"); speak(t.text, t.spoken, false, true); };
     $("pet-voice-note").textContent = VOICE_NOTE;
     on("pet-level", "change", () => setLevel($("pet-level").value));
-    on("pet-lang", "change", () => { prefs.lang = $("pet-lang").value; save("maya-guide-lang", prefs.lang); fillVoicePicker(); refresh(); });
+    on("pet-audience", "change", () => setAudience($("pet-audience").value));
     on("pet-voice", "change", () => { prefs.voiceURI = $("pet-voice").value; save("maya-voice-uri", prefs.voiceURI); fillVoicePicker(); });
     on("pet-voice-preview", "click", test);
     on("pet-voice-test", "click", test);
@@ -694,7 +732,7 @@
   function onEvent(e) {
     const type = e.detail && e.detail.type;
     const table = window.MayaPet ? window.MayaPet.core.EVENT_EMOTION : {};
-    if (type === "asset") { assetId = e.detail.id || null; suggestedHere = false; }
+    if (type === "asset") { assetId = e.detail.id || null; currentAssetKind = e.detail.kind || null; suggestedHere = false; }
     if (type === "view") { suggestedHere = false; if (pet) pet.hop(); return; }
     if (type === "data-deleted") { for (const k of LEARNED_KEYS) forget(k); used = {}; if (greetKey) forget(greetKey); return; }
     if (type === "scan-finished") pendingTour = true;
@@ -735,6 +773,7 @@
     if (PREVIEW) {  // screenshots: a clean device
       helpOn = asked.get("help") === "on";
       prefs.level = asked.get("level") || "";
+      prefs.audience = asked.get("audience") || (prefs.level ? "other" : "");
       prefs.voice = asked.get("voice") === "off" ? "off" : "on";
       prefs.petHidden = false;
     }
@@ -779,12 +818,24 @@
     greetKey = await accountKey();
     if (prefs.petHidden) return;
     const shouldGreet = PREVIEW ? !!asked.get("greet") : load(greetKey, "0") !== "1";
-    if (shouldGreet) greet(); else refresh();
+    let after = null;
+    try { after = JSON.parse(load("maya-pet-after", "null")); } catch (e) { after = null; }
+    forget("maya-pet-after");
+    if (shouldGreet) greet();
+    else if (after && Date.now() - after.at < 15000 && prefs.level && prefs.audience) {
+      say(after.text, null, [chip("next", () => refresh())], {});
+      setTimeout(() => { if (!tour && !hoverShown) refresh(); }, 9000);
+    } else refresh();
     if (PREVIEW && asked.get("talk") && pet) setTimeout(() => { pet.talkStart(); pet.mouth(true); }, 3000);  // speaking frame
     if (PREVIEW && asked.get("antic") && pet) setTimeout(() => { pet.hideBubble(); pet.talkStop(); pet.antic(asked.get("antic")); }, 3400);  // an idle antic frame
     if (PREVIEW && asked.get("help") === "consent" && $("pet-help-consent")) $("pet-help-consent").hidden = false;
     if (PREVIEW && asked.get("tour")) setTimeout(() => startTour(Number(asked.get("tour")) || 0), 1200);  // a tour stop
-    if (PREVIEW && asked.get("hover")) setTimeout(() => { const n = $(asked.get("hover")); if (n && pet) { pet.hideBubble(); explain(n); } }, 2000);
+    if (PREVIEW && asked.get("hover")) setTimeout(() => {  // an id or a selector; scrolled into view first, like a real pointer
+      const h = asked.get("hover");
+      let n = $(h);
+      try { n = n || document.querySelector(h); } catch (e) { n = null; }
+      if (n && pet) { n.scrollIntoView({ block: "center" }); pet.hideBubble(); explain(n); }
+    }, 2000);
   });
   window.MayaGuide = { listen: listen };
 })();

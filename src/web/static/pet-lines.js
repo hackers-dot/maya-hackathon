@@ -6,7 +6,7 @@
 (function () {
   const LINES = {
     greeting: {
-      en: "Hii! I'm MAYA. I'll help you understand and check your website's security, one small step at a time.",
+      en: "Hi! I'm MAYA. I'll help you understand and check your website's security, one small step at a time.",
       hinglish: "Hii! Main MAYA hoon. Aapki website ki security samjhane aur check karne mein main help karungi.",
       spoken_hi: "हाय! मैं माया हूँ। आपकी वेबसाइट की सिक्योरिटी समझाने और चेक करने में मैं मदद करूँगी।",
     },
@@ -45,6 +45,11 @@
       hinglish: "Theek hai, maine rok diya. Aap control mein ho.",
       spoken_hi: "ठीक है, मैंने रोक दिया। आप कंट्रोल में हो।",
     },
+    askAudience: {
+      en: "One more thing: what do you run? I'll pick examples that fit.",
+      hinglish: "Ek aur baat: aap kya chalate ho? Main usi hisaab se examples dungi.",
+      spoken_hi: "एक और बात: आप क्या चलाते हो? मैं उसी हिसाब से उदाहरण दूँगी।",
+    },
     tapToTalk: {
       en: "Click anywhere and I'll start talking.",
       hinglish: "Kahin bhi click karo, main bolna shuru karti hoon.",
@@ -74,6 +79,11 @@
     nextStop: { en: "Next", hinglish: "Aage" },
     done: { en: "Done", hinglish: "Ho gaya" },
     askScan: { en: "Run the scan?", hinglish: "Scan chalaun?" },
+    "aud-shop": { en: "Shop or small business", hinglish: "Shop or small business" },
+    "aud-company": { en: "Company or team", hinglish: "Company or team" },
+    "aud-clinic": { en: "Clinic or healthcare practice", hinglish: "Clinic or healthcare practice" },
+    "aud-developer": { en: "Developer", hinglish: "Developer" },
+    "aud-other": { en: "Something else", hinglish: "Something else" },
     whereIs: { en: "Where do I press?", hinglish: "Kahan dabana hai?" },
   };
   const api = { LINES: LINES, CHIPS: CHIPS };
