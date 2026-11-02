@@ -128,7 +128,7 @@ def test_pointing_targets_exist_in_the_pages():
     for state, t in T.items():
         for target in t["targets"]:
             assert target in ids, (state, target)
-    assert "retest-btn" in ids and "guide-open" in ids
+    assert "retest-btn" in ids and "pet-call" in ids and "score-card" in ids
 
 
 def test_bad_inputs_are_refused():
@@ -298,6 +298,8 @@ def test_guide_js_static_rules():
     assert "may send the audio to its speech provider" in js
     for p in STATIC_DIR.glob("*.html"):
         page = p.read_text(encoding="utf-8")
+        if p.name == "pet-sheet.html":
+            continue  # test-only contact sheet, served only in preview mode
         if p.name == "signin.html":
             assert "guide.js" not in page  # signed-in pages only
         else:

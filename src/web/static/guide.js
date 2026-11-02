@@ -1,12 +1,13 @@
 "use strict";
-// MAYA guide pet: a mascot that shows the next step from GET /api/guide (a fixed state machine on the server,
-// never the model). Everything is built with createElement/createElementNS and textContent. Speech uses the
-// browser's built-in speechSynthesis / SpeechRecognition only; MAYA's server never receives audio.
-// The pure helpers in `core` have no DOM access, so they are unit-tested in Node (tests/test_guide.py).
+// MAYA guide: the speech bubble and voice for the MAYA pet (pet.js). The next step comes from GET /api/guide (a
+// fixed state machine on the server, never the model); the pet's emotion comes with it. Everything is built
+// with createElement and textContent. Voice uses the browser's own speechSynthesis / SpeechRecognition only;
+// MAYA's server never receives audio. `core` has no DOM access and is unit-tested in Node.
 (function () {
   const core = {
-    // One short, speakable line: no citation ids, code, addresses, long tokens or masked values.
-    speakable(text, max) {
+    // Text that is fine to speak: no citation ids, code, paths or addresses, masked values or long tokens.
+    // summary=true keeps only the first sentence (answers, never long evidence).
+    speakable(text, max, summary) {
       let t = String(text || "")
         .replace(/\[[^\]]*\]/g, " ")          // [finding:id] citations
         .replace(/`[^`]*`/g, " ")             // inline code
@@ -15,18 +16,24 @@
         .replace(/\S{24,}/g, " ")             // long tokens, hashes, ids
         .replace(/\s+/g, " ").trim();
       const limit = max || 200;
-      const first = t.match(/^.*?[.!?](\s|$)/);
-      if (first && first[0].length >= 20) t = first[0].trim();
+      if (summary !== false) {
+        const first = t.match(/^.*?[.!?](\s|$)/);
+        if (first && first[0].length >= 20) t = first[0].trim();
+      }
       if (t.length > limit) t = t.slice(0, limit).replace(/\s+\S*$/, "") + ".";
       return t;
     },
-    // en: en-IN, then any English voice; hinglish: hi-IN, then en-IN. null means "use the browser default".
+    // en: en-IN, then any English voice; hinglish (Roman script): en-IN, then hi-IN, then any English.
+    // Voices on this device come first; a network voice (the browser sends the text to its provider) only when
+    // no local voice matches. null = the browser default.
     pickVoice(voices, lang) {
-      const list = Array.isArray(voices) ? voices : [];
-      const prefs = lang === "hinglish" ? ["hi-IN", "en-IN"] : ["en-IN", "en-"];
-      for (const p of prefs) {
-        const v = list.find((x) => x && typeof x.lang === "string" && x.lang.replace("_", "-").indexOf(p) === 0);
-        if (v) return v;
+      const list = (Array.isArray(voices) ? voices : []).filter((x) => x && typeof x.lang === "string");
+      const prefs = lang === "hinglish" ? ["en-IN", "hi-IN", "en-"] : ["en-IN", "en-"];
+      for (const pool of [list.filter((x) => x.localService !== false), list]) {
+        for (const p of prefs) {
+          const v = pool.find((x) => x.lang.replace("_", "-").indexOf(p) === 0);
+          if (v) return v;
+        }
       }
       return null;
     },
@@ -36,10 +43,13 @@
     recognitionCtor(win) {
       return (win && (win.SpeechRecognition || win.webkitSpeechRecognition)) || null;
     },
-    // the first target id that exists on this page
     firstTarget(ids, exists) {
       for (const id of ids || []) if (typeof id === "string" && exists(id)) return id;
       return null;
+    },
+    // a rough speaking time, used when a voice fires no boundary events (the mouth then moves on a timer)
+    estimateMs(text, rate) {
+      return Math.round((String(text || "").length / 14) * 1000 / Math.max(0.5, rate || 1)) + 300;
     },
   };
   if (typeof module === "object" && module.exports) { module.exports = core; return; }
@@ -47,22 +57,25 @@
 
   const $ = (id) => document.getElementById(id);
   const PREVIEW = window.location.pathname.startsWith("/__preview/");
-  const SVG_NS = "http://www.w3.org/2000/svg";
   // HINGLISH strings below NEED NATIVE-SPEAKER REVIEW before they are relied on.
   const UI = {
-    en: { title: "MAYA guide", next: "Next tip", hide: "Hide guide", show: "Show me", ask: "Ask me anything about security",
-      send: "Ask", choose: "How much do you know about security?", settings: "Voice and settings",
+    en: { next: "Next tip", close: "Close", show: "Show me", ask: "Ask me anything about security", send: "Ask",
+      choose: "How much do you know about security?", settings: "Voice and settings",
+      voiceCard: "MAYA can read each step aloud.", voiceOn: "Turn on voice", voiceLater: "Not now",
       error: "Something did not work. The message on the screen says what happened.",
       nokey: "Model not configured: answers need a model key on the server. The guided steps still work.",
-      novoice: "No voice is installed in this browser, so the guide stays text only." },
-    hinglish: { title: "MAYA guide", next: "Agla tip", hide: "Guide chhupayein", show: "Dikhao", ask: "Security ke baare mein kuch bhi poochein",
-      send: "Poochein", choose: "Aap security ke baare mein kitna jaante hain?", settings: "Awaaz aur settings",
+      test: "Hi, I am MAYA. My voice is working." },
+    hinglish: { next: "Agla tip", close: "Band karein", show: "Dikhao", ask: "Security ke baare mein kuch bhi poochein", send: "Poochein",
+      choose: "Aap security ke baare mein kitna jaante hain?", settings: "Awaaz aur settings",
+      voiceCard: "MAYA har step bolkar padh sakta hai.", voiceOn: "Awaaz chalu karein", voiceLater: "Abhi nahi",
       error: "Kuch kaam nahi kiya. Screen par message batata hai ki kya hua.",
       nokey: "Model configured nahi hai: jawab ke liye server par model key chahiye. Guided steps phir bhi chalte hain.",
-      novoice: "Is browser mein koi voice installed nahi hai, isliye guide sirf text mein rahega." },
+      test: "Namaste, main MAYA hoon. Meri awaaz kaam kar rahi hai." },
   };
   const LEVELS = [["new", "I'm new to security"], ["some", "I know some"], ["technical", "I'm technical"]];
   const VOICE_NOTE = "Voice uses your browser's built-in text-to-speech, not a Meta model.";
+  const NO_VOICE = "No voice found: install a Windows speech voice; text still works.";
+  const NO_TTS = "This browser has no text-to-speech; text still works.";
   const MIC_NOTE = "Your browser may send the audio to its speech provider to turn it into text. MAYA stores nothing.";
 
   function load(key, fallback) {
@@ -73,13 +86,15 @@
   function save(key, value) {
     try { window.localStorage.setItem(key, value); } catch (e) { /* the choice still applies to this page */ }
   }
+  const num = (v, lo, hi, d) => Math.min(hi, Math.max(lo, parseFloat(v) || d));
   const prefs = {
-    hidden: load("maya-guide-hidden", "0") === "1",
+    petHidden: load("maya-pet-hidden", "0") === "1",
     level: load("maya-guide-level", ""),
     lang: load("maya-guide-lang", "en") === "hinglish" ? "hinglish" : "en",
-    speak: load("maya-guide-speak", "0") === "1",
+    voice: load("maya-voice", "unset"),            // unset | on | off; "on" only after the user's own click
     speakAnswers: load("maya-guide-speak-answers", "0") === "1",
-    rate: Math.min(1.5, Math.max(0.7, parseFloat(load("maya-guide-rate", "1")) || 1)),
+    rate: num(load("maya-voice-rate", "1"), 0.7, 1.5, 1),
+    pitch: num(load("maya-voice-pitch", "1.1"), 0.6, 1.6, 1.1),
   };
   let csrf = null;
   let steps = [];
@@ -87,18 +102,16 @@
   let assetId = null;
   let chatId = null;
   let target = null;
-  let talkTimer = null;
+  let pet = null;
+  let voices = [];
+  let gesture = false;  // speechSynthesis may only start after a user gesture
+  let speechRun = 0;
+  const ui = {};
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
     if (text !== undefined && text !== null) n.textContent = String(text);
-    return n;
-  }
-  function svg(tag, attrs, parent) {
-    const n = document.createElementNS(SVG_NS, tag);
-    for (const k of Object.keys(attrs)) n.setAttribute(k, attrs[k]);
-    if (parent) parent.appendChild(n);
     return n;
   }
   function button(cls, text, onClick) {
@@ -107,65 +120,47 @@
     b.addEventListener("click", onClick);
     return b;
   }
+  const texts = () => UI[prefs.lang];
 
-  // ---------- the mascot: an original round creature with a sprout, drawn in code ----------
-  function mascot() {
-    const s = svg("svg", { viewBox: "0 0 100 100", class: "pet-svg", "aria-hidden": "true" });
-    svg("ellipse", { class: "pet-shadow", cx: 50, cy: 95, rx: 24, ry: 3.5 }, s);
-    const body = svg("g", { class: "pet-bodyg" }, s);
-    svg("path", { class: "pet-limb pet-arm-l", d: "M22 64 q-10 3 -12 11" }, body);
-    svg("path", { class: "pet-limb pet-arm-r", d: "M78 64 q10 3 12 11" }, body);
-    svg("path", { class: "pet-limb pet-sprout", d: "M50 27 q-1 -9 6 -13" }, body);
-    svg("ellipse", { class: "pet-leaf", cx: 60, cy: 12, rx: 7, ry: 3.6, transform: "rotate(-28 60 12)" }, body);
-    svg("circle", { class: "pet-body", cx: 50, cy: 59, r: 32 }, body);
-    svg("ellipse", { class: "pet-belly", cx: 50, cy: 70, rx: 18, ry: 13 }, body);
-    svg("circle", { class: "pet-cheek", cx: 31, cy: 63, r: 4 }, body);
-    svg("circle", { class: "pet-cheek", cx: 69, cy: 63, r: 4 }, body);
-    const eyes = svg("g", { class: "pet-eyes" }, body);
-    for (const x of [40, 60]) {
-      svg("ellipse", { class: "pet-eye", cx: x, cy: 53, rx: 4.5, ry: 5.5 }, eyes);
-      svg("circle", { class: "pet-glint", cx: x + 1.5, cy: 51, r: 1.4 }, eyes);
-    }
-    svg("path", { class: "pet-brow", d: "M34 43 l10 4 M66 43 l-10 4" }, body);
-    svg("path", { class: "pet-mouth pet-mouth-smile", d: "M44 65 q6 5 12 0" }, body);
-    svg("path", { class: "pet-mouth pet-mouth-happy", d: "M41 63 q9 11 18 0 z" }, body);
-    svg("path", { class: "pet-mouth pet-mouth-frown", d: "M44 69 q6 -5 12 0" }, body);
-    svg("ellipse", { class: "pet-mouth pet-mouth-talk", cx: 50, cy: 67, rx: 4, ry: 3.2 }, body);
-    const think = svg("g", { class: "pet-think" }, s);
-    svg("circle", { cx: 80, cy: 30, r: 2.2 }, think);
-    svg("circle", { cx: 87, cy: 21, r: 3 }, think);
-    svg("circle", { cx: 94, cy: 11, r: 3.8 }, think);
-    return s;
-  }
-
-  // ---------- the panel ----------
-  const ui = {};
+  // ---------- the bubble ----------
   function build() {
     const root = el("aside", "guide");
     root.id = "guide";
     root.setAttribute("aria-label", "MAYA guide");
-    const pet = el("div", "pet mood-idle");
-    pet.appendChild(mascot());
-    root.appendChild(pet);
     const bubble = el("div", "guide-bubble");
     const head = el("div", "guide-head");
-    ui.title = el("strong", "guide-title");
-    head.appendChild(ui.title);
+    head.appendChild(el("strong", "guide-title", "MAYA"));
+    ui.speaker = button("guide-icon-btn guide-speaker", "", () => {
+      gesture = true;
+      setVoice(prefs.voice === "on" ? "off" : "on");
+    });
+    head.appendChild(ui.speaker);
     ui.collapse = button("guide-icon-btn", "", () => setCollapsed(!root.classList.contains("is-collapsed")));
     ui.collapse.setAttribute("aria-label", "Collapse or expand the guide");
     ui.collapse.appendChild(el("span", "chev"));
     head.appendChild(ui.collapse);
-    ui.hide = button("guide-icon-btn", "✕", () => setHidden(true));
-    head.appendChild(ui.hide);
+    ui.close = button("guide-icon-btn", "✕", () => openBubble(false));
+    head.appendChild(ui.close);
     bubble.appendChild(head);
 
     ui.setup = el("div", "guide-setup");
     ui.setupLabel = el("p", "guide-why");
     ui.setup.appendChild(ui.setupLabel);
-    for (const [level, label] of LEVELS) ui.setup.appendChild(button("btn btn-secondary guide-level", label, () => setLevel(level)));
+    for (const [level, label] of LEVELS) ui.setup.appendChild(button("btn btn-secondary guide-level", label, () => { gesture = true; setLevel(level); }));
     bubble.appendChild(ui.setup);
 
     ui.body = el("div", "guide-body");
+    ui.voiceCard = el("div", "guide-voice-card");
+    ui.voiceCardText = el("p", "guide-why");
+    ui.voiceCard.appendChild(ui.voiceCardText);
+    const vrow = el("div", "guide-actions");
+    ui.voiceOn = button("btn btn-primary", "", () => { gesture = true; setVoice("on"); });
+    ui.voiceLater = button("btn btn-quiet", "", () => setVoice("off"));
+    vrow.appendChild(ui.voiceOn);
+    vrow.appendChild(ui.voiceLater);
+    ui.voiceCard.appendChild(vrow);
+    ui.voiceCard.appendChild(el("p", "guide-note", VOICE_NOTE));
+    ui.body.appendChild(ui.voiceCard);
     ui.line = el("p", "guide-line");
     ui.line.setAttribute("aria-live", "polite");
     ui.why = el("p", "guide-why");
@@ -192,7 +187,7 @@
     ui.send = el("button", "btn btn-primary guide-send");
     ui.send.type = "submit";
     form.appendChild(ui.send);
-    form.addEventListener("submit", (e) => { e.preventDefault(); askPet(ui.ask.value); });
+    form.addEventListener("submit", (e) => { e.preventDefault(); gesture = true; askPet(ui.ask.value); });
     ui.body.appendChild(form);
     ui.answer = el("div", "guide-answer");
     ui.answer.hidden = true;
@@ -201,12 +196,11 @@
     bubble.appendChild(ui.body);
     root.appendChild(bubble);
     document.body.appendChild(root);
+    ui.root = root;
 
-    ui.launcher = button("guide-launcher", "Guide me", () => setHidden(false));
+    ui.launcher = button("guide-launcher", "Call MAYA", () => callPet());
     ui.launcher.id = "guide-launcher";
     document.body.appendChild(ui.launcher);
-    ui.root = root;
-    ui.pet = pet;
   }
 
   function settings() {
@@ -218,43 +212,55 @@
       r.appendChild(el("span", "", labelText));
       r.appendChild(control);
       box.appendChild(r);
-      return r;
     };
-    ui.levelSel = el("select", "");
-    for (const [level, label] of LEVELS) { const o = el("option", "", label); o.value = level; ui.levelSel.appendChild(o); }
-    ui.levelSel.addEventListener("change", () => setLevel(ui.levelSel.value));
+    const select = (options, onChange) => {
+      const s = el("select", "");
+      for (const [v, label] of options) { const o = el("option", "", label); o.value = v; s.appendChild(o); }
+      s.addEventListener("change", () => onChange(s.value));
+      return s;
+    };
+    ui.levelSel = select(LEVELS, (v) => setLevel(v));
     row("Level", ui.levelSel);
-    ui.langSel = el("select", "");
-    for (const [v, label] of [["en", "English"], ["hinglish", "Hinglish"]]) { const o = el("option", "", label); o.value = v; ui.langSel.appendChild(o); }
-    ui.langSel.addEventListener("change", () => { prefs.lang = ui.langSel.value; save("maya-guide-lang", prefs.lang); refresh(); });
+    ui.langSel = select([["en", "English"], ["hinglish", "Hinglish"]], (v) => { prefs.lang = v; save("maya-guide-lang", v); loadVoices(); refresh(); });
     row("Language", ui.langSel);
     const speech = core.speechSupported(window);
-    ui.speak = el("input", "");
-    ui.speak.type = "checkbox";
-    ui.speak.checked = prefs.speak && speech;
-    ui.speak.disabled = !speech;
-    ui.speak.addEventListener("change", () => { prefs.speak = ui.speak.checked; save("maya-guide-speak", prefs.speak ? "1" : "0"); if (prefs.speak) speakLine(); else stopSpeech(); });
-    row("Speak", ui.speak);
+    ui.voiceToggle = el("input", "");
+    ui.voiceToggle.type = "checkbox";
+    ui.voiceToggle.disabled = !speech;
+    ui.voiceToggle.addEventListener("change", () => { gesture = true; setVoice(ui.voiceToggle.checked ? "on" : "off"); });
+    row("Speak the steps", ui.voiceToggle);
     ui.speakAnswers = el("input", "");
     ui.speakAnswers.type = "checkbox";
-    ui.speakAnswers.checked = prefs.speakAnswers && speech;
+    ui.speakAnswers.checked = prefs.speakAnswers;
     ui.speakAnswers.disabled = !speech;
     ui.speakAnswers.addEventListener("change", () => { prefs.speakAnswers = ui.speakAnswers.checked; save("maya-guide-speak-answers", prefs.speakAnswers ? "1" : "0"); });
     row("Speak answers too", ui.speakAnswers);
-    ui.rate = el("input", "");
-    ui.rate.type = "range";
-    ui.rate.min = "0.7";
-    ui.rate.max = "1.5";
-    ui.rate.step = "0.1";
-    ui.rate.value = String(prefs.rate);
-    ui.rate.disabled = !speech;
-    ui.rate.addEventListener("change", () => { prefs.rate = parseFloat(ui.rate.value) || 1; save("maya-guide-rate", String(prefs.rate)); });
-    row("Speed", ui.rate);
+    const slider = (min, max, value, key, field) => {
+      const r = el("input", "");
+      r.type = "range";
+      r.min = String(min);
+      r.max = String(max);
+      r.step = "0.1";
+      r.value = String(value);
+      r.disabled = !speech;
+      r.addEventListener("change", () => { prefs[field] = parseFloat(r.value) || 1; save(key, String(prefs[field])); });
+      return r;
+    };
+    row("Speed", slider(0.7, 1.5, prefs.rate, "maya-voice-rate", "rate"));
+    row("Pitch", slider(0.6, 1.6, prefs.pitch, "maya-voice-pitch", "pitch"));
+    const btns = el("div", "guide-actions");
+    ui.testVoice = button("btn btn-secondary", "Test voice", () => { gesture = true; speak(texts().test, false, true); });
+    ui.testVoice.id = "voice-test";
+    ui.testVoice.disabled = !speech;
     const stop = button("btn btn-quiet", "Stop", stopSpeech);
     stop.disabled = !speech;
-    box.appendChild(stop);
-    ui.voiceNote = el("p", "guide-note", speech ? VOICE_NOTE : VOICE_NOTE + " " + UI.en.novoice);
-    box.appendChild(ui.voiceNote);
+    btns.appendChild(ui.testVoice);
+    btns.appendChild(stop);
+    box.appendChild(btns);
+    ui.voiceStatus = el("p", "guide-note guide-voice-status", speech ? "Looking for a voice..." : NO_TTS);
+    ui.voiceStatus.id = "voice-status";
+    box.appendChild(ui.voiceStatus);
+    box.appendChild(el("p", "guide-note", VOICE_NOTE));
     const Rec = core.recognitionCtor(window);
     if (Rec) {  // hidden entirely when the browser has no speech recognition
       ui.micToggle = el("input", "");
@@ -268,12 +274,10 @@
     return box;
   }
 
-  function texts() { return UI[prefs.lang]; }
   function renderTexts() {
     const t = texts();
-    ui.title.textContent = t.title;
-    ui.hide.setAttribute("aria-label", t.hide);
-    ui.hide.title = t.hide;
+    ui.close.setAttribute("aria-label", t.close);
+    ui.close.title = t.close;
     ui.next.textContent = t.next;
     ui.show.textContent = t.show;
     ui.send.textContent = t.send;
@@ -281,20 +285,20 @@
     ui.ask.setAttribute("aria-label", t.ask);
     ui.setupLabel.textContent = t.choose;
     ui.settingsLabel.textContent = t.settings;
+    ui.voiceCardText.textContent = t.voiceCard;
+    ui.voiceOn.textContent = t.voiceOn;
+    ui.voiceLater.textContent = t.voiceLater;
     ui.levelSel.value = prefs.level || "new";
     ui.langSel.value = prefs.lang;
+    ui.voiceCard.hidden = prefs.voice !== "unset" || !core.speechSupported(window);
+    ui.voiceToggle.checked = prefs.voice === "on";
+    ui.speaker.textContent = prefs.voice === "on" ? "\u{1F50A}" : "\u{1F507}";
+    ui.speaker.setAttribute("aria-label", prefs.voice === "on" ? "Voice on: turn off" : "Voice off: turn on");
+    ui.speaker.setAttribute("aria-pressed", prefs.voice === "on" ? "true" : "false");
+    ui.speaker.hidden = !core.speechSupported(window);
   }
 
-  // ---------- mood and talking (only real data and real events change these) ----------
-  function setMood(mood) {
-    ui.pet.className = "pet mood-" + mood + (ui.pet.classList.contains("is-talking") ? " is-talking" : "");
-  }
-  function talk(ms) {
-    ui.pet.classList.add("is-talking");
-    clearTimeout(talkTimer);
-    if (ms) talkTimer = setTimeout(() => ui.pet.classList.remove("is-talking"), ms);
-  }
-
+  // ---------- steps ----------
   function showStep() {
     const s = steps[stepIndex];
     if (!s) return;
@@ -302,10 +306,14 @@
     ui.why.textContent = s.why || "";
     ui.why.hidden = !s.why;
     setTarget(core.firstTarget(s.targets, (id) => !!$(id) && !$(id).closest("[hidden]")));
-    setMood(target && s.mood === "pointing" ? "pointing" : s.mood === "pointing" ? "idle" : s.mood);
     ui.next.hidden = steps.length < 2;
-    talk(2600);
-    if (prefs.speak) speakLine();
+    if (pet) {
+      pet.setEmotion(s.emotion);
+      const t = target && $(target);
+      if (t && s.emotion.some((e) => e.pose === "pointing")) setTimeout(() => pet.moveTo(t), 600);
+    }
+    if (prefs.voice === "on" && gesture) speak(s.line, false);
+    else if (pet && !ui.root.hidden) briefTalk(s.line);
   }
   function setTarget(id) {
     if (target && $(target)) $(target).classList.remove("guide-target");
@@ -316,9 +324,11 @@
   function showTarget() {
     const n = target && $(target);
     if (!n) return;
-    n.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    n.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
     if (typeof n.focus === "function") n.focus({ preventScroll: true });
     if (window.matchMedia("(max-width: 860px)").matches) setCollapsed(true);
+    if (pet) setTimeout(() => pet.moveTo(n), reduced ? 0 : 500);
   }
   function nextTip() { stepIndex = (stepIndex + 1) % Math.max(1, steps.length); showStep(); }
 
@@ -326,13 +336,12 @@
     renderTexts();
     ui.setup.hidden = !!prefs.level;
     ui.body.hidden = !prefs.level;
-    if (!prefs.level) { setMood("idle"); setTarget(null); return; }
+    if (!prefs.level) { if (pet) pet.setEmotion([{ expression: "happy", pose: "waving", ms: 1800 }, { expression: "curious", pose: "idle" }]); setTarget(null); return; }
     let data = null;
     if (PREVIEW) {
       const r = await fetch("/__preview/sample.json", { credentials: "same-origin" });
       const sample = r.ok ? await r.json() : {};
-      const which = new URLSearchParams(window.location.search).get("guide") || "no_account_type";
-      data = (sample.guide || {})[which] || null;
+      data = (sample.guide || {})[new URLSearchParams(window.location.search).get("guide") || "no_account_type"] || null;
     } else {
       const q = "?level=" + encodeURIComponent(prefs.level) + "&lang=" + encodeURIComponent(prefs.lang) +
         (assetId ? "&asset=" + encodeURIComponent(assetId) : "");
@@ -354,13 +363,31 @@
     document.dispatchEvent(new CustomEvent("maya:role", { detail: role }));  // the findings toggle follows the level
     refresh();
   }
-  function setHidden(hidden) {
-    prefs.hidden = hidden;
-    save("maya-guide-hidden", hidden ? "1" : "0");
-    ui.root.hidden = hidden;
-    ui.launcher.hidden = !hidden || !!$("guide-open");  // the shell has its own "Guide me" button
-    document.body.classList.toggle("guide-open", !hidden);
-    if (hidden) { stopSpeech(); setTarget(null); } else refresh();
+  function openBubble(open) {
+    ui.root.hidden = !open;
+    document.body.classList.toggle("guide-open", open && !prefs.petHidden);
+    if (!open) { stopSpeech(); setTarget(null); }
+    if (pet && !prefs.petHidden) pet.goHome(false);
+    if (open) refresh();
+  }
+  function setPetHidden(hidden) {
+    prefs.petHidden = hidden;
+    save("maya-pet-hidden", hidden ? "1" : "0");
+    if (pet) pet.show(!hidden);
+    ui.launcher.hidden = !hidden || !!$("pet-call");  // the app shell has its own "Call pet" button
+    const hide = $("pet-hide");
+    if (hide) {  // keep the icon, change only the label text
+      const label = hide.lastChild && hide.lastChild.nodeType === 3 ? hide.lastChild : hide.appendChild(document.createTextNode(""));
+      label.textContent = hidden ? "Show pet" : "Hide pet";
+      hide.setAttribute("aria-pressed", hidden ? "true" : "false");
+    }
+    if (hidden) { openBubble(false); document.body.classList.remove("guide-open"); }
+  }
+  function callPet() {
+    setPetHidden(false);
+    if (pet) { pet.goHome(true); pet.hop(); }
+    openBubble(true);
+    setCollapsed(false);
   }
   function setCollapsed(collapsed) {
     ui.root.classList.toggle("is-collapsed", collapsed);
@@ -368,25 +395,93 @@
   }
 
   // ---------- speech out: the browser's own text-to-speech ----------
-  function speak(text) {
+  function setVoice(v) {
+    prefs.voice = v;
+    save("maya-voice", v);
+    renderTexts();
+    if (v === "on") { loadVoices(); if (steps[stepIndex]) speak(steps[stepIndex].line, false); } else stopSpeech();
+  }
+  // Windows Chrome loads voices late: listen for voiceschanged and retry getVoices() for about 3 s.
+  function loadVoices() {
     if (!core.speechSupported(window)) return;
-    const line = core.speakable(text);
-    if (!line) return;
+    const synth = window.speechSynthesis;
+    const done = () => {
+      voices = synth.getVoices() || [];
+      const v = core.pickVoice(voices, prefs.lang);
+      ui.voiceStatus.textContent = voices.length ? "Voice ready: " + (v ? v.name + " (" + v.lang + ")" : "browser default") +
+        (v && v.localService === false ? ". This is a network voice: your browser sends the spoken text to its provider." : "")
+        : NO_VOICE;
+      return voices.length > 0;
+    };
+    if (done()) return;
+    synth.onvoiceschanged = done;
+    let tries = 0;
+    const timer = setInterval(() => { tries += 1; if (done() || tries >= 12) clearInterval(timer); }, 250);
+  }
+  // Speak in sentence-sized pieces (Chrome stops one long utterance after about 15 s); the mouth follows
+  // word boundary events, or a timer when the voice sends none.
+  function speak(text, summary, force) {
+    if (!core.speechSupported(window) || (!force && prefs.voice !== "on") || !gesture) return;
+    const clean = core.speakable(text, summary ? 200 : 600, summary);
+    const parts = window.MayaPet ? window.MayaPet.core.splitSentences(clean, 160) : [clean];
+    if (!parts.length) return;
     const synth = window.speechSynthesis;
     synth.cancel();
-    const u = new window.SpeechSynthesisUtterance(line);
-    const voice = core.pickVoice(synth.getVoices(), prefs.lang);
-    if (voice) { u.voice = voice; u.lang = voice.lang; } else if (!synth.getVoices().length) ui.voiceNote.textContent = VOICE_NOTE + " " + texts().novoice;
-    u.rate = prefs.rate;
-    u.onstart = () => talk(0);
-    u.onend = () => ui.pet.classList.remove("is-talking");
-    u.onerror = () => ui.pet.classList.remove("is-talking");
-    synth.speak(u);
+    const run = ++speechRun;
+    const voice = core.pickVoice(voices.length ? voices : synth.getVoices(), prefs.lang);
+    let flap = null;
+    let sawBoundary = false;
+    const mouthTimer = (ms) => {
+      clearInterval(flap);
+      let open = false;
+      const until = Date.now() + ms;
+      flap = setInterval(() => {
+        if (sawBoundary || Date.now() > until || run !== speechRun) { clearInterval(flap); return; }
+        open = !open;
+        if (pet) pet.mouth(open);
+      }, 130);
+    };
+    parts.forEach((part, i) => {
+      const u = new window.SpeechSynthesisUtterance(part);
+      if (voice) { u.voice = voice; u.lang = voice.lang; }
+      u.rate = prefs.rate;
+      u.pitch = prefs.pitch;
+      u.onstart = () => {
+        if (run !== speechRun) return;
+        if (pet) pet.talkStart();
+        sawBoundary = false;
+        mouthTimer(core.estimateMs(part, prefs.rate));
+      };
+      u.onboundary = () => {
+        if (run !== speechRun || !pet) return;
+        sawBoundary = true;
+        pet.mouth(true);
+        setTimeout(() => { if (pet) pet.mouth(false); }, 110);
+      };
+      u.onend = u.onerror = () => {
+        if (run !== speechRun || i < parts.length - 1) return;
+        clearInterval(flap);
+        if (pet) pet.talkStop();
+      };
+      synth.speak(u);
+    });
   }
-  function speakLine() { if (steps[stepIndex]) speak(steps[stepIndex].line); }
   function stopSpeech() {
+    speechRun += 1;
     if (core.speechSupported(window)) window.speechSynthesis.cancel();
-    ui.pet.classList.remove("is-talking");
+    if (pet) pet.talkStop();
+  }
+  // without voice the mouth still moves briefly when a new line appears
+  function briefTalk(text) {
+    if (!pet || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    pet.talkStart();
+    let open = false;
+    const until = Date.now() + Math.min(2400, core.estimateMs(text, 1.4));
+    const t = setInterval(() => {
+      open = !open;
+      pet.mouth(open);
+      if (Date.now() > until) { clearInterval(t); pet.talkStop(); }
+    }, 140);
   }
 
   // ---------- speech in: only when the user turns the microphone on ----------
@@ -405,11 +500,15 @@
   async function askPet(text) {
     text = String(text || "").trim();
     if (!text || PREVIEW) return;
-    setMood("thinking");
+    if (pet) pet.setEmotion(window.MayaPet.core.EVENT_EMOTION["waiting-model"]);
     showAnswer(null);
     const status = await fetch("/api/chats", { credentials: "same-origin" });
     const s = status.ok ? await status.json() : {};
-    if (!s.model_configured) { showAnswer({ error: texts().nokey }); showStep(); return; }
+    if (!s.model_configured) {
+      showAnswer({ error: texts().nokey });
+      if (pet) pet.setEmotion(window.MayaPet.core.EVENT_EMOTION["no-model"]);
+      return;
+    }
     if (!chatId) {
       const mine = (s.chats || []).find((c) => c.title === "Guide questions");
       chatId = mine ? mine.id : null;
@@ -418,14 +517,13 @@
         chatId = created && created.chat ? created.chat.id : null;
       }
     }
-    if (!chatId) { showAnswer({ error: texts().error }); showStep(); return; }
+    if (!chatId) { showAnswer({ error: texts().error }); return; }
     const d = await postJSON("/api/chats/" + chatId + "/messages", { content: text, level: prefs.level || "new" });
-    if (!d) { showStep(); return; }
+    if (!d) return;
     ui.ask.value = "";
     showAnswer(d.reply);
-    setMood("idle");
-    talk(2600);
-    if (prefs.speakAnswers) speak(d.reply.content);
+    if (pet) pet.setEmotion(window.MayaPet.core.EVENT_EMOTION.answered);
+    if (prefs.speakAnswers && prefs.voice === "on") speak(d.reply.content, true);
   }
   async function postJSON(path, body) {
     if (!csrf) { const r = await fetch("/api/session", { credentials: "same-origin" }); csrf = r.ok ? (await r.json()).csrf : null; }
@@ -436,7 +534,11 @@
     } catch (e) { r = null; }
     let data = {};
     try { data = r ? await r.json() : {}; } catch (e) { data = {}; }
-    if (!r || !r.ok) { showAnswer({ error: typeof data.error === "string" ? data.error : texts().error }); return null; }
+    if (!r || !r.ok) {
+      showAnswer({ error: typeof data.error === "string" ? data.error : texts().error });
+      if (pet) pet.setEmotion(window.MayaPet.core.EVENT_EMOTION.error);
+      return null;
+    }
     return data;
   }
   function showAnswer(reply) {
@@ -457,25 +559,50 @@
   // ---------- real events from the page (app.js) ----------
   function onEvent(e) {
     const type = e.detail && e.detail.type;
+    const table = window.MayaPet ? window.MayaPet.core.EVENT_EMOTION : {};
     if (type === "asset") assetId = e.detail.id || null;
-    if (type === "error") { setMood("concerned"); ui.line.textContent = texts().error; ui.why.hidden = true; talk(2600); return; }
-    if (type === "scan-started") setMood("thinking");
-    if (!ui.root.hidden) refresh();
+    if (type === "view" && pet) pet.hop();
+    if (type === "error") {
+      if (pet) pet.setEmotion(table.error);
+      ui.line.textContent = texts().error;
+      ui.why.hidden = true;
+      return;
+    }
+    if (table[type] && pet) pet.setEmotion(table[type]);
+    if (type !== "view" && type !== "applying") refresh();
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     if (!document.body || document.body.classList.contains("auth-page")) return;  // signed-in pages only
     build();
-    const open = $("guide-open");
-    if (open) open.addEventListener("click", () => { setHidden(false); setCollapsed(false); });
+    const mobile = window.matchMedia("(max-width: 860px)").matches;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (window.MayaPet) {
+      pet = window.MayaPet.live({ mobile: mobile, reduced: reduced, onOpen: () => { openBubble(true); setCollapsed(false); },
+        homeAnchor: () => (ui.root.hidden ? null : ui.root.getBoundingClientRect()), anchorElement: () => ui.root });
+    }
+    const call = $("pet-call");
+    if (call) call.addEventListener("click", callPet);
+    const hide = $("pet-hide");
+    if (hide) hide.addEventListener("click", () => setPetHidden(!prefs.petHidden));
     if (window.matchMedia("(max-width: 560px)").matches) setCollapsed(true);  // a slim bar on phones
     document.addEventListener("maya:event", onEvent);
-    if (core.speechSupported(window) && typeof window.speechSynthesis.addEventListener === "function") {
-      window.speechSynthesis.addEventListener("voiceschanged", () => {});  // some browsers load voices late
-    }
     const asked = new URLSearchParams(window.location.search);
     if (PREVIEW && asked.get("level")) prefs.level = asked.get("level");
+    if (PREVIEW) prefs.voice = asked.get("voice") || "off";
     if (PREVIEW && asked.get("expand")) setCollapsed(false);
-    setHidden(prefs.hidden && !PREVIEW);
+    if (PREVIEW && asked.get("talk") && pet) setTimeout(() => { pet.talkStart(); pet.mouth(true); }, 3000);  // screenshot of a speaking frame
+    loadVoices();
+    // browsers allow speech only after a user gesture: the first click or key press counts
+    const firstGesture = () => {
+      if (gesture) return;
+      gesture = true;
+      if (prefs.voice === "on" && steps[stepIndex]) speak(steps[stepIndex].line, false);
+    };
+    document.addEventListener("pointerdown", firstGesture, { once: true });
+    document.addEventListener("keydown", firstGesture, { once: true });
+    setPetHidden(prefs.petHidden && !PREVIEW);
+    openBubble(!prefs.petHidden || PREVIEW);
+    if (pet) pet.goHome(false);
   });
 })();

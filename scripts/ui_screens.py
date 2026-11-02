@@ -86,6 +86,9 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("guide-happy", "/__preview/chat.html?view=finished&guide=happy&level=new&expand=1&scroll=retest-panel"),
     ("guide-chat", "/__preview/chat.html?view=chat&guide=chat&level=new&expand=1"),
     ("guide-collapsed", "/__preview/chat.html?view=finished&guide=concerned&level=new"),
+    ("guide-running", "/__preview/chat.html?view=running&guide=running&level=new&expand=1"),
+    ("guide-speaking", "/__preview/chat.html?view=chat&guide=chat&level=new&expand=1&talk=1"),
+    ("guide-reduced", "/__preview/chat.html?view=finished&guide=concerned&level=new&expand=1&motion=reduce"),
 ]
 LIGHT = [("signin", "/signin"), ("shell", "/__preview/chat.html"), ("result-finished", "/__preview/chat.html?view=finished")]
 CANDIDATES = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
@@ -224,10 +227,14 @@ def start_chrome(chrome: Path, profile: Path):
 
 def shoot(cdp: CDP, url: str, out: Path, width: int, height: int, mobile: bool):
     cdp.call("Emulation.setDeviceMetricsOverride", width=width, height=height, deviceScaleFactor=1, mobile=mobile)
+    # headless Chrome reports prefers-reduced-motion: reduce; set it explicitly (?motion=reduce for that path)
+    motion = "reduce" if "motion=reduce" in url else "no-preference"
+    cdp.call("Emulation.setEmulatedMedia", features=[{"name": "prefers-reduced-motion", "value": motion}])
     cdp.events.clear()
     cdp.call("Page.navigate", url=url)
     cdp.wait_event("Page.loadEventFired")
-    time.sleep(0.8)  # let app.js fetch /api/session and fill the page
+    # let app.js fetch /api/session and fill the page; pet pages also play their emotion sequence and walk
+    time.sleep(3.6 if "guide=" in url or "pet-sheet" in url else 0.8)
     target = re.search(r"[?&]scroll=([a-z-]+)", url)
     if target:  # the shell scrolls inside .conversation, so scroll that, not the window
         name = target.group(1)
@@ -276,6 +283,7 @@ def main(argv=None) -> int:
                  for name, path in LIGHT]
         jobs += [(f"{name}-mobile-light", path + "?theme=light", 390, 844, True) for name, path in LIGHT[1:2]]
         jobs += [(f"{name}-wide", path, 1440, 900, False) for name, path in WIDE]
+        jobs += [("pet-sheet-full", "/__preview/pet-sheet.html", 1280, 1150, False)]  # every expression and pose
         if only:
             jobs = [j for j in jobs if any(j[0] == n or j[0].startswith(n + "-") for n in only)]
         for shot, path, w, h, mobile in jobs:

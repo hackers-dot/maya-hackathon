@@ -87,19 +87,18 @@ code, pre { font-family: var(--mono); }
 /* ---------- brand ---------- */
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
 .mark {
-  width: 28px; height: 28px; border-radius: 9px; flex: none;
-  background: var(--accent-gradient); box-shadow: 0 4px 14px rgba(67, 56, 202, 0.35);
-  display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px;
+  width: 28px; height: 28px; flex: none; display: block;
+  background: url(/static/favicon.svg) center / contain no-repeat;
+  filter: drop-shadow(0 0 6px rgba(0, 255, 102, 0.35));
 }
-.mark::after { content: "M"; }
-.mark.big { width: 48px; height: 48px; border-radius: 14px; font-size: 24px; }
+.mark.big { width: 52px; height: 52px; }
 .wordmark {
   font-weight: 800; letter-spacing: 0.08em; font-size: 18px;
   background: var(--accent-bright); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 :root[data-theme="light"] .wordmark { background-image: var(--accent-gradient); }
 .brand-lg .wordmark { font-size: 22px; }
-.brand-lg .mark { width: 34px; height: 34px; border-radius: 10px; font-size: 18px; }
+.brand-lg .mark { width: 36px; height: 36px; }
 
 /* ---------- icons (inline SVG built with createElementNS) ---------- */
 .ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2;
@@ -643,7 +642,7 @@ button.option:hover { border-color: var(--accent-text); background: var(--panel-
 }
 .msg-user.is-failed .msg-body { background: var(--panel-3); color: var(--text); border: 1px solid var(--danger); }
 .msg-assistant { grid-template-columns: max-content minmax(0, 1fr); align-items: start; gap: 10px; }
-.msg-assistant > .mark { width: 30px; height: 30px; font-size: 14px; border-radius: 9px; }
+.msg-assistant > .mark { width: 30px; height: 30px; }
 .msg-col { display: grid; gap: 8px; min-width: 0; max-width: min(680px, 100%); }
 .msg-assistant .msg-body { background: var(--panel); border: 1px solid var(--border); border-radius: 4px 18px 18px 18px; padding: 12px 16px; }
 .msg-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; color: var(--faint); font-size: 12px; }
@@ -702,6 +701,9 @@ button.option:hover { border-color: var(--accent-text); background: var(--panel-
 }
 @media (max-width: 560px) {
   .auth-page { padding: 64px var(--s4) 24px; }
+  .hero { grid-template-columns: 96px minmax(0, 1fr); gap: 8px 14px; }
+  .hero-pet { width: 96px; height: 120px; }
+  .hero-text { gap: 12px; }
   .hero { gap: 14px; }
   .hero-title { font-size: 26px; }
   .hero-lead { font-size: 15px; }
@@ -737,18 +739,18 @@ button.option:hover { border-color: var(--accent-text); background: var(--panel-
 }
 /* ---------- guide pet ---------- */
 .guide {
-  position: fixed; right: 16px; bottom: 16px; z-index: 40; width: 316px; max-height: calc(100dvh - 32px);
-  display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: end; gap: 6px; pointer-events: none;
+  position: fixed; right: 16px; bottom: 16px; z-index: 40; width: 300px; max-height: calc(100dvh - 190px);
+  display: grid; grid-template-columns: minmax(0, 1fr); pointer-events: none;
 }
 .guide > * { pointer-events: auto; }
 .guide-bubble {
-  position: relative; display: grid; gap: 10px; min-width: 0; max-height: calc(100dvh - 32px); overflow-y: auto;
+  position: relative; display: grid; gap: 10px; min-width: 0; max-height: calc(100dvh - 190px); overflow-y: auto;
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-xl) var(--r-xl) var(--r-xl) 6px;
   padding: 12px 14px; box-shadow: var(--shadow-lift);
 }
 .guide-head { display: flex; align-items: center; gap: 6px; }
-.guide-title { font-size: 13px; margin-right: auto; background: var(--accent-bright); -webkit-background-clip: text; background-clip: text; color: transparent; }
-:root[data-theme="light"] .guide-title { background-image: var(--accent-gradient); }
+.guide-title { font-size: 13px; letter-spacing: 0.1em; margin-right: auto; color: #166534; }
+:root:not([data-theme="light"]) .guide-title { color: #00FF66; text-shadow: 0 0 8px rgba(0, 255, 102, 0.5); }
 .guide-icon-btn {
   display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: var(--r-md);
   border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); font: inherit; font-size: 13px; cursor: pointer;
@@ -789,53 +791,99 @@ button.option:hover { border-color: var(--accent-text); background: var(--panel-
 .guide-target { outline: 3px solid var(--accent-text) !important; outline-offset: 3px; animation: guide-pulse 1.6s ease-in-out infinite; }
 @keyframes guide-pulse { 50% { outline-color: transparent; } }
 /* room for the docked guide beside the results on wide screens, so it never covers them */
-@media (min-width: 1200px) { .app-body.guide-open .main { padding-right: 332px; } }
+@media (min-width: 1200px) { .app-body.guide-open .main { padding-right: 316px; } }
 
-/* the mascot */
-.pet { width: 72px; height: 72px; align-self: end; }
-.pet-svg { width: 100%; height: 100%; overflow: visible; }
-.pet-body { fill: #6d78f0; }
-.pet-belly { fill: #b9c2ff; opacity: 0.55; }
-.pet-cheek { fill: #f9a8d4; opacity: 0.6; }
-.pet-eye { fill: #1b1f3b; }
-.pet-glint { fill: #fff; }
-.pet-limb { fill: none; stroke: #6d78f0; stroke-width: 6; stroke-linecap: round; }
-.pet-sprout { stroke: #22b8a6; stroke-width: 3; }
-.pet-leaf { fill: #2dd4bf; }
-.pet-shadow { fill: rgba(0, 0, 0, 0.25); }
-.pet-brow { fill: none; stroke: #1b1f3b; stroke-width: 2.5; stroke-linecap: round; opacity: 0; }
-.pet-mouth { fill: none; stroke: #1b1f3b; stroke-width: 2.5; stroke-linecap: round; opacity: 0; }
-.pet-mouth-happy, .pet-mouth-talk { fill: #1b1f3b; stroke: none; }
-.pet-think circle { fill: var(--muted); opacity: 0; }
-.pet-bodyg, .pet-eyes, .pet-arm-r, .pet-arm-l, .pet-mouth-talk { transform-box: fill-box; }
-.pet-bodyg { transform-origin: 50% 100%; animation: pet-breathe 3.6s ease-in-out infinite; }
-.pet-eyes { transform-origin: center; animation: pet-blink 5s infinite; }
-.pet-arm-r { transform-origin: 0% 0%; }
-.pet-arm-l { transform-origin: 100% 0%; }
-.mood-idle .pet-mouth-smile, .mood-pointing .pet-mouth-smile, .mood-thinking .pet-mouth-smile { opacity: 1; }
-.mood-happy .pet-mouth-happy { opacity: 1; }
-.mood-happy .pet-bodyg { animation: pet-hop 0.9s ease-in-out 2, pet-breathe 3.6s ease-in-out 1.8s infinite; }
-.mood-concerned .pet-mouth-frown, .mood-concerned .pet-brow { opacity: 1; }
-.mood-concerned .pet-body, .mood-concerned .pet-limb:not(.pet-sprout) { fill: #6d78f0; }
-.mood-thinking .pet-eyes { transform: translate(2px, -2px); animation: none; }
-.mood-thinking .pet-think circle { animation: pet-dots 1.5s infinite; }
-.mood-thinking .pet-think circle:nth-child(2) { animation-delay: 0.2s; }
-.mood-thinking .pet-think circle:nth-child(3) { animation-delay: 0.4s; }
-.mood-pointing .pet-arm-r { animation: pet-point 1.6s ease-in-out infinite; transform: rotate(-120deg); }
-.pet.is-talking .pet-mouth { opacity: 0; }
-.pet.is-talking .pet-mouth-talk { opacity: 1; transform-origin: center; animation: pet-talk 0.28s ease-in-out infinite alternate; }
-@keyframes pet-breathe { 50% { transform: scale(1.025, 0.975); } }
-@keyframes pet-blink { 0%, 94%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
-@keyframes pet-hop { 40% { transform: translateY(-8px); } }
-@keyframes pet-dots { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.9; } }
-@keyframes pet-point { 0%, 100% { transform: rotate(-120deg); } 50% { transform: rotate(-135deg); } }
-@keyframes pet-talk { from { transform: scaleY(0.35); } to { transform: scaleY(1.1); } }
+/* ---------- the MAYA pet (pet.js) ---------- */
+.pet-layer { position: fixed; inset: 0; z-index: 45; pointer-events: none; }
+.pet-controls { display: flex; gap: var(--s2); }
+.pet-controls .btn { flex: 1 1 0; min-width: 0; padding: 7px 10px; font-size: 13px; }
+.maya-pet {
+  position: absolute; left: 0; top: 0; width: 120px; height: 150px; pointer-events: auto; cursor: grab;
+  transition: transform 0.9s cubic-bezier(0.45, 0, 0.25, 1); touch-action: none; border-radius: 40%;
+}
+.maya-pet.is-dragging { transition: none; cursor: grabbing; }
+.maya-pet:focus-visible { outline: 2px solid #00FF66; outline-offset: 4px; }
+.maya-pet-figure { width: 100%; height: 100%; }
+.maya-pet .maya-pet-figure { transition: transform 0.25s ease; }
+.maya-pet.face-left .maya-pet-figure { transform: scaleX(-1); }
+.pet-svg { width: 100%; height: 100%; overflow: visible; display: block; }
+.maya-pet.is-mobile { width: 72px; height: 90px; cursor: default; }
+/* face swaps fade over 200 ms */
+.pet-face-set, .pet-fx-set { transition: opacity 0.2s ease; }
+.pet-face-set.is-entering, .pet-fx-set.is-entering, .pet-face-set.is-leaving, .pet-fx-set.is-leaving { opacity: 0; }
+.pet-eyes { transform-box: fill-box; transform-origin: center; transition: transform 0.08s ease; }
+.pet-eyes.is-blinking { transform: scaleY(0.1); }
+.maya-pet.look-l .pet-eyes { transform: translateX(-4px); transition-duration: 0.25s; }
+.maya-pet.look-r .pet-eyes { transform: translateX(4px); transition-duration: 0.25s; }
+/* lip-sync: the expression mouth hides while speaking; the talk mouth opens and closes */
+.pet-mouth-talk { opacity: 0; }
+.pet-mouth-talk > * { transform-box: fill-box; transform-origin: center; transform: scaleY(0.3); transition: transform 0.08s ease; }
+.is-talking .pet-mouth-expr { opacity: 0; }
+.is-talking .pet-mouth-talk { opacity: 1; }
+.mouth-open .pet-mouth-talk > * { transform: scaleY(1.1); }
+/* life: breathing bob, ribbons sway, ring pulse */
+.pet-figure { transform-box: view-box; transform-origin: 100px 230px; animation: pet-bob 3.4s ease-in-out infinite; }
+.pet-ribbon { transform-box: view-box; animation: pet-sway 3.8s ease-in-out infinite; }
+.pet-ribbon-l { transform-origin: 60px 116px; }
+.pet-ribbon-r { transform-origin: 140px 116px; animation-delay: -1.9s; }
+.pet-ring { transform-box: view-box; transform-origin: 100px 234px; animation: pet-ring 3.4s ease-in-out infinite; }
+.pet-trail { opacity: 0; transition: opacity 0.2s; }
+@keyframes pet-bob { 50% { transform: translateY(-4px); } }
+@keyframes pet-sway { 50% { transform: rotate(5deg); } }
+@keyframes pet-ring { 50% { transform: scale(0.94); opacity: 0.8; } }
+/* poses: limbs rotate around the shoulders, props fade in */
+.pet-arm { transform-box: view-box; transition: transform 0.25s ease; }
+.pet-arm-l { transform-origin: 80px 138px; }
+.pet-arm-r { transform-origin: 120px 138px; }
+.pet-prop { opacity: 0; transition: opacity 0.25s ease; }
+.pose-waving .pet-arm-r { transform: rotate(-125deg); animation: pet-wave 0.6s ease-in-out infinite alternate; }
+.pose-pointing .pet-arm-r { transform: rotate(-95deg); animation: pet-point 1.2s ease-in-out infinite; }
+.pose-scanning .pet-arm-r { transform: rotate(-55deg); }
+.pose-scanning .prop-holo { opacity: 1; }
+.pose-protecting .pet-arm-r { transform: rotate(-40deg); }
+.pose-protecting .prop-shield { opacity: 1; }
+.pose-analyzing .pet-arm-l { transform: rotate(45deg); }
+.pose-analyzing .pet-arm-r { transform: rotate(-45deg); }
+.pose-analyzing .prop-charts { opacity: 1; animation: pet-float 2.4s ease-in-out infinite; }
+.pose-celebrating .pet-arm-l { transform: rotate(140deg); }
+.pose-celebrating .pet-arm-r { transform: rotate(-140deg); }
+.pose-celebrating .prop-party { opacity: 1; }
+.pose-celebrating .pet-figure { animation: pet-jump 0.7s ease-in-out infinite; }
+.pose-walking .pet-figure { animation: pet-walk 0.45s ease-in-out infinite; }
+.pose-walking .pet-trail { opacity: 0.8; }
+.maya-pet.is-hopping .maya-pet-figure { animation: pet-hop 0.5s ease; }
+.maya-pet.is-scrolling .maya-pet-figure { transform: rotate(-4deg); }
+.maya-pet.face-left.is-scrolling .maya-pet-figure { transform: scaleX(-1) rotate(-4deg); }
+@keyframes pet-wave { from { transform: rotate(-110deg); } to { transform: rotate(-145deg); } }
+@keyframes pet-point { 50% { transform: rotate(-88deg) translateX(2px); } }
+@keyframes pet-float { 50% { transform: translateY(-4px); } }
+@keyframes pet-jump { 50% { transform: translateY(-10px); } }
+@keyframes pet-walk { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-6px) rotate(3deg); } }
+@keyframes pet-hop { 40% { transform: translateY(-14px); } }
+
+/* sign-in hero */
+.hero-pet { filter: drop-shadow(0 0 18px rgba(0, 255, 102, 0.1)); }
+.hero-text { display: grid; gap: 18px; min-width: 0; }
+@media (min-width: 561px) {
+  .hero { grid-template-columns: 210px minmax(0, 1fr); align-items: center; gap: 8px 28px; }
+  .hero-pet { width: 210px; height: 262px; }
+}
+@media (min-width: 961px) { .hero-title { font-size: 34px; } }
+
+/* test-only contact sheet (pet-sheet.html, preview mode only) */
+.pet-sheet { padding: 24px; display: grid; gap: 18px; }
+.pet-sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+.pet-cell { background: #08140d; border: 1px solid #1b3a26; border-radius: 14px; padding: 8px; display: grid; justify-items: center; gap: 4px; }
+.pet-cell .maya-pet-figure { width: 104px; height: 130px; }
+.pet-cell code { font-size: 11px; color: #9fe7b4; }
+.pet-sheet-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.pet-sheet-row img { max-width: 100%; border-radius: 12px; }
 
 /* phones and narrow windows: a bottom sheet; collapsed it is a slim bar */
 @media (max-width: 860px) {
-  .guide { left: 12px; right: 12px; bottom: 12px; width: auto; grid-template-columns: 52px minmax(0, 1fr); }
-  .pet { width: 52px; height: 52px; }
+  .guide { left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 55dvh; }
   .guide-bubble { max-height: 55dvh; border-radius: var(--r-xl); }
+  .guide.is-collapsed .guide-bubble { padding-right: 84px; }  /* room for the docked pet beside the bar */
   .app-body .guide, .app-body .guide-launcher { bottom: 108px; }  /* above the chat composer */
   .guide.is-collapsed .guide-bubble { padding: 8px 10px; }
   .center-page, .auth-page { padding-bottom: 120px; }

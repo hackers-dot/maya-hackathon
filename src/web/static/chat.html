@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/theme.js"></script>
 <script src="/static/app.js" defer></script>
+<script src="/static/pet.js" defer></script>
 <script src="/static/guide.js" defer></script>
 </head>
 <body class="app-body">
@@ -19,7 +20,7 @@
 <button id="sidebar-close" class="icon-btn only-mobile" type="button" aria-label="Close sidebar">&#10005;</button>
 </div>
 <button id="new-chat" class="btn btn-secondary new-chat" type="button">&#65291; New chat</button>
-<button id="guide-open" class="btn btn-quiet new-chat" type="button">Guide me</button>
+<div class="pet-controls"><button id="pet-call" class="btn btn-quiet" type="button">Call pet</button><button id="pet-hide" class="btn btn-quiet" type="button" aria-pressed="false">Hide pet</button></div>
 <nav class="side-lists" aria-label="History">
 <h3 class="side-heading">Chats</h3>
 <ul id="chats-list" class="side-list"></ul>

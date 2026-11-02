@@ -31,6 +31,8 @@ EVAL_SUMMARY = Path(__file__).resolve().parent.parent.parent / "docs" / "eval_re
 STATIC_NAME = re.compile(r"^[a-z0-9_-]+\.(html|js|css|svg)$")
 CONTENT_TYPES = {"html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8",
                  "css": "text/css; charset=utf-8", "svg": "image/svg+xml"}
+# test-only files: served only when the server runs in --ui-preview mode (404 otherwise)
+PREVIEW_ONLY_STATIC = {"pet-sheet.html", "pet-sheet.js"}
 COOKIE = "maya_session"
 MAX_BODY = 16 * 1024
 DRAIN_MAX = 1024 * 1024  # larger bodies are not read at all; the connection is closed
@@ -411,7 +413,8 @@ def _preview_guide() -> dict:
         "concerned": {**site, "run": run},
         "happy": {**site, "run": {**run, "counts": {s: 0 for s in counts}, "top": None, "proposals": ["APPLIED"] * 3,
                                   "retest": {"status": "FIXED", "resolved": [f["id"] for f in findings],
-                                             "still_present": []}, "score_improved": True}},
+                                             "still_present": []}, "score_improved": True,
+                                  "after_grade": "A"}},
         "chat": {"account_type": "individual"},
     }
     return {name: guide(f, "new", "en") for name, f in facts.items()}
@@ -695,7 +698,8 @@ class WebHandler(BaseHTTPRequestHandler):
                 "proposals": sorted(p.status for p in run.proposals.values()),
                 "retest": ({k: run.retest[k] for k in ("status", "resolved", "still_present")} if run.retest
                            else None),
-                "score_improved": bool(before and after and after["score"] > before["score"])}
+                "score_improved": bool(before and after and after["score"] > before["score"]),
+                "after_grade": after["grade"] if after else None}
         return facts
 
     def _guide(self, user) -> dict:
@@ -881,7 +885,7 @@ class WebHandler(BaseHTTPRequestHandler):
         if path.startswith(PREVIEW_PREFIX):
             # page HTML only (no data, no session), for screenshots; refused unless started in preview mode
             name = path[len(PREVIEW_PREFIX):]
-            if not self.app.ui_preview or name not in {f for f, _ in PAGES.values()}:
+            if not self.app.ui_preview or name not in {f for f, _ in PAGES.values()} | {"pet-sheet.html"}:
                 return self._json(404, {"error": "not found"})
             return self._static(name)
         if path in PAGES:
@@ -900,6 +904,8 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _static(self, name: str):
         if not STATIC_NAME.match(name) or not (STATIC_DIR / name).is_file():
+            return self._json(404, {"error": "not found"})
+        if name in PREVIEW_ONLY_STATIC and not self.app.ui_preview:
             return self._json(404, {"error": "not found"})
         self._send(200, (STATIC_DIR / name).read_bytes(), CONTENT_TYPES[name.rsplit(".", 1)[1]])
 

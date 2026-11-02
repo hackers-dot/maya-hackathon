@@ -35,12 +35,21 @@ Demo flow:
 
 ## Guide pet
 
-A small friendly mascot (an original character drawn in code) that walks you through MAYA one step at a time: what to press next and why it matters.
-- **Steps are not from a model.** They come from a fixed state machine over your own stored data: account, consent, verification, scan, findings, proposals, apply, re-test. It explains what was found before it asks for any approval, never approves anything for you, never says a site is "safe" or "secure", and gives no time or cost estimates.
+MAYA, the project's own character, lives on every signed-in page: a small figure with a white cat-ear helmet, a black visor face screen, a green suit and a shield "M" emblem. She guides you one step at a time, shows how things are going on her face, and can speak.
+- **What she does:** says what to press next and why it matters, walks to that button and points at it (never covering another control), and goes home again. You can drag her anywhere; her position is remembered. "Call pet" and "Hide pet" are in the sidebar.
+- **Idle life:** she blinks, looks around, waves now and then, and gets sleepy if you leave her alone. Click her and she laughs; double-click her for the speech bubble. With reduced motion turned on she stays docked and only her face changes. On phones she is smaller, docked above the composer, and the bubble is a bottom sheet.
+- **Steps and emotions are not from a model.** They come from a fixed state machine over your own stored data: account, consent, verification, scan, findings, proposals, apply, re-test.
+  - It explains what was found before it asks for any approval, never approves anything for you, never says a site is "safe" or "secure", and gives no time or cost estimates.
+  - Same situation, same face: alert then nervous for critical or high findings, curious for medium only, proud when the checks run found no issues, excited and celebrating when a re-test confirms the fix.
 - **Level and language:** pick "I'm new to security", "I know some" or "I'm technical". It changes the wording and the default findings view. English or Hinglish. The Hinglish text still needs review by a native speaker.
 - **"Ask me":** uses the normal chat, with the same rules and labels, and asks the model to answer for your level. Without a model key it says "Model not configured".
-- **Speech is your browser's, not MAYA's and not a Meta model:** text-to-speech (off by default) and an optional microphone that your browser may send to its own speech provider. MAYA never receives or stores audio.
-- **Not tested live:** real voices and microphone input in a browser, the feel of the animations, and "Ask me" against a real model. The tests cover the state machine, the API, the chat level line (with a scripted fake model) and the speech helpers in Node.
+- **Voice is your browser's built-in text-to-speech, not a Meta model, and not MAYA's server.**
+  - It is off until you press "Turn on voice" or the speaker button: browsers only allow speech after a click.
+  - A local voice on your computer is picked first (en-IN if present). If only a network voice fits, the status line says that your browser sends the spoken text to its provider.
+  - She speaks only a short, cleaned summary: no ids, paths, code or masked values.
+  - The microphone is optional and off by default; your browser may send the audio to its speech provider. MAYA never receives or stores audio.
+- **Checked here:** headless Chrome on this Windows machine found 24 voices, including Microsoft Ravi and Heera (en-IN, local). A test sentence fired start, word-boundary and end events. MAYA's "Test voice" button spoke with Microsoft Ravi while her mouth opened and closed.
+- **Not tested live:** how the voice actually sounds, the microphone, the feel of the animations, dragging by hand, and "Ask me" against a real model. The tests cover the state machine and emotions, the API, the chat level line (with a scripted fake model), and the pet and speech helpers in Node.
 
 ## Build log
 
@@ -147,6 +156,12 @@ A small friendly mascot (an original character drawn in code) that walks you thr
   - Offline eval not regenerated: no finding or claim logic changed.
 - **2026-11-02 (Guide pet):** Mascot, guided steps, optional speech.
   - `src/guide.py` state machine and `GET /api/guide`, the mascot and its bubble (`static/guide.js`), "Ask me" through the existing chat with a reader level, and browser-only speech out and in.
+  - Offline eval not regenerated: no scan, finding or claim logic changed.
+- **2026-11-02 (MAYA pet):** Real character, emotions, roaming, working speech.
+  - The placeholder mascot is replaced by MAYA herself, drawn in layered SVG in code (`static/pet.js`): 23 expressions and 8 poses, and a living pet that walks to the element she is talking about without covering other controls, can be dragged, and has idle behaviour.
+  - Emotions come from the guide state machine and real page events.
+  - Speech: a "Turn on voice" gesture, voice loading with retries and a status line, local voices first, sentence queueing, and lip-sync from boundary events with a timed fallback.
+  - The shield "M" emblem is now the logo mark and favicon, and MAYA stands on the sign-in hero.
   - Offline eval not regenerated: no scan, finding or claim logic changed.
 
 ## License

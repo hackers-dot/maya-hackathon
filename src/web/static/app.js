@@ -64,7 +64,7 @@
   }
   // static markup asks for icons with data-icon; sidebar controls get theirs by id or label
   const SIDE_ICONS = { "new-chat": "plus", "add-asset": "globe", "data-link": "data", "signout": "signout",
-    "investigate-btn": "search", "chats-empty-btn": "chat", "scan-empty-btn": "scan", "guide-open": "spark" };
+    "investigate-btn": "search", "chats-empty-btn": "chat", "scan-empty-btn": "scan", "pet-call": "spark", "pet-hide": "eye" };
   const CONNECTOR_ICONS = { "Website": "globe", "Source code ZIP": "code", "Logs": "logs", "Suspicious message": "message",
     "GitHub repo": "branch", "Lookalike watch": "eye", "API": "api", "Mobile": "mobile", "Cloud": "cloud" };
   function decorateIcons() {
@@ -841,6 +841,7 @@
   async function applyFixes() {
     if (!currentRunId) return;
     say("Applying approved fixes and checking the demo app...", false);
+    emit("applying");
     const d = await post("/api/runs/" + currentRunId + "/apply", {});
     if (d) {
       renderFull(d);
@@ -1574,6 +1575,7 @@
     show("watch-view", view === "watch");
     const titles = { home: "Home", chat: "Chat", data: "Your data", upload: "Upload", github: "GitHub repo", watch: "Lookalike watch" };
     if (titles[view]) setTitle(titles[view]);
+    emit("view", { view: view });
     if (view !== "asset") {
       stopPolling();
       for (const b of document.querySelectorAll("#assets-list .asset-item")) b.classList.remove("is-current");

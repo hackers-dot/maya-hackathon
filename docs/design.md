@@ -442,6 +442,25 @@ See `src/models.py`:
   - **Out:** `speechSynthesis` speaks a one-line summary: citation ids, code, paths, masked values and long tokens are removed, and only the first sentence is spoken. Speech is off by default. It has a voice picked by language (en-IN, hi-IN), a speed control and Stop, and the note "Voice uses your browser's built-in text-to-speech, not a Meta model".
   - **In:** only behind "Use microphone", and only if the browser has SpeechRecognition, with a disclosure that the browser may send audio to its speech provider. The text goes into the input. MAYA's server never receives audio.
 
+### MAYA pet (character, emotions, roaming, speech)
+
+- **Art (`static/pet.js`).** MAYA is drawn with createElementNS in separate layers: ground ring, ribbons, legs and boots, arms, suit, V collar, shield "M" emblem, props, cat ears, glass dome with neon trim, cream chin, visor and headset cups. Gradients and glow are per-instance SVG filters, with no raster images and no data: URLs.
+  - The face screen is rebuilt per expression from fixed tables: two eye shapes, a mouth and an optional effect such as a question mark, "zz", hearts, a sweat drop or sparkles. The swap is a 200 ms crossfade.
+  - Poses rotate the arms around the shoulders and fade props in: hologram panel, shield, floating charts, party sparkles and a walking trail.
+- **Emotions.** `src/guide.py` returns an `emotion` sequence per state, from the same facts as the line. Each entry is an expression, a pose and how long it shows; the last one holds. Page events use the fixed `EVENT_EMOTION` table in `pet.js`. Nothing is chosen at random except the blink timing and idle glances.
+- **The living pet.** One instance in a fixed layer above the page (pointer events only on the pet).
+  - **Home:** above the docked bubble, or bottom-right. It is re-placed when the bubble resizes.
+  - **Walking to a target:** `placeBeside` tries right, left, above and below the target and rejects any spot that leaves the viewport or overlaps another control or the bubble. If no spot is free, the pet points from home.
+  - **Drag:** dragging saves the position (localStorage, guarded).
+  - **Idle:** sleepy after 45 s idle, surprised on wake.
+  - **Reduced motion:** no roaming and no loops. **Phones:** a docked 72 px pet and no roaming.
+- **Speech.** Browser `speechSynthesis` only; nothing goes to MAYA's server.
+  - **Starting:** it speaks only after a user gesture ("Turn on voice", the speaker button, "Test voice", or the first click with voice already on).
+  - **Voices:** loaded through `voiceschanged` plus 3 s of retries, with a status line. Local voices are preferred over network voices, and en-IN over other English voices.
+  - **Text:** split into sentences of at most 160 characters (Chrome cuts long utterances), and cleaned of ids, paths, code and masked values.
+  - **Lip-sync:** the mouth follows `onboundary`, with a timed fallback when a voice sends none.
+- **Contact sheet.** `static/pet-sheet.html` and `pet-sheet.js` render every expression and pose. They are served only in `--ui-preview` mode (404 otherwise; tested).
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

@@ -133,7 +133,7 @@ T = {
                   "{top}."),
         "tech": ("Scan finished: {total} finding(s) ({sev}). Highest priority by the severity table: {top}.",
                  "Scan poora: {total} finding(s) ({sev}). Severity table ke hisaab se sabse pehle: {top}."),
-        "why": None, "targets": ("fixfirst-panel", "findings-panel"), "mood": "idle"},
+        "why": None, "targets": ("score-card", "fixfirst-panel", "findings-panel"), "mood": "idle"},
     "proposals_not_approved": {
         "plain": ("Below are fix proposals written from fixed templates. Read each one first: approving only "
                   "records your decision, and nothing changes until you also press Apply.",
@@ -206,6 +206,32 @@ T = {
         "targets": ("reminder-panel", "guide-ask"), "mood": "idle"},
 }
 STATES = tuple(T)
+# The pet's face and pose per state: a fixed sequence (ms = how long a step shows; None = it holds).
+# Names match EXPRESSIONS / POSES in static/pet.js (tested).
+EXPRESSIONS = ("idle", "happy", "excited", "laughing", "smiling", "wink", "playful", "sad", "crying", "angry",
+               "surprised", "shocked", "confused", "thinking", "curious", "sleepy", "tired", "nervous", "proud",
+               "determined", "love", "alert", "analyzing")
+POSES = ("idle", "waving", "scanning", "protecting", "analyzing", "pointing", "celebrating", "walking")
+def E(expression: str, pose: str = "idle", ms: int | None = None) -> dict:
+    return {"expression": expression, "pose": pose, "ms": ms}
+
+
+EMOTION = {
+    "no_account_type": [E("happy", "waving", 1800), E("smiling", "pointing")],
+    "no_asset_type": [E("smiling", "pointing")],
+    "no_connect": [E("happy", "waving", 1800), E("smiling", "pointing")],
+    "no_consent": [E("determined", "pointing")],
+    "no_asset": [E("curious", "pointing")],
+    "verification_pending": [E("curious", "pointing")],
+    "verification_failed": [E("confused", "pointing")],
+    "ready_to_scan": [E("determined", "pointing")],
+    "scan_running": [E("analyzing", "scanning")],
+    "scan_failed": [E("sad")],
+    "proposals_not_approved": [E("determined", "pointing")],
+    "approved_not_applied": [E("determined", "pointing")],
+    "applied_not_retested": [E("determined", "pointing")],
+    "retest_still_present": [E("confused", "protecting")],
+}
 WHY_PREFIX = {"en": "Why this matters: ", "hinglish": "Yeh kyon zaroori hai: "}
 # English report templates are reused for findings; the Hinglish guide says so instead of translating them
 TEMPLATE_NOTE = {"en": "", "hinglish": "(English mein) "}
@@ -288,11 +314,32 @@ def step(state: str, level: str, lang: str, facts: dict) -> dict:
     if state == "retest_still_present" and values["resolved"] and run.get("score_improved"):
         mood = "happy"  # some fixes were confirmed and the score went up
     targets = t["targets"]
+    emotion = _emotion(state, facts, counts, values)
     if state == "approved_not_applied" and not run.get("can_apply"):
         targets = ("retest-btn",)  # own site: the user applies the snippet, then re-tests
     return {"state": state, "level": level, "lang": lang, "line": line,
             "why": (WHY_PREFIX[lang] + why) if why else None, "targets": list(targets), "mood": mood,
-            "role": ROLE_FOR_LEVEL[level]}
+            "emotion": emotion, "role": ROLE_FOR_LEVEL[level]}
+
+
+def _emotion(state: str, facts: dict, counts: dict, values: dict) -> list[dict]:
+    """The pet's emotion for a state, from the same stored facts as the line (deterministic)."""
+    run = facts.get("run") or {}
+    if state == "scan_finished":
+        if counts.get("critical") or counts.get("high"):
+            return [E("alert", "protecting", 1500), E("nervous", "pointing")]
+        if counts.get("medium"):
+            return [E("curious", "pointing")]
+        return [E("smiling", "pointing")]
+    if state == "retest_fixed":
+        follow = E("love") if run.get("after_grade") == "A" else E("proud")
+        return [E("excited", "celebrating", 2600), follow]
+    if state == "retest_still_present" and values["resolved"] and run.get("score_improved"):
+        return [E("happy", "celebrating", 1600), E("confused", "protecting")]
+    if state == "nothing_to_do":
+        # zero findings after a scan: proud of the result of the checks run; otherwise a calm smile
+        return [E("proud")] if run and not sum(counts.values()) else [E("smiling")]
+    return [dict(x) for x in EMOTION[state]]
 
 
 def guide(facts: dict, level: str, lang: str) -> dict:

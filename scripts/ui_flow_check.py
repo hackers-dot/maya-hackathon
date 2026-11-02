@@ -174,6 +174,12 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
               "guide pet: next step from stored data (ready to scan)", f"HTTP {st} {g.get('steps', [{}])[0].get('state')}")
     st, _, _ = b.request("GET", "/static/guide.js")
     rep.check(st == 200, "guide.js served", f"HTTP {st}")
+    emo = g["steps"][0].get("emotion", []) if g.get("steps") else []
+    rep.check(bool(emo) and emo[-1]["expression"] == "determined" and emo[-1]["pose"] == "pointing",
+              "MAYA pet: emotion from the same state (ready to scan = determined, pointing)", str(emo))
+    st, _, _ = b.request("GET", "/static/pet.js")
+    st2, _, _ = b.request("GET", "/static/pet-sheet.html")
+    rep.check(st == 200 and st2 == 404, "pet.js served; test-only contact sheet not served", f"HTTP {st}/{st2}")
     status, _, data = b.request("GET", "/api/assets")
     labels = [a["label"] for a in json.loads(data)["assets"]] if status == 200 else []
     rep.check(len(labels) == 2, "sidebar assets list", ", ".join(labels))
