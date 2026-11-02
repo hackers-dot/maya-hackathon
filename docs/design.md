@@ -483,6 +483,16 @@ See `src/models.py`:
   - `tourStops()` builds the stops: the score, the findings sorted by the code's severity order (title, location and plain text from the rendered cards, which come from the fixed report templates), Fix first, then the approve step.
   - Numbers come only from the page. The tour only scrolls, points and explains; it never clicks anything.
 
+### Pet v2 (tier 3): "Let the pet help me"
+
+- **Off by default.** Turning it on opens a consent card that lists exactly what the pet may and may not do, and only "Turn on" enables it (`maya-pet-help` in localStorage).
+- **The allowlist** (`pet-brain.js`, `HELP_ACTIONS`) has seven actions: scroll, expand, collapse, role, summary-lang, highlight and open-panel. `checkAction()` refuses anything else, anything when help is off, any id on `NEVER_IDS`, any class on `NEVER_CLASSES`, and any form, input, textarea or select. Expand and collapse work only on finding cards; open-panel only on a `<details>` without form controls.
+- **A test keeps the never-list complete:** every registry control whose effect is not "reads" must be on the never-list.
+- **The executor** (`guide.js act()`) runs only after `checkAction()` and logs every action and refusal ("Pet did: ..." / "Pet refused: ...") in the Pet settings log.
+  - It never calls `.click()` or `.submit()`. Role and summary language are switched through display-only page events that `app.js` handles exactly like its own toggles.
+  - Pending actions sit in an `ActionQueue`; Esc or any manual click outside the pet cancels them and logs "Pet stopped".
+- **Never-list controls in a step:** the pet offers a chip ("Run the scan?" / "Scan chalaun?", "Where do I press?") that scrolls to and highlights the real button and says "press it yourself"; it never presses it.
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

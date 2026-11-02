@@ -35,6 +35,16 @@
       hinglish: "Oho, ye nahi hua. Screen par message mein likha hai kya hua.",
       spoken_hi: "ओहो, ये नहीं हुआ। स्क्रीन पर मैसेज में लिखा है क्या हुआ।",
     },
+    pressYourself: {
+      en: "Here it is. Press it yourself when you're ready; I never press it for you.",
+      hinglish: "Ye raha. Jab ready ho, khud dabana; main aapki jagah kabhi nahi dabati.",
+      spoken_hi: "ये रहा। जब रेडी हो, ख़ुद दबाना; मैं आपकी जगह कभी नहीं दबाती।",
+    },
+    stopped: {
+      en: "Okay, I stopped. You're in charge.",
+      hinglish: "Theek hai, maine rok diya. Aap control mein ho.",
+      spoken_hi: "ठीक है, मैंने रोक दिया। आप कंट्रोल में हो।",
+    },
     hidden: {
       en: "Okay, I'll stay out of the way. Press Call pet when you need me.",
       hinglish: "Theek hai, main side mein rehti hoon. Zaroorat ho to Call pet dabana.",
@@ -53,6 +63,8 @@
     skip: { en: "Skip", hinglish: "Skip" },
     nextStop: { en: "Next", hinglish: "Aage" },
     done: { en: "Done", hinglish: "Ho gaya" },
+    askScan: { en: "Run the scan?", hinglish: "Scan chalaun?" },
+    whereIs: { en: "Where do I press?", hinglish: "Kahan dabana hai?" },
   };
   const api = { LINES: LINES, CHIPS: CHIPS };
   if (typeof module === "object" && module.exports) { module.exports = api; return; }

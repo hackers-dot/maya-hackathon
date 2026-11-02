@@ -154,7 +154,17 @@
 </section>
 <section class="panel">
 <div class="panel-head"><h2>Help and memory</h2></div>
-<label class="check-row"><input id="pet-help" type="checkbox" disabled> <span>Let the pet help me (scroll, open read-only panels). Not available yet.</span></label>
+<label class="check-row"><input id="pet-help" type="checkbox"> <span>Let the pet help me (off by default)</span></label>
+<div id="pet-help-consent" class="consent-box pet-help-consent" hidden>
+<h2>Before you turn this on</h2>
+<p class="hint">With this on, MAYA may do only these things by herself:</p>
+<div class="will"><ul class="checklist"><li>scroll to the part she is talking about</li><li>open or close a finding card</li><li>switch the Owner / Developer / Technical view</li><li>switch the summary between English and Hinglish</li><li>highlight a button or panel</li><li>open a read-only panel</li></ul></div>
+<p class="hint">She never presses Approve, Approve all, Apply, Re-test, Re-scan, Run scan, Reset demo app, Allow, Verify ownership, Delete my data, Disconnect or Sign out. She never uploads files, edits lists or reminders, types your name or fills in any form. For those she only shows you where the button is; you press it.</p>
+<p class="hint">Stop her at any time with Esc, or just click anything yourself.</p>
+<div class="actions"><button id="pet-help-allow" class="btn btn-primary" type="button">Turn on</button><button id="pet-help-cancel" class="btn btn-quiet" type="button">Cancel</button></div>
+</div>
+<h3 class="sub-heading">What the pet did</h3>
+<ol id="pet-log" class="pet-log"></ol>
 <p id="pet-learn-note" class="hint">The pet remembers which buttons you have used, on this device only. Nothing is sent to MAYA's server.</p>
 <div class="actions"><button id="pet-reset" class="btn btn-quiet" type="button">Reset what the pet learned</button></div>
 <p id="pet-reset-message" class="hint" role="status"></p>

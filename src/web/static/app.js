@@ -1500,6 +1500,12 @@
     onClick("retest-btn", runRetest);
     for (const r of ROLES) onClick("role-" + r, () => setRole(r));
     document.addEventListener("maya:role", (e) => setRole(e.detail));  // the guide's level sets the default view
+    document.addEventListener("maya:summary-lang", (e) => {  // the pet's "help me" mode: display only, like the toggle
+      if (e.detail !== "en" && e.detail !== "hinglish") return;
+      summaryLang = e.detail;
+      renderSummaryLines();
+      show("reword-box", false);
+    });
     let saved = null;
     try { saved = window.localStorage.getItem("maya-role"); } catch (e) { saved = null; }
     setRole(new URLSearchParams(window.location.search).get("role") || saved || "owner");

@@ -140,7 +140,7 @@ def test_pet_surface_has_only_mute_and_hide_and_settings_live_on_their_own_page(
         assert f'id="{control}"' in view, control
     assert 'id="pet-settings-btn"' in page and 'id="pet-call"' in page
     assert re.search(r'load\("maya-voice-pitch", "1\.2"\)', guide) and re.search(r'load\("maya-voice-rate", "1"\)', guide)
-    assert 'id="pet-help" type="checkbox" disabled' in view  # tier 3 is not built: the switch cannot be turned on
+    assert 'id="pet-help" type="checkbox">' in view and 'load("maya-pet-help", "0")' in guide  # off by default
 
 
 def test_compact_sizes():

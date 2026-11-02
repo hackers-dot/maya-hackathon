@@ -126,6 +126,9 @@
   let suggestedHere = false;
   let pendingTour = false;
   let tour = null;
+  // tier 3: the pet may act only from the allowlist in pet-brain.js, and only after the user turned it on
+  let helpOn = load("maya-pet-help", "0") === "1";
+  let actions = null;
   const L = () => (window.MayaLines || { LINES: {}, CHIPS: {} });
   const line = (name) => { const x = L().LINES[name] || {}; return { text: x[prefs.lang] || x.en || "", spoken: prefs.lang === "hinglish" ? x.spoken_hi : null }; };
   const chip = (name, onClick) => ({ label: (L().CHIPS[name] || {})[prefs.lang] || name, onClick: onClick });
@@ -147,7 +150,9 @@
     pet.setEmotion(s.emotion);
     if (t && s.emotion.some((e) => e.pose === "pointing")) setTimeout(() => pet.moveTo(t), 500);
     const chips = [];
-    if (t) chips.push(chip("show", showTarget));
+    const never = t && brain() && brain().NEVER_IDS.indexOf(t.id) >= 0;
+    if (t && never && helpOn) chips.push(chip(/^scan(-empty)?-btn$/.test(t.id) ? "askScan" : "whereIs", () => showWhere(t)));
+    else if (t) chips.push(chip("show", showTarget));
     if (steps.length > 1) chips.push(chip("next", nextTip));
     say(s.line, s.spoken_hi, chips, { avoid: t || null });
   }
@@ -282,6 +287,48 @@
     briefTalk(text);
   }
 
+  // ---------- "Let the pet help me": allowlisted actions only, logged, cancelled by Esc or any manual click ----------
+  function logAct(text) {
+    const list = $("pet-log");
+    if (!list) return;
+    const li = document.createElement("li");
+    li.textContent = text;
+    list.insertBefore(li, list.firstChild);
+    while (list.children.length > 30) list.removeChild(list.lastChild);
+  }
+  function act(action, el, value) {
+    const b = brain();
+    if (!b) return false;
+    const verdict = b.checkAction({ helpOn: helpOn, action: action, id: el ? el.id : "", tag: el ? el.tagName : "",
+      classes: el ? Array.from(el.classList) : [], value: value,
+      isFinding: !!(el && el.matches && el.matches("details.finding")),
+      isReadOnlyDetails: !!(el && el.tagName === "DETAILS" && !el.querySelector("input, textarea, select, button")) });
+    const label = el ? (el.id ? "#" + el.id : (el.querySelector && el.querySelector(".f-title") ? "'" + el.querySelector(".f-title").textContent + "'" : el.tagName.toLowerCase())) : String(value);
+    logAct(b.logLine(verdict.ok, action, label, verdict.reason));
+    if (!verdict.ok) return false;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (action === "scroll") el.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    else if (action === "expand" || action === "open-panel") el.open = true;
+    else if (action === "collapse") el.open = false;
+    else if (action === "highlight") el.classList.add("guide-target");
+    else if (action === "role") document.dispatchEvent(new CustomEvent("maya:role", { detail: value }));
+    else if (action === "summary-lang") document.dispatchEvent(new CustomEvent("maya:summary-lang", { detail: value }));
+    return true;
+  }
+  function stopActions(why) {
+    const n = actions ? actions.cancel() : 0;
+    if (n) logAct("Pet stopped: " + why);
+    return n;
+  }
+  // for a control MAYA never presses: show where it is; the user presses it
+  function showWhere(el) {
+    if (!el || !pet) return;
+    if (helpOn) { act("scroll", el); act("highlight", el); } else el.scrollIntoView({ block: "center" });
+    setTimeout(() => pet.moveTo(el), 500);
+    const x = line("pressYourself");
+    say(x.text, x.spoken, [], { avoid: el });
+  }
+
   // ---------- after a scan: a guided tour of the real result ----------
   function offerTour() {
     const s = steps[0];
@@ -314,6 +361,12 @@
     el.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
     const last = tour.i === tour.stops.length - 1;
     const chips = last ? [chip("done", endTour)] : [chip("nextStop", () => { tour.i += 1; showStop(); }), chip("skip", endTour)];
+    if (helpOn && actions) {
+      const prev = tour.i > 0 ? tour.stops[tour.i - 1] : null;
+      const prevEl = prev && typeof prev.target !== "string" ? prev.target : null;
+      if (prevEl) actions.add(() => act("collapse", prevEl), 0);
+      if (el.matches("details.finding")) actions.add(() => act("expand", el), reduced ? 0 : 400);
+    }
     setTimeout(() => {
       if (!tour) return;
       pet.setEmotion([{ expression: stop.expression, pose: "pointing", ms: null }]);
@@ -513,6 +566,7 @@
     set("pet-speak-steps", "checked", prefs.voice === "on" && prefs.speakSteps);
     set("pet-speak-answers", "checked", prefs.speakAnswers);
     set("pet-mic", "checked", load("maya-pet-mic", "0") === "1");
+    set("pet-help", "checked", helpOn);
   }
   function wireSettings() {
     if (!$("pet-view")) return;
@@ -542,6 +596,21 @@
       $("pet-mic-note").hidden = !$("pet-mic").checked;
       syncMic();
     });
+    on("pet-help", "change", () => {
+      if ($("pet-help").checked) { $("pet-help").checked = false; $("pet-help-consent").hidden = false; return; }
+      helpOn = false;
+      save("maya-pet-help", "0");
+      stopActions("you turned help off");
+      logAct("Help turned off");
+    });
+    on("pet-help-allow", "click", () => {
+      helpOn = true;
+      save("maya-pet-help", "1");
+      $("pet-help").checked = true;
+      $("pet-help-consent").hidden = true;
+      logAct("Help turned on by you");
+    });
+    on("pet-help-cancel", "click", () => { $("pet-help-consent").hidden = true; });
     on("pet-reset", "click", () => {
       for (const k of LEARNED_KEYS) forget(k);
       used = {};
@@ -614,6 +683,7 @@
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const asked = new URLSearchParams(window.location.search);
     if (PREVIEW) {  // screenshots: a clean device, the voice not yet chosen
+      helpOn = asked.get("help") === "on";
       prefs.level = asked.get("level") || "";
       prefs.voice = asked.get("voice") || "unset";
       prefs.petHidden = false;
@@ -643,11 +713,17 @@
     const firstGesture = () => { gesture = true; };
     document.addEventListener("pointerdown", firstGesture, { once: true });
     document.addEventListener("keydown", firstGesture, { once: true });
+    if (window.MayaBrain) actions = window.MayaBrain.ActionQueue(window.setTimeout.bind(window), window.clearTimeout.bind(window));
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
       stopSpeech();
+      stopActions("Esc");
       if (tour) endTour(); else if (pet) pet.hideBubble();
     });
+    // any manual click outside the pet stops whatever the pet was about to do
+    document.addEventListener("pointerdown", (e) => {
+      if (!(e.target.closest && e.target.closest(".pet-layer"))) stopActions("you clicked");
+    }, true);
     wireLearning();
     wireHover();  // with reduced motion the pet explains from home without walking (moveTo does not roam)
     setInterval(maybeSuggest, 5000);
@@ -657,6 +733,7 @@
     const shouldGreet = PREVIEW ? !!asked.get("greet") : load(greetKey, "0") !== "1";
     if (shouldGreet) greet(); else refresh();
     if (PREVIEW && asked.get("talk") && pet) setTimeout(() => { pet.talkStart(); pet.mouth(true); }, 3000);  // speaking frame
+    if (PREVIEW && asked.get("help") === "consent" && $("pet-help-consent")) $("pet-help-consent").hidden = false;
     if (PREVIEW && asked.get("tour")) setTimeout(() => startTour(Number(asked.get("tour")) || 0), 1200);  // a tour stop
     if (PREVIEW && asked.get("hover")) setTimeout(() => { const n = $(asked.get("hover")); if (n && pet) { pet.hideBubble(); explain(n); } }, 1500);
   });

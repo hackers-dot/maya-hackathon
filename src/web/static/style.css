@@ -770,6 +770,10 @@ button.option:hover { border-color: var(--accent-text); background: var(--panel-
 /* Pet settings page */
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 16px; }
 .settings-grid .field-wide { grid-column: 1 / -1; }
+.pet-help-consent { margin: 8px 0 12px; display: grid; gap: 8px; }
+.pet-help-consent .hint { margin: 0; }
+.pet-log { margin: 0 0 12px; padding-left: 18px; font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+.pet-log:empty::before { content: "Nothing yet."; color: var(--faint); margin-left: -18px; }
 .voice-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .voice-row select { flex: 1 1 200px; min-width: 0; width: 100%; }
 .pet-settings input[type="range"] { width: 100%; accent-color: #00c853; }

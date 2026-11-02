@@ -91,6 +91,8 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("pet-greeting", "/__preview/onboarding.html?greet=1"),
     ("pet-hover", "/__preview/chat.html?view=finished&guide=concerned&level=new&hover=reset-demo-btn"),
     ("pet-tour", "/__preview/chat.html?view=finished&guide=concerned&level=new&tour=1"),
+    ("pet-help-consent", "/__preview/chat.html?view=pet&level=new&help=consent&scroll=pet-help-consent"),
+    ("pet-help-tour", "/__preview/chat.html?view=finished&guide=concerned&level=new&tour=2&help=on"),
     ("pet-settings", "/__preview/chat.html?view=pet&level=new"),
     ("guide-reduced", "/__preview/chat.html?view=finished&guide=concerned&level=new&expand=1&motion=reduce"),
 ]

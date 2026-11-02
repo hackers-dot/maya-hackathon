@@ -43,6 +43,11 @@ MAYA, the project's own character, lives on every signed-in page as a small pet:
 - **She learns, on this device only:** she remembers which buttons you have used. New ones get the full explanation, familiar ones a single line or nothing. When you are idle she may suggest one thing you have not tried yet. "Reset what the pet learned" and "Delete my data" clear it. Nothing is sent to MAYA's server.
 - **Work and play:** while a scan or re-test runs, an approval is waiting, or you are typing or exploring, she stays calm and helpful. After about 20 s of quiet she may wink, dance, look around, peek or follow the pointer a few steps, at most once every 25 s and never over a button. She gets sleepy after about 45 s.
 - **After a scan:** she reacts to the real result and offers a short tour ("Show me" or "Skip"): the score ring, then each finding in severity order (critical first) with what it means and what to look at, then Fix first, then the approve step. She explains approving but never does it; Esc ends the tour.
+- **"Let the pet help me"** (Pet settings, off by default): after you read and accept a short list, she may do a few harmless things herself.
+  - **What she may do:** scroll to what she is talking about, open or close a finding card, switch the Owner / Developer / Technical view or the summary language, highlight something, or open a read-only panel.
+  - **What she never presses:** Approve, Approve all, Apply, Re-test, Re-scan, Run scan, Reset demo app, Allow, Verify ownership, Delete my data, Disconnect or Sign out. She never uploads, edits lists or reminders, types your name or fills in a form. For those she shows a chip such as "Scan chalaun?" that only brings you to the button; you press it.
+  - **Stopping and the log:** Esc or any click of your own stops her. Everything she did, or refused to do, is listed in Pet settings.
+- **The pet cannot approve or apply anything.** That is enforced in code and in the tests, not only described here.
 - **Steps and emotions are not from a model.** They come from a fixed state machine over your own stored data: account, consent, verification, scan, findings, proposals, apply, re-test.
   - She explains what was found before she asks for any approval. She never approves or applies anything for you, never says a site is "safe" or "secure", and gives no time or cost estimates.
   - Her greeting and guide lines are fixed templates, so they carry no "unverified model text" badge. Only real model answers in the chat carry it.
@@ -179,6 +184,10 @@ MAYA, the project's own character, lives on every signed-in page as a small pet:
   - Learning: per-device use counts that shorten explanations and drive one idle suggestion.
   - Work/play: a work/play state machine with rate-limited antics.
   - Tour: after a scan the pet walks through the real findings in severity order. The pet still only points and explains.
+- **2026-11-02 (Pet v2, tier 3):** The pet can help with safe actions.
+  - "Let the pet help me", off by default, is turned on through a consent card. An allowlist in `static/pet-brain.js` permits only scroll, open or close a finding card, switch the view or summary language, highlight, and open a read-only panel. A never-list covers every state-changing control.
+  - Every action and refusal is logged in Pet settings; Esc or a manual click cancels anything pending.
+  - The tests try every forbidden control with every action and expect a refusal.
 
 ## License
 

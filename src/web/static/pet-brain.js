@@ -170,8 +170,52 @@
     return stops;
   }
 
+  // ---------- tier 3: "Let the pet help me" (off by default; the user turns it on after reading the list) ----------
+  // The pet may ONLY do these things itself. Nothing on this list changes data or sends anything.
+  const HELP_ACTIONS = ["scroll", "expand", "collapse", "role", "summary-lang", "highlight", "open-panel"];
+  // Controls the pet never presses, whatever the action: anything that changes state, sends data, uploads,
+  // approves, applies, deletes, signs out, or needs typed input. For these it only shows the user where they are.
+  const NEVER_IDS = ["approve-all-btn", "apply-btn", "retest-btn", "scan-btn", "scan-empty-btn", "reset-demo-btn",
+    "consent-allow", "connect-yes", "connect-no", "verify-btn", "verify-dns-btn", "delete-btn", "delete-confirm",
+    "disconnect-btn", "signout", "up-btn", "up-file", "official-save", "official-domains", "official-numbers",
+    "reminder-btn", "reminder-days", "approver", "note-approver", "note-registrar", "note-platform", "github-btn",
+    "github-url", "watch-btn", "watch-domain", "summarize-btn", "reword-btn", "investigate-btn", "new-chat", "use-demo",
+    "asset-url", "asset-form", "choose-company", "choose-individual", "asset-website", "msg-confirm", "msg-include",
+    "prompt", "composer", "pet-help", "pet-reset", "data-link", "conn-code", "conn-logs", "conn-msg", "conn-github",
+    "conn-watch"];
+  const NEVER_CLASSES = ["send", "copy-btn", "copy-issue", "suggestion", "role-btn", "pet-chip", "btn-danger"];
+  const ROLES = ["owner", "developer", "technical"];
+  // a: {helpOn, action, id, classes, tag, value, isFinding, isReadOnlyDetails}
+  function checkAction(a) {
+    const refuse = (reason) => ({ ok: false, reason: reason });
+    if (!a || !a.helpOn) return refuse("help is off");
+    if (HELP_ACTIONS.indexOf(a.action) < 0) return refuse("not an allowed action");
+    if (a.id && NEVER_IDS.indexOf(a.id) >= 0) return refuse("MAYA never presses this for you");
+    if ((a.classes || []).some((c) => NEVER_CLASSES.indexOf(c) >= 0)) return refuse("MAYA never presses this for you");
+    if (a.tag === "FORM" || a.tag === "INPUT" || a.tag === "TEXTAREA" || a.tag === "SELECT") return refuse("MAYA never fills in or submits forms");
+    if ((a.action === "expand" || a.action === "collapse") && !a.isFinding) return refuse("only finding cards open and close");
+    if (a.action === "open-panel" && !a.isReadOnlyDetails) return refuse("only read-only panels open");
+    if (a.action === "role" && ROLES.indexOf(a.value) < 0) return refuse("unknown view");
+    if (a.action === "summary-lang" && ["en", "hinglish"].indexOf(a.value) < 0) return refuse("unknown language");
+    if ((a.action === "scroll" || a.action === "highlight") && !a.id && !a.isFinding && !a.tag) return refuse("nothing to point at");
+    return { ok: true, reason: null };
+  }
+  function logLine(ok, action, label, reason) {
+    return ok ? "Pet did: " + action + " " + label : "Pet refused: " + action + " " + label + " (" + reason + ")";
+  }
+  // pending pet actions; Esc or any manual click cancels them all (timer functions are passed in for testing)
+  function ActionQueue(setT, clearT) {
+    const pending = new Set();
+    return {
+      add(fn, ms) { const id = setT(() => { pending.delete(id); fn(); }, ms || 0); pending.add(id); return id; },
+      cancel() { const n = pending.size; pending.forEach((id) => clearT(id)); pending.clear(); return n; },
+      size() { return pending.size; },
+    };
+  }
+
   const api = { EFFECTS, HOVER, GENERIC, SUGGEST, keyFor, detailFor, hoverText, bump, pickSuggestion, suggestText,
-    mode, nextAntic, ANTICS, ANTIC_GAP_MS, tourStops, WORK_STATES };
+    mode, nextAntic, ANTICS, ANTIC_GAP_MS, tourStops, WORK_STATES, HELP_ACTIONS, NEVER_IDS, NEVER_CLASSES,
+    checkAction, logLine, ActionQueue };
   if (typeof module === "object" && module.exports) { module.exports = api; return; }
   if (typeof window !== "undefined") window.MayaBrain = api;
 })();
