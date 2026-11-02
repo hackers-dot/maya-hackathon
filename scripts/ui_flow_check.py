@@ -168,6 +168,12 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
     rep.check(demo.get("status") == "loopback" and demo.get("label") == "Demo app (loopback, no verification needed)",
               "loopback URL becomes the demo app", f"HTTP {status} label={demo.get('label')}")
     page_ok(b, rep, "/chat", 'id="composer"')
+    st, _, raw = b.request("GET", f"/api/guide?asset={demo.get('id')}&level=new&lang=en")
+    g = json.loads(raw) if st == 200 else {}
+    rep.check(st == 200 and g["steps"][0]["state"] == "ready_to_scan" and "scan-btn" in g["steps"][0]["targets"],
+              "guide pet: next step from stored data (ready to scan)", f"HTTP {st} {g.get('steps', [{}])[0].get('state')}")
+    st, _, _ = b.request("GET", "/static/guide.js")
+    rep.check(st == 200, "guide.js served", f"HTTP {st}")
     status, _, data = b.request("GET", "/api/assets")
     labels = [a["label"] for a in json.loads(data)["assets"]] if status == 200 else []
     rep.check(len(labels) == 2, "sidebar assets list", ", ".join(labels))
@@ -269,6 +275,13 @@ def run_checks(base: str, scan_allowed: bool = False) -> int:
         st, hd, raw = b.request("GET", f"/api/runs/{run_id}/report-print.html")
         rep.check(st == 200 and b"/static/report-print.css" in raw and b"<style" not in raw and
                   "Content-Disposition" not in hd, "printable report (print CSS, no inline style)", f"HTTP {st}")
+        st, _, raw = b.request("GET", f"/api/guide?asset={demo.get('id')}&level=technical&lang=hinglish")
+        g = json.loads(raw) if st == 200 else {}
+        line = g["steps"][0]["line"].lower() if st == 200 else ""
+        rep.check(st == 200 and g["steps"][0]["state"] == "nothing_to_do" and g["steps"][0]["lang"] == "hinglish"
+                  and "safe" not in line and "secure" not in line,
+                  "guide pet after the clean re-scan: nothing to do, no 'safe' (Hinglish, technical)",
+                  f"HTTP {st} {[s['state'] for s in g.get('steps', [])]}")
         # --- Web 11: owner summary, client report, reminder (this server has no model key) ---
         st, _, raw = b.request("GET", f"/api/runs/{run_id}/summary.json")
         sm = json.loads(raw) if st == 200 else {}

@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 import threading
 
 from src.web.assets import AssetError, Assets, public_asset
-from src.web.chat import (CHAT_TOKEN_CAP, LABEL_UNVERIFIED, MAX_CHARS, MAX_TOKENS, ChatError, ChatStore,
+from src.web.chat import (CHAT_TOKEN_CAP, LABEL_UNVERIFIED, LEVEL_PROMPTS, MAX_CHARS, MAX_TOKENS, ChatError, ChatStore,
                           build_messages, clean_user_text, findings_context, known_ids, label_reply)
 from src.web.auth import DEFAULT_DB, SESSION_TTL, Accounts, AuthError, RateLimited, Sessions
 from src.agent.tools import RUNNABLE_CHECKS
@@ -393,6 +393,33 @@ def _preview_investigate() -> dict:
 PREVIEW_SAMPLE["investigate"] = _preview_investigate()
 
 
+def _preview_guide() -> dict:
+    """Guide pet steps for screenshots: the real state machine (src/guide.py) on sample facts."""
+    from src.guide import guide
+    findings = PREVIEW_SAMPLE["finished"]["findings"]
+    top = {k: findings[0][k] for k in ("check", "title", "location")}
+    counts = {s: sum(1 for f in findings if f["severity"] == s) for s in ("critical", "high", "medium", "low", "info")}
+    site = {"account_type": "company", "asset_choice": "website", "connect": True, "consented": True,
+            "asset": {"id": "0" * 16, "kind": "demo", "status": "loopback"}}
+    run = {"status": "finished", "can_apply": True, "counts": counts, "top": top, "proposals": ["PROPOSED"] * 3,
+           "retest": None, "score_improved": False}
+    facts = {
+        "no_account_type": {"account_type": None},
+        "no_connect": {"account_type": "company", "asset_choice": "website", "connect": None},
+        "no_asset": {**site, "asset": None},
+        "running": {**site, "run": {**run, "status": "running"}},
+        "concerned": {**site, "run": run},
+        "happy": {**site, "run": {**run, "counts": {s: 0 for s in counts}, "top": None, "proposals": ["APPLIED"] * 3,
+                                  "retest": {"status": "FIXED", "resolved": [f["id"] for f in findings],
+                                             "still_present": []}, "score_improved": True}},
+        "chat": {"account_type": "individual"},
+    }
+    return {name: guide(f, "new", "en") for name, f in facts.items()}
+
+
+PREVIEW_SAMPLE["guide"] = _preview_guide()
+
+
 def default_provider_factory():
     """(provider, model name) when a model key is configured, else (None, "none") for deterministic-only scans."""
     from src.provider import Provider, key_configured, load_config
@@ -562,6 +589,11 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _get_api(self, path: str, user) -> bool:
         """Signed-in JSON reads. Returns False if the path is not one of them."""
+        if path == "/api/guide":
+            if user is None:
+                raise Reply(401, "please sign in")
+            self._json(200, self._guide(user))
+            return True
         if path in ("/api/assets", "/api/audit", "/api/usage", "/api/chats", "/api/eval", "/api/official"):
             if user is None:
                 raise Reply(401, "please sign in")
@@ -637,6 +669,47 @@ class WebHandler(BaseHTTPRequestHandler):
                 "proposals": [proposal_view(p) for p in run.proposals.values()],
                 "retest": retest_view(run.retest) if run.retest else None,
                 "score": run_score(run), "retest_score": retest_score(run)}
+
+    def _guide_facts(self, user, asset_id: str | None) -> dict:
+        """What the guide may know: this user's own profile, one of their assets and its latest run. Counts and
+        statuses only; an unknown or another user's asset id is treated as "no asset chosen"."""
+        assets = self.app.assets.list(user["id"])
+        asset = self.app.assets.get(user["id"], asset_id) if asset_id else None
+        if asset is None and assets:
+            asset = max(assets, key=lambda a: a["created_at"])
+        facts = {"account_type": user["account_type"], "asset_choice": user["asset"], "connect": user["connect"],
+                 "consented": user["consent_at"] is not None,
+                 "asset": {"id": asset["id"], "kind": asset["kind"], "status": asset["status"]} if asset else None,
+                 "run": None}
+        run_id = self.app.runs.last_for_asset(user["id"], asset["id"]) if asset else None
+        run = self.app.runs.get(user["id"], run_id) if run_id else None
+        if run is not None:
+            resolved = set(run.retest["resolved"]) if run.retest else set()
+            open_items = [f for f in (run.result or {}).get("findings", []) if f["id"] not in resolved]
+            before, after = run_score(run), retest_score(run)
+            facts["run"] = {
+                "status": run.status, "can_apply": run.demo,
+                "counts": {s: sum(1 for f in open_items if f["severity"] == s)
+                           for s in ("critical", "high", "medium", "low", "info")},
+                "top": ({k: open_items[0][k] for k in ("check", "title", "location")} if open_items else None),
+                "proposals": sorted(p.status for p in run.proposals.values()),
+                "retest": ({k: run.retest[k] for k in ("status", "resolved", "still_present")} if run.retest
+                           else None),
+                "score_improved": bool(before and after and after["score"] > before["score"])}
+        return facts
+
+    def _guide(self, user) -> dict:
+        """GET /api/guide?level=&lang=&asset=: the guide pet's next steps (src/guide.py, never the model)."""
+        from urllib.parse import parse_qs
+        from src.guide import LANGS, LEVELS, guide
+        q = parse_qs(urlsplit(self.path).query)
+        level, lang = (q.get("level") or ["new"])[0], (q.get("lang") or ["en"])[0]
+        asset_id = (q.get("asset") or [None])[0]
+        if level not in LEVELS or lang not in LANGS:
+            raise Reply(400, "level must be new, some or technical; lang must be en or hinglish")
+        if asset_id is not None and not re.fullmatch(r"[0-9a-f]{16}", asset_id):
+            raise Reply(400, "bad asset id")
+        return guide(self._guide_facts(user, asset_id), level, lang)
 
     def _asset_get(self, user, asset_id: str, what: str):
         """GET /api/assets/<id>/diff?from=&to= and /history. Another user's asset or run is "not found"."""
@@ -935,8 +1008,11 @@ class WebHandler(BaseHTTPRequestHandler):
             raise Reply(429, "chat token budget reached for today")
         title = text[:60] if not chat["messages"] else None
         user_msg = self.app.chats.add(user["id"], chat_id, "user", text, title=title)
+        level = body.get("level")
+        if level is not None and level not in LEVEL_PROMPTS:
+            raise Reply(400, "level must be new, some or technical")
         findings, history = self._user_findings(user)
-        messages = build_messages(findings_context(findings, history), chat["messages"] + [user_msg])
+        messages = build_messages(findings_context(findings, history), chat["messages"] + [user_msg], level)
         try:
             reply = provider.chat(messages, max_tokens=MAX_TOKENS, reasoning_effort="low")
         except ProviderError as e:  # already key-scrubbed by the provider

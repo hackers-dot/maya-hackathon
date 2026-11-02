@@ -47,6 +47,7 @@
     proof: ["M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"],
     scan: ["M4 8V5h4M16 4h4v4M20 16v4h-4M8 20H4v-4M7 12h10"],
     search: [{ c: [11, 11, 7] }, "M20 20l-4-4"],
+    spark: ["M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"],
   };
   function icon(name) {
     const s = document.createElementNS(SVG_NS, "svg");
@@ -63,7 +64,7 @@
   }
   // static markup asks for icons with data-icon; sidebar controls get theirs by id or label
   const SIDE_ICONS = { "new-chat": "plus", "add-asset": "globe", "data-link": "data", "signout": "signout",
-    "investigate-btn": "search", "chats-empty-btn": "chat", "scan-empty-btn": "scan" };
+    "investigate-btn": "search", "chats-empty-btn": "chat", "scan-empty-btn": "scan", "guide-open": "spark" };
   const CONNECTOR_ICONS = { "Website": "globe", "Source code ZIP": "code", "Logs": "logs", "Suspicious message": "message",
     "GitHub repo": "branch", "Lookalike watch": "eye", "API": "api", "Mobile": "mobile", "Cloud": "cloud" };
   function decorateIcons() {
@@ -88,6 +89,11 @@
     const t = el("div", "toast" + (isError ? " is-error" : ""), text);
     box.appendChild(t);
     setTimeout(() => { t.classList.add("is-leaving"); setTimeout(() => t.remove(), 220); }, 2600);
+  }
+
+  // real events only: the guide pet (guide.js) listens and re-reads /api/guide; nothing here invents progress
+  function emit(type, extra) {
+    document.dispatchEvent(new CustomEvent("maya:event", { detail: Object.assign({ type: type }, extra || {}) }));
   }
 
   function setTitle(part) { document.title = part ? "MAYA · " + part : "MAYA"; }
@@ -137,6 +143,7 @@
     try { data = await r.json(); } catch (e) { data = {}; }
     if (!r.ok) {
       say(typeof data.error === "string" ? data.error : "Request failed (" + r.status + ")", true);
+      emit("error");
       return null;
     }
     if (typeof data.csrf === "string") csrf = data.csrf;
@@ -828,7 +835,7 @@
     if (!currentRunId) return;
     const name = $("approver") ? $("approver").value : "";
     const d = await post("/api/runs/" + currentRunId + "/proposals/" + proposalId + "/approve", { approver: name });
-    if (d) { renderFull(d); say("Approved by " + name.trim() + ". Recorded in the audit log.", false); toast("Fix approved by " + name.trim() + "."); }
+    if (d) { renderFull(d); say("Approved by " + name.trim() + ". Recorded in the audit log.", false); toast("Fix approved by " + name.trim() + "."); emit("approved"); }
   }
 
   async function applyFixes() {
@@ -840,6 +847,7 @@
       const rolled = (d.proposals || []).some((p) => p.status === "ROLLED_BACK");
       say(rolled ? "Health check failed; the change was rolled back." : "Applied. Press Re-test to confirm.", rolled);
       toast(rolled ? "Health check failed: rolled back." : "Approved fixes applied to the demo app.", rolled);
+      emit("applied");
     }
   }
 
@@ -847,7 +855,7 @@
     if (!currentRunId) return;
     say("Re-running the same checks...", false);
     const d = await post("/api/runs/" + currentRunId + "/retest", {});
-    if (d) { renderFull(d); say("Re-test finished: " + (d.retest ? d.retest.status : "-"), false); toast("Re-test finished."); }
+    if (d) { renderFull(d); say("Re-test finished: " + (d.retest ? d.retest.status : "-"), false); toast("Re-test finished."); emit("retest"); }
   }
 
   function renderRunMeta(run) {
@@ -990,6 +998,7 @@
       }
       const btn = $("scan-btn");
       if (btn && currentAsset && currentAsset.scannable) btn.disabled = false;
+      emit("scan-finished");
     }
   }
 
@@ -1006,6 +1015,7 @@
     resetRunPanels();
     showView("asset");
     markCurrentAsset();
+    emit("asset", { id: asset.id });
     setTitle((asset.kind === "demo" ? "Demo app" : asset.label) + " · Results");
     setText("av-label", asset.kind === "demo" ? "Demo app (loopback)" : asset.label);
     statusChip("av-status", asset.status);
@@ -1443,6 +1453,7 @@
     if (btn) btn.textContent = "Re-scan";
     renderRunMeta(d.run);
     startPolling(d.run.id);
+    emit("scan-started");
   }
 
   async function initShell(user) {
@@ -1483,6 +1494,7 @@
     onClick("approve-all-btn", approveAll);
     onClick("retest-btn", runRetest);
     for (const r of ROLES) onClick("role-" + r, () => setRole(r));
+    document.addEventListener("maya:role", (e) => setRole(e.detail));  // the guide's level sets the default view
     let saved = null;
     try { saved = window.localStorage.getItem("maya-role"); } catch (e) { saved = null; }
     setRole(new URLSearchParams(window.location.search).get("role") || saved || "owner");
@@ -1781,6 +1793,7 @@
       renderFull(d);
       say("All open proposals approved by " + name.trim() + "; each approval is in the audit log.", false);
       toast("All open fixes approved by " + name.trim() + ".");
+      emit("approved");
     }
   }
 

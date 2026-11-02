@@ -51,6 +51,15 @@ SYSTEM_PROMPT = (
 )
 
 
+# The guide pet's "Ask me" box sends the user's chosen level; it only changes how answers are worded.
+LEVEL_PROMPTS = {
+    "new": "The user is a complete beginner: explain for a complete beginner, short sentences, one everyday "
+           "analogy, no jargon.",
+    "some": "The user knows some security basics: plain words, name the technical term once, no long lists.",
+    "technical": "The user is technical: be precise and concise, use the correct technical terms.",
+}
+
+
 class ChatError(ValueError):
     def __init__(self, status: int, message: str):
         super().__init__(message)
@@ -208,7 +217,9 @@ def clean_user_text(content) -> str:
     return redact_text(content.strip())  # pasted keys, tokens and passwords are masked before storing/sending
 
 
-def build_messages(context: str, history: list[dict]) -> list[dict]:
-    """System prompt + the user's verified findings + at most the last HISTORY_CAP chat messages."""
+def build_messages(context: str, history: list[dict], level: str | None = None) -> list[dict]:
+    """System prompt (+ the reader's level, if given) + the user's verified findings + at most the last
+    HISTORY_CAP chat messages."""
     turns = [{"role": m["role"], "content": m["content"]} for m in history if m["role"] in ("user", "assistant")]
-    return [{"role": "system", "content": SYSTEM_PROMPT + "\n\n" + context}] + turns[-HISTORY_CAP:]
+    prompt = SYSTEM_PROMPT + ("\nReader: " + LEVEL_PROMPTS[level] if level else "")
+    return [{"role": "system", "content": prompt + "\n\n" + context}] + turns[-HISTORY_CAP:]

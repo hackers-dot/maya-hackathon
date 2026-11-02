@@ -215,10 +215,11 @@ SINKS = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|document\.write|\bev
 
 EXPECTED_STATIC = {"app.js", "theme.js", "style.css", "signin.html", "onboarding.html", "company.html",
                    "connect.html", "consent.html", "connect-website.html", "chat.html", "print.js", "report-print.css",
-                   "favicon.svg"}
+                   "favicon.svg", "guide.js"}
 # The SVG namespace is an identifier, never fetched. It is allowed ONLY in these exact spots: once as the
 # createElementNS constant in app.js and once as the xmlns of favicon.svg. Anything else with a URL still fails.
 SVG_NS_ALLOWED = {"app.js": 'const SVG_NS = "http://www.w3.org/2000/svg";',
+                  "guide.js": '  const SVG_NS = "http://www.w3.org/2000/svg";',
                   "favicon.svg": '<svg xmlns="http://www.w3.org/2000/svg" '}
 
 
@@ -245,7 +246,7 @@ def test_favicon_is_a_plain_static_svg(web):
 
 
 def test_local_storage_only_inside_try_catch():
-    for name in ("app.js", "theme.js"):
+    for name in ("app.js", "theme.js", "guide.js"):
         for line in (STATIC_DIR / name).read_text(encoding="utf-8").splitlines():
             if "localStorage" in line:
                 assert line.strip().startswith("try {"), (name, line)

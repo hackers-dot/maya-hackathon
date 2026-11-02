@@ -33,6 +33,15 @@ Demo flow:
 
 `demo_fix_flow.py` runs scan, propose, approve, apply and re-test against the loopback demo app in the terminal, with no model. `demo_prepare.py --reset` prints the click order for the same flow in the browser: reset, scan, approve all, apply, re-test, download pack, chat question.
 
+## Guide pet
+
+A small friendly mascot (an original character drawn in code) that walks you through MAYA one step at a time: what to press next and why it matters.
+- **Steps are not from a model.** They come from a fixed state machine over your own stored data: account, consent, verification, scan, findings, proposals, apply, re-test. It explains what was found before it asks for any approval, never approves anything for you, never says a site is "safe" or "secure", and gives no time or cost estimates.
+- **Level and language:** pick "I'm new to security", "I know some" or "I'm technical". It changes the wording and the default findings view. English or Hinglish. The Hinglish text still needs review by a native speaker.
+- **"Ask me":** uses the normal chat, with the same rules and labels, and asks the model to answer for your level. Without a model key it says "Model not configured".
+- **Speech is your browser's, not MAYA's and not a Meta model:** text-to-speech (off by default) and an optional microphone that your browser may send to its own speech provider. MAYA never receives or stores audio.
+- **Not tested live:** real voices and microphone input in a browser, the feel of the animations, and "Ask me" against a real model. The tests cover the state machine, the API, the chat level line (with a scripted fake model) and the speech helpers in Node.
+
 ## Build log
 
 - **2026-10-27 (Day 1):** Repo scaffold, design doc, `Finding` model, target scope guard (loopback or verified targets only), OpenAI-compatible model client that keeps reasoning separate from the final answer, and offline tests.
@@ -136,6 +145,9 @@ Demo flow:
   - Chat: message bubbles, citation chips, a muted "unverified model text" badge, a typing indicator. Sidebar icons, an active-item highlight, empty states, loading skeletons, toasts, and a favicon served as /static/favicon.svg.
   - Contrast (WCAG ratio), dark theme: body text on the page 16.1, on panels 14.9; muted text 8.2 on panels; captions 5.4 on the darkest panels. Light theme: body text 17.7, muted 7.7, captions 5.1, status green 6.4. Every severity badge is at least 5.2.
   - Offline eval not regenerated: no finding or claim logic changed.
+- **2026-11-02 (Guide pet):** Mascot, guided steps, optional speech.
+  - `src/guide.py` state machine and `GET /api/guide`, the mascot and its bubble (`static/guide.js`), "Ask me" through the existing chat with a reader level, and browser-only speech out and in.
+  - Offline eval not regenerated: no scan, finding or claim logic changed.
 
 ## License
 

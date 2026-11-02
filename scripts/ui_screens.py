@@ -78,6 +78,14 @@ PAGES = [  # (name, path) - signed-in pages come through the test-only preview r
     ("chat-nokey", "/__preview/chat.html?view=chat-nokey"),
     ("connect", "/__preview/connect.html"),
     ("empty-asset", "/__preview/chat.html?view=empty-asset"),
+    # guide pet (real state machine on sample facts; ?level= skips the first-use level choice)
+    ("guide-first-use", "/__preview/onboarding.html?guide=no_account_type&expand=1"),
+    ("guide-onboarding", "/__preview/onboarding.html?guide=no_account_type&level=new&expand=1"),
+    ("guide-connect", "/__preview/connect.html?guide=no_connect&level=new&expand=1"),
+    ("guide-concerned", "/__preview/chat.html?view=finished&guide=concerned&level=new&expand=1"),
+    ("guide-happy", "/__preview/chat.html?view=finished&guide=happy&level=new&expand=1&scroll=retest-panel"),
+    ("guide-chat", "/__preview/chat.html?view=chat&guide=chat&level=new&expand=1"),
+    ("guide-collapsed", "/__preview/chat.html?view=finished&guide=concerned&level=new"),
 ]
 LIGHT = [("signin", "/signin"), ("shell", "/__preview/chat.html"), ("result-finished", "/__preview/chat.html?view=finished")]
 CANDIDATES = [Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
