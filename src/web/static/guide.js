@@ -102,6 +102,7 @@
     speakSteps: load("maya-speak-steps", "1") === "1",
     speakHover: load("maya-speak-hover", "1") === "1",
     speakAnswers: load("maya-guide-speak-answers", "1") === "1",
+    calm: load("maya-pet-calm", "0") === "1",  // Calm mode: no walking or antics (bubble and speech stay)
     rate: num(load("maya-voice-rate", "1"), 0.7, 1.5, 1),
     pitch: num(load("maya-voice-pitch", "1.2"), 0.6, 1.8, 1.2),
   };
@@ -649,6 +650,7 @@
     set("pet-speak-steps", "checked", prefs.speakSteps);
     set("pet-speak-answers", "checked", prefs.speakAnswers);
     set("pet-speak-hover", "checked", prefs.speakHover);
+    set("pet-calm", "checked", prefs.calm);
     set("pet-mic", "checked", load("maya-pet-mic", "0") === "1");
     set("pet-help", "checked", helpOn);
   }
@@ -673,6 +675,11 @@
     on("pet-speak-hover", "change", () => {
       prefs.speakHover = $("pet-speak-hover").checked;
       save("maya-speak-hover", prefs.speakHover ? "1" : "0");
+    });
+    on("pet-calm", "change", () => {
+      prefs.calm = $("pet-calm").checked;
+      save("maya-pet-calm", prefs.calm ? "1" : "0");
+      if (pet && pet.setCalm) pet.setCalm(prefs.calm);
     });
     on("pet-speak-answers", "change", () => {
       prefs.speakAnswers = $("pet-speak-answers").checked;
@@ -778,7 +785,7 @@
       prefs.petHidden = false;
     }
     if (window.MayaPet) {
-      pet = window.MayaPet.live({ mobile: mobile, reduced: reduced,
+      pet = window.MayaPet.live({ mobile: mobile, reduced: reduced, calm: prefs.calm,
         onMute: () => setVoice(prefs.voice === "on" ? "off" : "on"),
         onHide: () => setPetHidden(true),
         onOpen: () => (steps.length ? showStep() : refresh()),

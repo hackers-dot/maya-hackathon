@@ -80,8 +80,9 @@
   function writePos(store, key, pos) {
     try { if (store) store.setItem(key, JSON.stringify({ x: Math.round(pos.x), y: Math.round(pos.y) })); return true; } catch (e) { return false; }
   }
-  function behavior(reducedMotion, mobile) {
-    return { roam: !reducedMotion && !mobile, loops: !reducedMotion, drag: !mobile };
+  // calm (Pet settings > Calm mode): no walking and no idle antics; the bubble, speech and blinking stay
+  function behavior(reducedMotion, mobile, calm) {
+    return { roam: !reducedMotion && !mobile && !calm, loops: !reducedMotion && !calm, drag: !mobile };
   }
   function overlaps(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -422,7 +423,9 @@
   const CONTROLS = "button, a[href], input, select, textarea, summary, [role=button]";
   const POS_KEY = "maya-pet-pos";
   function live(opts) {
-    const b = behavior(opts.reduced, opts.mobile);
+    let calm = !!opts.calm;
+    const normal = behavior(opts.reduced, opts.mobile);  // without calm mode
+    const b = behavior(opts.reduced, opts.mobile, calm);
     let store = null;
     try { store = window.localStorage; } catch (e) { store = null; }
     const layer = document.createElement("div");
@@ -702,7 +705,7 @@
       host.setAttribute("data-antic", name);
     }
     function idleLoop() {
-      if (!idle || drag) return;
+      if (!idle || drag || calm) return;  // calm: no antics, no sleepy phase
       const work = !!(opts.getMode && opts.getMode() === "work");
       const [next, action] = window.MayaBrain.idleTick(idle, { now: Date.now(), lastInputAt: lastInputAt, work: work,
         reduced: !b.loops });
@@ -730,7 +733,14 @@
     if (anchorEl && typeof ResizeObserver === "function") new ResizeObserver(rehome).observe(anchorEl);
     const start = homePos();
     place(start.x, start.y);
-    return { el: host, layer: layer, behavior: b, setEmotion: setEmotion, flash: flash, moveTo: moveTo, goHome: goHome,
+    function setCalm(on) {
+      calm = !!on;
+      b.roam = normal.roam && !calm;
+      b.loops = normal.loops && !calm;
+      host.classList.toggle("is-docked", !b.roam);
+      if (calm && !atHome) goHome(false);
+    }
+    return { el: host, layer: layer, behavior: b, setCalm: setCalm, setEmotion: setEmotion, flash: flash, moveTo: moveTo, goHome: goHome,
       hop: hop, talkStart: talkStart, talkStop: talkStop, mouth: mouth, rehome: rehome, say: say,
       hideBubble: hideBubble, setMuted: setMuted, bubble: bubble, antic: antic,
       expression() { return pet.expression; },

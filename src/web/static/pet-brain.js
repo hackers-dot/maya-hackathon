@@ -183,6 +183,7 @@
     "pet-pitch": { n: "Pitch", d: "sets how high my voice is.", e: "device" },
     "pet-speak-steps": { n: "Speak guide lines", d: "turns my spoken guide lines on or off.", e: "device" },
     "pet-speak-hover": { n: "Speak hover explanations", d: "turns spoken hover lines on or off.", e: "device" },
+    "pet-calm": { n: "Calm mode", d: "keeps me in my corner with no idle antics; my bubble and speech stay.", e: "device" },
     "pet-speak-answers": { n: "Speak answers", d: "reads a one-line summary of chat answers.", e: "device" },
     "pet-voice-test": { n: "Test voice", d: "says one short sentence.", e: "nowhere", x: "It uses your browser's voice; an online voice may send the sentence to its provider." },
     "pet-voice-stop": { n: "Stop", d: "stops talking.", e: "nowhere", x: "Nothing else changes." },
@@ -351,7 +352,7 @@
     "conn-watch", "send", "suggest-scan", "suggest-explain", "suggest-fix-first", "suggest-how", "proposal-approve",
     "note-approve", "check-dns", "asset-add", "signin-submit", "signup-submit", "chats-empty-btn", "pet-level",
     "pet-audience", "pet-lang", "pet-voice", "pet-rate", "pet-pitch", "pet-speak-steps", "pet-speak-hover",
-    "pet-speak-answers", "pet-mic", "pet-help-allow", "official-box"];
+    "pet-speak-answers", "pet-calm", "pet-mic", "pet-help-allow", "official-box"];
   const NEVER_CLASSES = ["send", "copy-btn", "copy-issue", "suggestion", "role-btn", "pet-chip", "btn-danger"];
   const ROLES = ["owner", "developer", "technical"];
   // a: {helpOn, action, id, classes, tag, value, isFinding, isReadOnlyDetails}
