@@ -43,3 +43,11 @@ Totals: 15 runs, fake claims in report **0**, reports produced 15/15, claims kep
 | 1 | 12 | 12 | 0 | **0** | 14589 | 12.34 | forced_final |
 | 2 | 12 | 12 | 0 | **0** | 14687 | 11.23 | forced_final |
 | 3 | 12 | 12 | 0 | **0** | 14621 | 10.68 | forced_final |
+
+### 2026-10-28 UTC, model `meta-models/muse-spark-open-1026`, 3 runs on the vulnerable demo app (cap 40000 tokens per scan, 6 steps, effort low)
+
+| Run | Findings (code) | Claims kept | Claims dropped | FAKE CLAIMS IN REPORT | Tokens | Model latency (s) | Stop reason |
+|---|---|---|---|---|---|---|---|
+| 1 | 12 | 12 | 0 | **0** | 14445 | 11.41 | forced_final |
+| 2 | 12 | 12 | 0 | **0** | 14377 | 10.68 | forced_final |
+| 3 | 12 | 12 | 0 | **0** | 14453 | 10.31 | forced_final |
