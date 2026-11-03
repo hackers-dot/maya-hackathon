@@ -1,0 +1,40 @@
+# Guide pet
+
+MAYA, the project's own character, lives on every signed-in page as a small pet: a white cat-ear helmet, a black visor face screen, a green suit and a shield "M" emblem. She guides you one step at a time, shows how things are going on her face, and can speak.
+- **Small and out of the way:** about 80 px tall (56 px on phones). What she says appears in a small bubble beside her, with choices as chips ("Show me", "Next tip", your level), and it hides after you have had time to read it. The bubble never covers the control she is talking about and tries not to cover any other control nearby. On her own surface there are only two buttons, mute and hide; "Call pet" and "Pet settings" are in the sidebar.
+- **Pet settings** (sidebar): experience level, what you run (shop, company, clinic, developer or something else), voice picker with Preview, speed, pitch, speak the steps, speak answers, microphone (optional), "Let the pet help me" (not available yet) and "Reset what the pet learned".
+- **Calm mode** (Pet settings, off by default, saved in this browser only): the pet stays in its corner and does no idle antics; its bubble, speech and blinking stay. On the sign-in page the big hero is the one visible mascot; the live pet keeps only its bubble and its mute and hide buttons there.
+- **What she does:** she walks to the button she is talking about and points at it without covering any other control, then goes home. You can drag her anywhere. With reduced motion turned on she stays docked and only her face changes.
+- **Hover guide, on every page (sign-in too):** rest the mouse on a control for a moment and she glides next to it, then shows and says what it is, what a click does, and where the data goes: "only reads", "changes your practice demo app", "needs your approval", "sends ... to ..." (naming where), or "deletes your data".
+  - Every interactive control on every screen has a fixed entry with a stable `data-guide` id (checked in headless Chrome over all screens). Only dynamic items (a finding, a chat, a trace step) use a sentence built from their clean name, e.g. "This is the finding for Configuration file appears publicly readable. Open it to see the evidence and the fix."
+  - The first hover on a control gives the full line (two or three short sentences); later hovers give one sentence. The spoken text is the bubble text. She does not repeat the same control within 30 s and stops talking when you move away.
+  - After a click she says what happened, e.g. the Website connector: "This is where you connect a website you own. First I'll ask you to prove it's yours, then I run read-only checks."
+  - Not on touch screens and not while you type.
+- **She learns, on this device only:** she remembers which buttons you have used. New ones get the full explanation, familiar ones a single line or nothing. When you are idle she may suggest one thing you have not tried yet. "Reset what the pet learned" and "Delete my data" clear it. Nothing is sent to MAYA's server.
+- **Work and play:** while a scan or re-test runs, an approval is waiting, you are typing, or the pointer was on a control in the last 6 s, she stays calm and helpful.
+  - After 8 s of quiet she looks around or waves, then does one small thing every 15 to 25 s (wink, wave, a tiny dance, look at the pointer, peek, stretch).
+  - She gets sleepy at about 45 s and wakes up surprised when you move the mouse.
+  - With reduced motion she does not walk or dance; she still blinks, winks and gets sleepy.
+- **After a scan:** she reacts to the real result and offers a short tour ("Show me" or "Skip"): the score ring, then each finding in severity order (critical first) with what it means and what to look at, then Fix first, then the approve step. She explains approving but never does it; Esc ends the tour.
+- **"Let the pet help me"** (Pet settings, off by default): after you read and accept a short list, she may do a few harmless things herself.
+  - **What she may do:** scroll to what she is talking about, open or close a finding card, switch the Owner / Developer / Technical view or the summary language, highlight something, or open a read-only panel.
+  - **What she never presses:** Approve, Approve all, Apply, Re-test, Re-scan, Run scan, Reset demo app, Allow, Verify ownership, Delete my data, Disconnect or Sign out. She never uploads, edits lists or reminders, types your name or fills in a form. For those she shows a chip such as "Run the scan?" that only brings you to the button; you press it.
+  - **Stopping and the log:** Esc or any click of your own stops her. Everything she did, or refused to do, is listed in Pet settings.
+- **The pet cannot approve or apply anything.** That is enforced in code and in the tests, not only described here.
+- **Steps and emotions are not from a model.** They come from a fixed state machine over your own stored data: account, consent, verification, scan, findings, proposals, apply, re-test.
+  - She explains what was found before she asks for any approval. She never approves or applies anything for you, never says a site is "safe" or "secure", and gives no time or cost estimates.
+  - Her greeting and guide lines are fixed templates, so they carry no "unverified model text" badge. Only real model answers in the chat carry it.
+- **First visit:** on a new device or account she waves, says hello ("Hi! I'm MAYA...") and asks your level, then what you run, with chips. Choosing makes her happy and the guide continues at once in those words.
+- **English only for now**, written as MAYA herself (first person, female). The language switch is hidden.
+- **Audience-aware lines:** the guide steps, the finding lines, the tour, the approval and the re-test lines are fixed templates for every level (new, some experience, technical) and every audience (shop or small business, company or team, clinic or healthcare practice, developer, something else). A shop hears about customers and checkout pages, a developer hears CSP, HSTS, OWASP and the evidence. You can change both in Pet settings.
+  - **Clinics:** security guidance about the website only. She gives no medical advice and makes no compliance or privacy-law claims.
+  - No line says a site is safe, secure, protected, compliant or hacked, none guarantees anything, and none gives a time, a cost or a number that is not in your results (tested over every line).
+- **Voice is your browser's built-in text-to-speech, not a Meta model, and not MAYA's server.**
+  - **She speaks from the start, and mute is the only switch that silences her.** The speaker button on the pet mutes her and the choice is remembered. Muted, she keeps showing the bubble, moving her mouth and guiding; only the sound stops. Pet settings also has per-kind switches (guide lines, hover explanations, answers), all on by default.
+  - **Browsers start speech only after your first click, key press or touch on the page.** Until then the bubble shows "Click anywhere and I'll start talking". On that first gesture she unlocks the audio and says the line that was waiting: only the latest one, never a backlog.
+  - By default she picks a female-sounding English voice (en-IN first, then other English) and never a male-sounding one. The default pitch is slightly high (1.2). You can pick any installed voice yourself.
+  - If no female-sounding voice is installed, the settings page says so; install one in Windows Settings > Speech.
+  - Some browser voices are online voices: the browser may send the spoken text to the voice provider. MAYA itself sends nothing.
+  - She speaks only a cleaned summary (no ids, paths, code or masked values). The microphone is optional; your browser may send the audio to its speech provider.
+- **Checked here:** headless Chrome on this Windows machine found 24 voices, including Microsoft Heera (en-IN, female, used by default) and Zira (en-US, female). A test sentence fired start, word-boundary and end events.
+- **Not tested live:** how the voices actually sound, the microphone, the feel of the animations and dragging by hand.
