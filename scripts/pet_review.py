@@ -164,8 +164,11 @@ class Walker:
         # the demo app, a real scan, the post-scan tour
         self.click("[data-guide=asset-item]", 1.5)
         self.record_line("result (before scan)", "(guide step)")
-        for sel in ["#scan-empty-btn", "#reset-demo-btn", "#disconnect-btn"]:
+        self.hover("result", "#scan-empty-btn")
+        self.click("[data-guide=more-menu]", 0.4)  # Reset demo app and Disconnect live in the More menu
+        for sel in ["#reset-demo-btn", "#disconnect-btn"]:
             self.hover("result", sel)
+        self.ev("document.getElementById('more-menu').open = false; 1")
         self.click("#scan-empty-btn", 1.2)
         self.record_line("scan running", "(guide step)")
         self.hover("scan running", "[data-guide=trace-step]", 0.9)
@@ -184,9 +187,12 @@ class Walker:
                     "#approver", "[data-guide=proposal-approve]", "#approve-all-btn", "#apply-btn", "#retest-btn"]:
             self.hover("result", sel)
         self.approve_apply_retest()
-        for sel in ["#sum-en", "#sum-hinglish", "#reword-btn", "#reminder-days", "#reminder-btn", "#dl-pack", "#dl-report",
-                    "#dl-report-md", "#dl-issues", "#dl-client", "#dl-print"]:
+        for sel in ["#sum-en", "#sum-hinglish", "#reword-btn", "#reminder-days", "#reminder-btn"]:
             self.hover("summary and exports", sel)
+        self.click("[data-guide=export-menu]", 0.4)  # the downloads live in the Export menu
+        for sel in ["#dl-pack", "#dl-report", "#dl-report-md", "#dl-issues", "#dl-client", "#dl-print"]:
+            self.hover("summary and exports", sel)
+        self.ev("document.getElementById('export-menu').open = false; 1")
         # the other views
         for view, opener, controls in [
             ("code upload", "#conn-code", ["#up-file", "#up-btn"]),

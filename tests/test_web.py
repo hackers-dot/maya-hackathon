@@ -213,21 +213,29 @@ def test_static_only_serves_known_files(web, path):
 SINKS = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function|https?://", re.I)
 
 
+# the logo is the original artwork: same-origin PNG files (the only binary files allowed under static/)
+LOGO_PNGS = {"logo/maya-logo.png": 1254, "logo/maya-logo-1024.png": 1024, "logo/maya-logo-512.png": 512,
+             "logo/maya-logo-64.png": 64}
 EXPECTED_STATIC = {"app.js", "theme.js", "style.css", "signin.html", "onboarding.html", "company.html",
                    "connect.html", "consent.html", "connect-website.html", "chat.html", "print.js", "report-print.css",
-                   "favicon.svg", "guide.js", "pet.js", "pet-sheet.html", "pet-sheet.js",
-                   "pet-lines.js", "pet-brain.js"}
+                   "guide.js", "pet.js", "pet-sheet.html", "pet-sheet.js",
+                   "pet-lines.js", "pet-brain.js", "logo.js", *LOGO_PNGS}
 # The SVG namespace is an identifier, never fetched. It is allowed ONLY in these exact spots: once as the
-# createElementNS constant in app.js and once as the xmlns of favicon.svg. Anything else with a URL still fails.
+# createElementNS constant in app.js, pet.js and logo.js. Anything else with a URL still fails.
 SVG_NS_ALLOWED = {"app.js": 'const SVG_NS = "http://www.w3.org/2000/svg";',
                   "pet.js": '  const SVG_NS = "http://www.w3.org/2000/svg";',
-                  "favicon.svg": '<svg xmlns="http://www.w3.org/2000/svg" '}
+                  "logo.js": '  const SVG_NS = "http://www.w3.org/2000/svg";'}
 
 
 def test_static_files_have_no_injection_sinks_or_external_urls():
-    files = sorted(STATIC_DIR.glob("*"))
-    assert {p.name for p in files} == EXPECTED_STATIC  # a new file must be added here, and so gets scanned
-    texts = {p.name: p.read_text(encoding="utf-8") for p in files}
+    files = sorted(p for p in STATIC_DIR.rglob("*") if p.is_file())  # every file, in every folder
+    names = {p.relative_to(STATIC_DIR).as_posix() for p in files}
+    assert names == EXPECTED_STATIC  # a new file must be added here, and so gets scanned
+    for name, side in LOGO_PNGS.items():  # real PNGs (signature + IHDR size), nothing else may be binary
+        head = (STATIC_DIR / name).read_bytes()[:24]
+        assert head[:8] == b"\x89PNG\r\n\x1a\n" and head[12:16] == b"IHDR", name
+        assert int.from_bytes(head[16:20], "big") == side and int.from_bytes(head[20:24], "big") == side, name
+    texts = {n: (STATIC_DIR / n).read_text(encoding="utf-8") for n in sorted(names - set(LOGO_PNGS))}
     for name, exact in SVG_NS_ALLOWED.items():
         assert texts[name].count(exact) == 1 and texts[name].count("://") == 1, name
         texts[name] = texts[name].replace(exact, "")
@@ -237,13 +245,23 @@ def test_static_files_have_no_injection_sinks_or_external_urls():
 
 def test_favicon_is_a_plain_static_svg(web):
     client, _, _ = web
-    svg = (STATIC_DIR / "favicon.svg").read_text(encoding="utf-8")
-    for bad in ("<script", "href=", "<foreignObject", "<image", " on"):
-        assert bad not in svg, bad
-    r = client.get("/static/favicon.svg")
-    assert r.status_code == 200 and r.headers["content-type"] == "image/svg+xml"
+    for name in LOGO_PNGS:
+        r = client.get("/static/" + name)
+        assert r.status_code == 200 and r.headers["content-type"] == "image/png", name
+        assert r.content == (STATIC_DIR / name).read_bytes()
+    assert client.get("/static/favicon.svg").status_code == 404  # replaced by the 64 px copy of the logo art
+    # the route allows exactly one sub-folder (logo/) and only .png there
+    for bad in ("/static/logo/x/y.png", "/static/logo/app.js", "/static/pet/maya-logo.png", "/static/logo/maya-logo.svg",
+                "/static/logo/maya-logo.png/", "/static/logo/%2e%2e/app.js", "/static/LOGO/maya-logo.png", "/static/x.png"):
+        assert client.get(bad).status_code == 404, bad
+    from src.web.server import STATIC_NAME  # the client normalises "..", so check the server's own name rule too
+    for bad in ("logo/../app.js", "logo/../../config.yaml", "../app.js", "logo/.png", "logo//a.png", "logo/a.js",
+                "logo\\a.png", "a/b.png", "maya-logo.png"):
+        assert not STATIC_NAME.match(bad), bad
     for p in STATIC_DIR.glob("*.html"):
-        assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in p.read_text(encoding="utf-8"), p.name
+        page = p.read_text(encoding="utf-8")
+        assert '<link rel="icon" href="/static/logo/maya-logo-64.png" type="image/png">' in page, p.name
+        assert "<title>MAYA - " in page, p.name
 
 
 def test_local_storage_only_inside_try_catch():

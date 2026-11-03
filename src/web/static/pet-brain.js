@@ -144,6 +144,12 @@
     "dl-issues": { n: "issues.md", d: "downloads every finding as issue text.", e: "nowhere" },
     "dl-client": { n: "Client report", d: "downloads one page you can share by hand.", e: "nowhere" },
     "dl-print": { n: "Printable report", d: "opens a page to print or save as PDF.", e: "nowhere" },
+    "export-menu": { n: "Export", d: "opens the downloads: evidence pack, reports and issue text.", e: "view" },
+    "more-menu": { n: "More", d: "opens Reset demo app and Disconnect.", e: "view", x: "Opening it changes nothing; each button inside still explains itself." },
+    "trace-toggle": { n: "Live trace", d: "shows or hides every step of the scan.", e: "view" },
+    "trace-zero": { n: "Checks with no findings", f: "{name}: checks that found nothing, folded into one line. Open it to see each one.", s: "{name}: checks with 0 findings.", e: "view" },
+    "audit-details": { n: "Audit entry", f: "The details of audit {name}. Click to show the whole line.", s: "Details of audit {name}.", e: "view" },
+    "audit-hash": { n: "Hash", f: "The hash of audit {name}. Click to copy the full hash.", s: "Copy the hash of {name}.", e: "nowhere" },
     // uploads, GitHub, watch, message
     "up-file": { n: "Choose file", d: "pick the file to check.", e: "field" },
     "up-btn": { n: "Upload and check", d: "checks the chosen file.", e: "sendsLocal" },

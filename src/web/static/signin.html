@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>MAYA · Sign in</title>
-<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<title>MAYA - Sign in</title>
+<link rel="icon" href="/static/logo/maya-logo-64.png" type="image/png">
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/theme.js"></script>
+<script src="/static/logo.js" defer></script>
 <script src="/static/app.js" defer></script>
 <script src="/static/pet-lines.js" defer></script>
 <script src="/static/pet-brain.js" defer></script>
@@ -15,6 +16,7 @@
 <script src="/static/guide.js" defer></script>
 </head>
 <body class="auth-page">
+<div class="auth-brand"><span class="maya-logo-slot" data-size="48" aria-hidden="true"></span><span class="auth-brand-text"><span class="wordmark">MAY<span class="wm-a">A</span></span><span class="tagline">AI SECURITY ASSISTANT</span></span></div>
 <div class="corner">
 <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">&#9680;</button>
 </div>
@@ -22,7 +24,6 @@
 <section class="hero" aria-label="About MAYA">
 <div id="hero-pet" class="hero-pet" aria-hidden="true"></div>
 <div class="hero-text">
-<div class="brand brand-lg"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></div>
 <h1 class="hero-title">Security checks you can trust, <span class="grad">with proof for every finding</span></h1>
 <p class="hero-lead">Your AI security agent for websites you own.</p>
 <ul class="hero-points">

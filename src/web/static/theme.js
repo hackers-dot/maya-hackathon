@@ -7,4 +7,8 @@
   const asked = new URLSearchParams(window.location.search).get("theme");
   const theme = asked === "light" || asked === "dark" ? asked : saved;
   document.documentElement.setAttribute("data-theme", theme === "light" ? "light" : "dark");
+  // the slow background wave pauses while the tab is hidden (visual only)
+  document.addEventListener("visibilitychange", function () {
+    document.documentElement.classList.toggle("tab-hidden", document.hidden);
+  });
 })();

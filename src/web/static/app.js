@@ -102,7 +102,9 @@
     document.dispatchEvent(new CustomEvent("maya:event", { detail: Object.assign({ type: type }, extra || {}) }));
   }
 
-  function setTitle(part) { document.title = part ? "MAYA · " + part : "MAYA"; }
+  function setTitle(part) { document.title = part ? "MAYA - " + part : "MAYA"; }
+  // the logo's orbit rings turn only while a real scan or re-test runs (logo.js; visual only)
+  function logoScanning(on) { if (window.MayaLogo) window.MayaLogo.setScanning(on); }
 
   function say(text, isError) {
     const n = $("message");
@@ -335,8 +337,76 @@
     return (t.prompt || 0) + " in / " + (t.completion || 0) + " out (" + (t.reasoning || 0) + " reasoning)";
   }
 
-  // One group per model step: the shared tokens and latency once, then every tool call of that step.
+  // One group per model step: the shared tokens and latency once, then one compact line per tool call:
+  // tool pill, short args, result chip. Consecutive "0 finding(s)" calls of a step fold into one muted line.
   const stepGroups = new Map();
+  let runFindings = [];  // the findings this run reported (check, severity, location): colours the result chips
+  let traceTokens = 0;
+  // a scan without a model logs "function path": which checks each function can report (scanner/runner.py FULL_SCAN)
+  const FN_CHECKS = {
+    check_security_headers: ["missing_csp", "missing_hsts", "missing_x_frame_options", "missing_x_content_type_options"],
+    check_cookies: ["cookie_missing_httponly", "cookie_missing_secure", "cookie_missing_samesite"],
+    check_version_disclosure: ["server_version_disclosure"], check_env_file: ["exposed_env_file"],
+    check_git_head: ["exposed_git_dir"], check_backup_file: ["exposed_backup_file"],
+    check_directory_listing: ["directory_listing"], check_js_libraries: ["outdated_js_library"],
+  };
+  function findingCount(summary) {
+    const m = /^(\d+) finding\(s\)$/.exec(String(summary || ""));
+    return m ? Number(m[1]) : null;
+  }
+  function resultChip(call, summary) {
+    const n = findingCount(summary);
+    const chip = el("span", "trace-res", n === null ? summary : n === 1 ? "1 finding" : n + " findings");
+    if (n === 0) chip.classList.add("is-zero");
+    else if (n > 0) chip.classList.add("is-hit");
+    call.appendChild(chip);
+    paintCall(call);
+  }
+  function paintCall(call) {  // a hit takes the colour of the highest severity it found, once the findings are known
+    const chip = call.querySelector(".trace-res.is-hit");
+    if (!chip) return;
+    const check = call.getAttribute("data-check");
+    const checks = check ? [check] : (FN_CHECKS[call.getAttribute("data-fn")] || []);
+    const path = call.getAttribute("data-path");
+    let best = null;
+    for (const f of runFindings) {
+      if (checks.indexOf(f.check) < 0 || (path && f.location !== path)) continue;
+      if (best === null || SEVERITIES.indexOf(f.severity) < SEVERITIES.indexOf(best)) best = f.severity;
+    }
+    if (best) chip.className = "trace-res is-hit sev-" + best;
+  }
+  function zeroLabel(n) { return n + " checks with 0 findings"; }
+  function addCall(g, call, zero) {
+    if (!zero) { g.zero = null; g.calls.appendChild(call); return; }
+    const last = g.calls.lastElementChild;
+    if (g.zero && last === g.zero.li) {  // a third, fourth ... zero call joins the open group
+      g.zero.list.appendChild(call);
+      g.zero.label.textContent = zeroLabel(g.zero.list.children.length);
+      return;
+    }
+    if (last && last.classList.contains("is-zero-call")) {  // second zero in a row: fold both into a group
+      const li = el("li", "trace-zero");
+      const box = el("details", "");
+      const label = guide(el("summary", "trace-zero-sum"), "trace-zero", "Step " + g.step);
+      box.appendChild(label);
+      const list = el("ul", "trace-calls");
+      box.appendChild(list);
+      li.appendChild(box);
+      g.calls.replaceChild(li, last);
+      list.appendChild(last);
+      list.appendChild(call);
+      label.textContent = zeroLabel(2);
+      g.zero = { li: li, list: list, label: label };
+      return;
+    }
+    g.calls.appendChild(call);
+  }
+  function updateTraceSum(total) {
+    if (typeof total === "number") traceTokens = total;
+    const n = stepGroups.size;
+    setText("trace-sum", n ? n + (n === 1 ? " step" : " steps") + " · " +
+      traceTokens.toLocaleString("en-US") + " tokens" : "");
+  }
   function appendSteps(steps) {
     const list = $("trace-list");
     if (!list) return;
@@ -353,19 +423,54 @@
         const calls = el("ul", "trace-calls");
         li.appendChild(calls);
         list.appendChild(li);
-        g = { li: li, calls: calls };
+        g = { li: li, calls: calls, step: s.step, zero: null };
         stepGroups.set(s.step, g);
+        if (s.tokens) traceTokens += (s.tokens.prompt || 0) + (s.tokens.completion || 0);
       }
       if (s.forced) g.li.classList.add("is-forced");
       const call = el("li", "trace-call");
-      const top = el("div", "call-head");
-      top.appendChild(el("span", "trace-tool", s.tool || "final answer"));
-      top.appendChild(el("span", "trace-summary", s.result_summary));
-      call.appendChild(top);
-      if (s.args) call.appendChild(el("code", "trace-args", s.args));
-      g.calls.appendChild(call);
+      const check = /"check_id":\s*"([a-z0-9_]+)"/.exec(String(s.args || ""));
+      if (check) call.setAttribute("data-check", check[1]);
+      const plain = /^(check_[a-z0-9_]+) (\/\S*)$/.exec(String(s.args || ""));  // deterministic: "function path"
+      if (plain) { call.setAttribute("data-fn", plain[1]); call.setAttribute("data-path", plain[2]); }
+      call.appendChild(el("span", "trace-tool", s.tool || "final answer"));
+      if (s.args) {
+        const args = el("code", "trace-args", s.args);
+        args.setAttribute("title", s.args);  // full arguments on hover; the line itself is cut with an ellipsis
+        call.appendChild(args);
+      }
+      resultChip(call, s.result_summary);
+      const zero = findingCount(s.result_summary) === 0;
+      if (zero) call.classList.add("is-zero-call");
+      addCall(g, call, zero);
     }
     show("trace-empty", list.children.length === 0);
+    updateTraceSum();
+  }
+
+  // ---- the trace box: open while a scan runs; after it, collapsed unless this user opened it last time ----
+  let userKey = "anon";
+  let traceState = "";
+  function hashKey(text) {  // a short, non-reversible key, so the stored key never contains the email
+    let h = 5381;
+    for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  function loadTraceOpen() {
+    let v = null;
+    try { v = window.localStorage.getItem("maya-trace-open-" + userKey); } catch (e) { v = null; }
+    return v === "1";
+  }
+  function saveTraceOpen(open) {
+    try { window.localStorage.setItem("maya-trace-open-" + userKey, open ? "1" : "0"); } catch (e) { /* blocked: not remembered */ }
+  }
+  function setTraceBox(run) {
+    const box = $("trace-box");
+    if (!box) return;
+    const state = run.id + ":" + (run.status === "running" ? "running" : "done");
+    if (state === traceState) return;  // only on a change, so polling never fights the user's choice
+    traceState = state;
+    box.open = run.status === "running" ? true : loadTraceOpen();
   }
 
   // Template text may mark code with `backticks`; render those parts as <code>, all via textContent.
@@ -491,8 +596,11 @@
     clear(holder);
     show("score-card", !!s);
     show("score-note", !!s);
+    show("head-grade", !!s);
     if (!s) return;
     holder.appendChild(scoreRing(s, 116));
+    const head = $("head-grade");
+    if (head) { head.textContent = s.grade; head.className = "head-grade grade-" + s.grade; head.hidden = false; }
     setText("score-label", s.label);
     setText("score-line", "Grade " + s.grade + " · " + s.score + "/100");
     const chips = $("sev-chips");
@@ -584,6 +692,8 @@
     }
     // keep severity order: re-append existing nodes in the server's order (moves, never rebuilds)
     for (const f of findings) list.appendChild(findingCards.get(f.id));
+    runFindings = findings;
+    for (const call of document.querySelectorAll("#trace-list .trace-call")) paintCall(call);
     show("findings-panel", findings.length > 0);
     setText("findings-count", findings.length + " detected by code");
   }
@@ -743,11 +853,28 @@
     for (const e of a.entries || []) {
       const li = el("li", "audit-entry");
       li.appendChild(el("span", "audit-seq", "#" + e.seq));
-      li.appendChild(el("span", "audit-event", e.event));
+      li.appendChild(el("span", "audit-event chip", e.event));
       const details = Object.keys(e.details || {}).filter((k) => typeof e.details[k] !== "object")
         .map((k) => k + "=" + e.details[k]).join(" ");
-      li.appendChild(el("span", "audit-details", details));
-      li.appendChild(el("code", "audit-hash", e.hash));
+      const more = guide(el("button", "audit-details", details), "audit-details", "entry " + e.seq);
+      more.type = "button";
+      more.setAttribute("title", details);
+      more.setAttribute("aria-expanded", "false");
+      more.addEventListener("click", () => {
+        const open = li.classList.toggle("is-open");
+        more.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+      li.appendChild(more);
+      const hash = guide(el("button", "audit-hash", String(e.hash || "").slice(0, 8)), "audit-hash", "entry " + e.seq);
+      hash.type = "button";
+      hash.setAttribute("title", e.hash || "");
+      hash.setAttribute("aria-label", "Copy the full hash of entry " + e.seq);
+      hash.addEventListener("click", () => {
+        if (!navigator.clipboard) { say("Copy failed: your browser blocked clipboard access.", true); return; }
+        navigator.clipboard.writeText(e.hash || "").then(() => toast("Hash of entry " + e.seq + " copied."),
+          () => say("Copy failed: your browser blocked clipboard access.", true));
+      });
+      li.appendChild(hash);
       list.appendChild(li);
     }
     if (!(a.entries || []).length) list.appendChild(el("li", "muted", "No entries yet."));
@@ -758,10 +885,17 @@
     if (!u || !dl) return;
     show("usage-panel", true);
     clear(dl);
-    fact(dl, "Scans", u.runs + " (" + u.model_runs + " with a model)");
-    fact(dl, "Prompt", String(u.prompt_tokens));
-    fact(dl, "Completion", u.completion_tokens + " (" + u.reasoning_tokens + " reasoning)");
-    fact(dl, "Total", String(u.total_tokens));
+    const tile = (label, value, sub) => {
+      const t = el("div", "stat-tile");
+      t.appendChild(el("span", "stat-label", label));
+      t.appendChild(el("span", "stat-value", value));
+      if (sub) t.appendChild(el("span", "stat-sub", sub));
+      dl.appendChild(t);
+    };
+    tile("Scans", String(u.runs), u.model_runs + " with a model");
+    tile("Prompt", String(u.prompt_tokens), "tokens");
+    tile("Completion", String(u.completion_tokens), u.reasoning_tokens + " reasoning");
+    tile("Total", String(u.total_tokens), "tokens");
     setText("usage-cap", "cap " + u.cap_per_run + " tokens per scan");
   }
 
@@ -863,7 +997,9 @@
   async function runRetest() {
     if (!currentRunId) return;
     say("Re-running the same checks...", false);
-    const d = await post("/api/runs/" + currentRunId + "/retest", {});
+    logoScanning(true);
+    let d;
+    try { d = await post("/api/runs/" + currentRunId + "/retest", {}); } finally { logoScanning(false); }
     if (d) { renderFull(d); say("Re-test finished: " + (d.retest ? d.retest.status : "-"), false); toast("Re-test finished."); emit("retest"); }
   }
 
@@ -875,6 +1011,8 @@
     setText("mode-label", run.mode_label);
     const trace = $("trace-list");
     if (trace) trace.classList.toggle("is-running", run.status === "running");
+    logoScanning(run.status === "running");
+    setTraceBox(run);
     show("result-skeleton", run.status === "running");
     show("demo-banner", !!run.demo);
     if (run.error) say(run.error, true);
@@ -895,6 +1033,7 @@
     const u = result.usage || {};
     setText("result-tokens", (u.prompt_tokens || 0) + " prompt, " + (u.completion_tokens || 0) + " completion (" +
       (u.reasoning_tokens || 0) + " reasoning), " + (u.total_tokens || 0) + " total");
+    if (typeof u.total_tokens === "number") updateTraceSum(u.total_tokens);
     setText("result-order", result.order_note || "");
     const list = $("claims-list");
     clear(list);
@@ -970,15 +1109,20 @@
   }
 
   function resetRunPanels() {
+    logoScanning(false);  // another asset: its own run (if any) sets this again
     clear($("trace-list"));
     clear($("findings-list"));
     stepGroups.clear();
     findingCards.clear();
+    runFindings = [];
+    traceTokens = 0;
+    traceState = "";
+    setText("trace-sum", "");
     traceNext = 0;
     for (const id of ["run-panel", "findings-panel", "result-panel", "fixfirst-panel", "proposals-panel",
       "retest-panel", "downloads-panel", "items-panel", "notes-panel", "candidates-panel", "diff-panel", "summary-panel",
       "score-card", "scan-empty", "result-skeleton", "retest-rings",
-      "score-note",
+      "score-note", "head-grade",
       "demo-banner"]) show(id, false);
     show("trace-empty", true);
   }
@@ -1472,6 +1616,22 @@
     if (!$("assets-list")) return;
     const avatar = $("avatar");
     if (avatar) avatar.textContent = user && user.email ? user.email.charAt(0).toUpperCase() : (PREVIEW ? "P" : "?");
+    userKey = hashKey(user && user.email ? user.email : (PREVIEW ? "preview" : "anon"));
+    const traceToggle = document.querySelector("#trace-box > summary");
+    if (traceToggle) traceToggle.addEventListener("click", () => setTimeout(() => saveTraceOpen($("trace-box").open), 0));
+    document.addEventListener("click", (e) => {
+      for (const m of document.querySelectorAll("details.menu[open]")) {
+        if (!m.contains(e.target) || e.target.closest(".menu-panel button, .menu-panel a")) m.open = false;
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      for (const m of document.querySelectorAll("details.menu[open]")) {
+        m.open = false;
+        const sum = m.querySelector("summary");
+        if (sum) sum.focus();
+      }
+    });
     onClick("scan-btn", startScan);
     onClick("scan-empty-btn", startScan);
     onClick("chats-empty-btn", () => { setSidebar(false); if (!PREVIEW) newChat(); });

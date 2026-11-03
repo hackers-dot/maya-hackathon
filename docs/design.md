@@ -523,6 +523,45 @@ See `src/models.py`:
 - **Clinic lines** carry no medical advice and no compliance or privacy-law claims (tested).
 - **Checks:** `scripts/pet_registry_check.py` opens every screen in headless Chrome and fails on any interactive element without an entry; `scripts/pet_review.py` walks every audience x {new, technical} with real mouse events, records every bubble and spoken line to `docs/pet_lines_review.md`, and checks the facts against the API (tour order = severity order, Approve changes nothing, Apply touches only the demo app, re-test only reads).
 
+### Visual system v2 (tokens and rules)
+
+Source: the MAYA Visual Design System (Premium Dark Cyber-Tech + Emerald Neon + subtle glass). All styling lives in `static/style.css`; no fonts, images, CDN or inline styles.
+- **Tokens** (`:root`): bg `#050B0A`, bg2 `#071713`, sidebar `#091311`, card `#0D1B17` (glass: `rgba(13,27,23,.82)`), emerald `#00E887`, neon `#39FF88`, cyan `#00D6C9`, text `#F4F8F6`, secondary `#A2B1AC`, border `#183D30`. Severity: critical `#FF4D5E`, high `#FF963D`, medium `#FFC94A`, low `#48A8FF`, info `#929CA5`, always with dark text on the fill; the score-ring grades use the same family. Spacing 8 px scale, radius 16-20 px, type 30 / 28 / 20 / 17 / 15 / 12.5 / 12 px, system font stack.
+- **Contrast** (`scripts/contrast_check.py`, every pair checked in both themes): the document's muted gray `#687B74` is 4.0:1 on a card, so muted text uses `#7E918A` (5.4:1) and `#687B74` is decoration only. Input borders `#3E7A62` (3:1). Text on the accent is always `#03140D` (10:1 or more).
+- **Background**: a fixed `body::before` (two corner glows and a sparse dot grid masked out of the centre, static) and a `body::after` wave layer (20 s, low opacity, paused when the tab is hidden via `theme.js`, off under reduced motion). No canvas, video or images.
+- **Glass**: `backdrop-filter: blur(12px)` only on the sidebar and on the centered form card; results panels are translucent without blur, popovers are solid.
+- **Buttons**: primary = emerald gradient with dark text; secondary = dark surface with a subtle border; danger = dark red fill with a red border (Reset demo app, Disconnect, Delete); disabled = muted, no glow. 220 ms transitions, pressed state, visible focus ring.
+- The light theme uses the same rules with darker accents (all pairs 4.5:1 or more), so the theme toggle stays.
+
+### Result page layout
+
+- **Order**: header, score card (ring and severity chips), Fix first, Findings, Fix proposals, Re-test, connector panels, What changed, Summary for the owner, re-scan reminder, Live trace, Result details, Token usage, Audit log, Quality. That is the DOM order, so keyboard order and the pet tour follow it.
+- **While a scan runs** the Live trace moves directly under the header (CSS `order`, only while `#trace-list.is-running`) and is open. When the run ends it collapses into its summary line (steps, tokens, final status); a click opens it. The choice is remembered in localStorage under `maya-trace-open-<hash of the email>` (the email itself is never stored).
+- **Header**: sticky above 860 px, opaque. It shows a small grade badge, the asset name, the status chip and the mode chip. Actions: Summarize with model, an **Export** menu (the six downloads and the evidence-pack note, same ids), a **More** menu (Reset demo app and Disconnect with danger styling, same handlers and the same confirmation), and **Re-scan** as the only primary button. Menus are native `<details>`; Escape or an outside click closes them.
+- **Trace rows**: one line per tool call (tool pill, arguments cut with an ellipsis and full on hover, result chip). A hit takes the colour of the highest severity it found (model runs: the call's `check_id`; runs without a model: the function's checks at that path, a fixed table). "0 findings" is a muted check mark; two or more zero-finding calls in a row of one step fold into one line.
+- **Tokens and audit**: four stat tiles (scans, prompt, completion with reasoning, total) plus the cap; the audit log is a table in a 360 px scroll box: `#`, event chip, details on one line (full on hover, expands on click), the first 8 characters of the hash (the API's 12 on hover, copied on click). Stacked, so no empty gaps.
+- **Room for the composer**: the column reserves the composer height + 24 px at the bottom. Panels have `scroll-margin-top`, so panels scrolled into view land below the sticky header.
+- **Wide screens** (1280 px and up): a wider column and two columns of finding cards; an open card takes the full width. Evidence blocks scroll sideways inside their box.
+- Checked by `scripts/result_page_check.py` (real mouse and keyboard in headless Chrome, throwaway data).
+
+### The MAYA logo
+
+- **The original artwork.** The logo is the original artwork (the Neon Cyber Cat Emblem, 1254 × 1254 px), shipped unchanged as the static, same-origin file `static/logo/maya-logo.png`. Its SHA-256 is pinned in `tests/test_logo.py`. Next to it are lossless Lanczos copies at 1024, 512 and 64 px (the 64 px copy is the favicon). The art is used as is; only a blinking eyelid overlay and an alpha filter are added on top of it in the page.
+- **Component** (`static/logo.js`): a `<span class="maya-logo">` with two inline SVG layers built with `createElementNS`, both on the original's 1254 × 1254 pixel grid.
+  - The art layer is an `<image>` of the smallest copy that stays sharp at 2× density.
+  - One shared SVG filter makes the art's black background transparent: alpha = 2R + 8G + 4B, clamped, with the colours untouched. A CSS screen blend was tried first and rejected: on the glass card and sidebar (isolated groups with translucent backgrounds) it left a dark square.
+  - Measured fidelity at 1024 px, on black, eyes open (mean absolute difference per channel, 0-255): 0.55 with the first screen-blend version, 1.833 with the alpha filter in use now (R 0.540, G 2.812, B 2.147). The extra difference is the faintest outer glow, which the filter makes partly transparent.
+- **Eyelids** (the top layer): measured on the original. Left eye centre (484, 711), slant +30°, halo 410-575 × 645-759; right eye (772, 712), −30°, halo 683-848 × 646-760; face colour around the eyes `#010F01`.
+  - Each lid is the convex hull of its eye's glow, enlarged 12 %, plus an 18-unit margin (a round-joined stroke) and a soft blur, so the glow halo is covered too.
+  - The lid colour is the colour beside the eyes on each background: page `#050D0A`, sidebar `#091210`, card `#0C1916`; light theme `#010F01`, on the logo's dark square.
+  - Closed = `scaleY(1)` around each lid's centre; open = `scaleY(0)`.
+- **Blink**: one scheduler for every logo on the page. Each blink waits a random 3-6 s (`setTimeout`), closes over 90 ms and opens over 140 ms; one in five is a double blink. It pauses while the tab is hidden. It is disabled when the operating system asks for reduced motion (`prefers-reduced-motion: reduce`; Chrome on Windows reports this when "Animation effects" is off), and the eyes then stay open. The eyes brighten softly when the pointer enters the logo.
+- **Scanning**: only the polled run state (`running`) and the re-test request call `MayaLogo.setScanning()`. While it is on, a soft green glow behind the art pulses; when it ends it fades out over 0.8 s. The artwork itself is never distorted. Under reduced motion the glow is static.
+- **Placement**: sidebar 44 px with the wordmark "MAYA" (last A `#00E887`); sign-in top left 48 px with "AI SECURITY ASSISTANT"; chat home 112 px; centered cards 64 px; result header 36 px; favicon `maya-logo-64.png`; titles "MAYA - <screen>".
+  - The printable report shows the art as a same-origin image on its dark brand bar.
+  - The downloaded report and the client report have no logo: they are single self-contained files, and an image would need a `data:` URL or an external link.
+- **Usage** (from the logo board): dark or high-contrast backgrounds only (in the light theme it sits on a dark rounded square); never stretch, skew or recolour it; keep clear space around it; add no text or elements to it; do not put it on every card. The logo is not interactive (`aria-hidden`).
+
 ## Model provider
 
 An OpenAI-compatible chat endpoint (`config.yaml`: base_url, model, api_key_env, reasoning_effort=low, max_tokens=1500). The model always emits reasoning, so the client separates reasoning (a separate field or inline `<think>` text) from the final answer. Only the answer is used. Reasoning and the API key are never logged. The client supports `reasoning_effort`, `tools`/`tool_choice` and `response_format`, and it returns `tool_calls`, `finish_reason` and the usage dict. `MockProvider` (demo=True) can replay a script of replies for offline runs and tests.

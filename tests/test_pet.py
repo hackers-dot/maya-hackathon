@@ -146,12 +146,14 @@ def test_pet_art_is_code_only_and_safe():
         assert bad not in js, bad
     assert not re.search(r"data:[a-z]+/", js)  # no data: URLs (raster or otherwise)
     assert "createElementNS" in js and ".setAttribute(\"style\"" not in js
-    assert not [p.name for p in STATIC_DIR.iterdir() if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".gif", ".webp")]
+    # the pet is code only; the one raster asset in static/ is the logo artwork (logo/, pinned in test_web/test_logo)
+    assert not [p.name for p in STATIC_DIR.rglob("*") if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".gif", ".webp")
+                and p.parent.name != "logo"]
     sheet = (STATIC_DIR / "pet-sheet.js").read_text(encoding="utf-8")
     assert "innerHTML" not in sheet and "textContent" in sheet
     css = (STATIC_DIR / "style.css").read_text(encoding="utf-8")
     assert "@media (prefers-reduced-motion: reduce)" in css and "animation: none !important" in css
-    assert "url(/static/favicon.svg)" in css  # the shield "M" emblem is the logo mark
+    assert "url(/static/logo/maya-logo-64.png)" in css  # the small mark beside chat answers is the logo art (64 px copy)
 
 
 def test_pet_on_every_page_and_contact_sheet_only_in_preview(tmp_path):

@@ -28,9 +28,9 @@ DEFAULT_PORT = 8090
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 EVAL_SUMMARY = Path(__file__).resolve().parent.parent.parent / "docs" / "eval_results.json"
-STATIC_NAME = re.compile(r"^[a-z0-9_-]+\.(html|js|css|svg)$")
+STATIC_NAME = re.compile(r"^(?:[a-z0-9_-]+\.(html|js|css|svg)|logo/[a-z0-9_-]+\.(png))$")  # one sub-folder: the logo art
 CONTENT_TYPES = {"html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8",
-                 "css": "text/css; charset=utf-8", "svg": "image/svg+xml"}
+                 "css": "text/css; charset=utf-8", "svg": "image/svg+xml", "png": "image/png"}
 # test-only files: served only when the server runs in --ui-preview mode (404 otherwise)
 PREVIEW_ONLY_STATIC = {"pet-sheet.html", "pet-sheet.js"}
 COOKIE = "maya_session"

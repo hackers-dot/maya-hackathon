@@ -73,6 +73,10 @@ MAYA, the project's own character, lives on every signed-in page as a small pet:
 - **Checked here:** headless Chrome on this Windows machine found 24 voices, including Microsoft Heera (en-IN, female, used by default) and Zira (en-US, female). A test sentence fired start, word-boundary and end events.
 - **Not tested live:** how the voices actually sound, the microphone, the feel of the animations and dragging by hand.
 
+## Visual design
+
+MAYA uses one visual language across all screens: a deep black-to-emerald background, emerald and cyan accents, and translucent cards. The text on bright buttons and severity badges is always dark. Severity has one colour per level everywhere: critical red, high orange, medium amber, low blue, info gray. Every text and badge colour pair is checked for contrast (`scripts/contrast_check.py`; at least 4.5:1, or 3:1 for borders and large text). The effects are plain CSS: two corner glows, a faint dot grid kept away from the centre, and one slow wave layer that pauses when the tab is hidden and stops under reduced motion. Only the sidebar and the centered form card are blurred. The app uses system fonts and no external assets, and the light theme follows the same rules.
+
 ## Build log
 
 - **2026-10-27 (Day 1):** Repo scaffold, design doc, `Finding` model, target scope guard (loopback or verified targets only), OpenAI-compatible model client that keeps reasoning separate from the final answer, and offline tests.
@@ -212,6 +216,17 @@ MAYA, the project's own character, lives on every signed-in page as a small pet:
   - `scripts/pet_review.py` walked five audience x level combinations with real mouse events (shop/new, clinic/new, developer/technical, company/new, other/new; 655 lines) and checked 26 facts against the running app, with no mismatch. After reading them, 29 sentences were rewritten and the tour got audience wording for every finding; 14 hover lines were rewritten earlier. The other five combinations were not walked in a browser, because RAM was short; their tour and onboarding lines are listed in `docs/pet_lines_review.md`, generated from the API.
   - One wrong data line fixed: Disconnect said it deletes your data; it removes the site, its reminder and its verified status, and past scans stay until "Delete my data".
   - The Chrome-driven scripts now stop the whole Chrome process tree; before, its child processes stayed alive after each run.
+- **2026-11-02 (Visual v2: result page layout):** New tokens and shell, and a reorganised result page. Nothing was added or removed.
+  - Tokens from the MAYA Visual Design System: palette, severity colours with dark text, 8 px spacing, 16-20 px radius, type scale, glass sidebar and form card, emerald primary buttons, danger and disabled states. The design's muted gray failed contrast on cards (4.0:1), so muted text is a lighter gray (5.4:1).
+  - Result page: score, Fix first and findings come first. The live trace is on top only while a scan runs, then collapses to one line (steps, tokens, status); your choice is remembered.
+  - One sticky action bar: Re-scan is the only primary button, the downloads are in an Export menu, and Reset demo app and Disconnect are in a More menu with danger styling (same handlers).
+  - Compact trace rows with severity-coloured result chips; zero-finding calls fold.
+  - Token tiles and a one-line-per-entry audit table in a scroll box. Room for the composer at the bottom. Two columns of findings on wide screens.
+  - `scripts/result_page_check.py` walks it with real mouse and keyboard events: menus, trace collapse, approve all, apply, re-test, and the pet tour (score, 12 findings in severity order, Fix first, Approve).
+- **2026-11-03 (Brand):** The original MAYA logo artwork, with blinking eyes.
+  - The logo is the original artwork: a byte-identical static PNG (same-origin) plus lossless 1024, 512 and 64 px copies, with a blinking eyelid overlay and an alpha filter on top. The filter makes the art's black background transparent. Measured on black with the eyes open, the mean difference from the original is 1.833 out of 255 with the filter (0.55 with the earlier screen blend).
+  - The eyes blink through two eyelids measured on the artwork (centres, angles, glow size and the face colour around the eyes), so the glow disappears too. One scheduler runs for all logos: every 3-6 s at random, sometimes twice, paused in a hidden tab. The blink is disabled when the OS "reduce motion" setting is on (on Windows: Animation effects off), and the eyes stay open.
+  - The logo appears in the sidebar (44 px), sign-in (48 px), the chat home (112 px), the cards (64 px), the result header (36 px), the favicon (64 px PNG) and the printable report. A soft glow pulses only while a real scan or re-test runs.
 
 ## License
 

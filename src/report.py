@@ -465,7 +465,10 @@ def to_html(report: dict, printable: bool = False) -> str:
          f"<title>MAYA report</title>{head}</head><body>"
          + ('<p class="print-bar"><button id="print-btn" type="button">Print or save as PDF</button> '
             "Use your browser's print dialog and choose \"Save as PDF\".</p>" if printable else "")
-         + "<h1>MAYA report</h1>"]
+         # printable (served by MAYA): the logo art as a same-origin image on a dark square. The downloaded file stays
+         # self-contained (no image: it would need a data: URL or an external link).
+         + ('<header class="brandbar"><img class="brand-logo" src="/static/logo/maya-logo-512.png" alt="" width="44" '
+            'height="44"><h1>MAYA report</h1></header>' if printable else "<h1>MAYA report</h1>")]
     if report["demo"]:
         b.append(f"<p class=\"banner\">{_e(DEMO_BANNER)}</p>")
     b.append(f"<ul><li>Model: <code>{_e(report['model'])}</code></li>"

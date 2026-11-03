@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>MAYA · Chat</title>
-<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<title>MAYA - Chat</title>
+<link rel="icon" href="/static/logo/maya-logo-64.png" type="image/png">
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/theme.js"></script>
+<script src="/static/logo.js" defer></script>
 <script src="/static/app.js" defer></script>
 <script src="/static/pet-lines.js" defer></script>
 <script src="/static/pet-brain.js" defer></script>
@@ -18,7 +19,7 @@
 <div class="shell">
 <aside id="sidebar" class="sidebar" aria-label="Sidebar">
 <div class="side-top">
-<a class="brand" href="/chat" data-guide="brand-home"><span class="mark" aria-hidden="true"></span><span class="wordmark">MAYA</span></a>
+<a class="brand" href="/chat" data-guide="brand-home"><span class="maya-logo-slot" data-size="44" aria-hidden="true"></span><span class="wordmark">MAY<span class="wm-a">A</span></span></a>
 <button id="sidebar-close" class="icon-btn only-mobile" type="button" aria-label="Close sidebar">&#10005;</button>
 </div>
 <button id="new-chat" class="btn btn-secondary new-chat" type="button">&#65291; New chat</button>
@@ -59,12 +60,12 @@
 <main class="main">
 <header class="topbar">
 <button id="sidebar-open" class="icon-btn only-mobile" type="button" aria-label="Open sidebar" aria-controls="sidebar" aria-expanded="false">&#9776;</button>
-<span class="brand"><span class="wordmark">MAYA</span></span>
+<span class="brand"><span class="wordmark">MAY<span class="wm-a">A</span></span></span>
 </header>
 <section class="conversation" aria-label="Conversation">
 <div class="column">
 <div id="home" class="empty-state">
-<span class="mark big" aria-hidden="true"></span>
+<span class="maya-logo-slot logo-hero" data-size="112" aria-hidden="true"></span>
 <h1 class="greeting">How can MAYA help today?</h1>
 <p class="sub">Security checks and answers for the sites you own.</p>
 <div class="chips home-chips">
@@ -194,11 +195,31 @@
 <section id="asset-view" class="asset-view" hidden aria-live="polite">
 <p id="demo-banner" class="banner" hidden>DEMO: these results come from MAYA's deliberately vulnerable demo app on loopback, not a real site.</p>
 <div class="asset-head">
-<div class="asset-title"><h1 id="av-label" class="title"></h1><span id="av-status" class="chip"></span></div>
-<div class="asset-actions"><span id="mode-label" class="mode-label"></span>
-<button id="reset-demo-btn" class="btn btn-quiet" type="button" hidden disabled>Reset demo app</button>
-<button id="disconnect-btn" class="btn btn-quiet" type="button">Disconnect</button>
+<div class="asset-title"><span class="maya-logo-slot" data-size="36" aria-hidden="true"></span><span id="head-grade" class="head-grade" hidden aria-hidden="true"></span><h1 id="av-label" class="title"></h1><span id="av-status" class="chip"></span><span id="mode-label" class="chip mode-label"></span></div>
+<div class="asset-actions">
 <button id="summarize-btn" class="btn btn-secondary" type="button" hidden>Summarize with model</button>
+<details id="export-menu" class="menu"><summary class="btn btn-secondary" data-guide="export-menu">Export</summary>
+<section id="downloads-panel" class="menu-panel" hidden>
+<div class="panel-head"><h2>Downloads</h2><span class="panel-meta">evidence pack is re-verified on every download</span></div>
+<div class="actions downloads">
+<a id="dl-pack" class="btn btn-secondary" href="#" download>Download evidence pack</a>
+<a id="dl-report" class="btn btn-secondary" href="#" download>Download report</a>
+<a id="dl-report-md" class="btn btn-quiet" href="#" download>Report as Markdown</a>
+</div>
+<div class="actions downloads">
+<a id="dl-issues" class="btn btn-secondary" href="#" download>Download all as issues.md</a>
+<a id="dl-client" class="btn btn-secondary" href="#" download>Download client report</a>
+<a id="dl-print" class="btn btn-quiet" href="#" target="_blank" rel="noopener">Printable report (save as PDF)</a>
+</div>
+<p class="hint">The pack holds the stored (redacted) evidence, a manifest of sha256 hashes and a hash-chained custody log. Tamper-evident, not tamper-proof (unsigned). Provenance is self-reported. Designed to support review; not legally validated.</p>
+</section>
+</details>
+<details id="more-menu" class="menu"><summary class="btn btn-quiet" data-guide="more-menu">More</summary>
+<div class="menu-panel menu-danger">
+<button id="reset-demo-btn" class="btn btn-danger" type="button" hidden disabled>Reset demo app</button>
+<button id="disconnect-btn" class="btn btn-danger" type="button">Disconnect</button>
+</div>
+</details>
 <button id="scan-btn" class="btn btn-primary" type="button" disabled>Run security scan</button></div>
 </div>
 <p id="reminder-banner" class="banner" hidden></p>
@@ -218,11 +239,6 @@
 <h2>No scans yet</h2>
 <p>Run a read-only scan. Every finding comes with the stored response that proves it.</p>
 <button id="scan-empty-btn" class="btn btn-primary" type="button">Run your first scan</button>
-</section>
-<section id="run-panel" class="panel" hidden>
-<div class="panel-head"><h2>Live trace</h2><span id="run-status" class="chip"></span><span id="run-model" class="panel-meta"></span></div>
-<ol id="trace-list" class="trace"></ol>
-<div id="trace-empty" class="skeleton" aria-label="Waiting for the first step"><div class="skel is-card"></div><div class="skel w80"></div><div class="skel w60"></div></div>
 </section>
 <section id="result-skeleton" class="panel" hidden aria-label="Checks in progress">
 <div class="panel-head"><h2>Checks in progress</h2><span class="panel-meta">findings appear as each check finishes</span></div>
@@ -293,6 +309,17 @@
 <input id="note-approver" type="text" autocomplete="name" maxlength="80" placeholder="Your name"></div>
 <div id="notes-list" class="proposal-list"></div>
 </section>
+<section id="diff-panel" class="panel" hidden>
+<div class="panel-head"><h2>What changed</h2><span id="diff-meta" class="panel-meta"></span></div>
+<div id="diff-counts" class="chips diff-counts"></div>
+<div class="diff-grid">
+<div class="diff-col"><h3 class="sub-heading">New</h3><ul id="diff-new" class="diff-list"></ul></div>
+<div class="diff-col"><h3 class="sub-heading">Resolved</h3><ul id="diff-resolved" class="diff-list"></ul></div>
+<div class="diff-col"><h3 class="sub-heading">Severity changed</h3><ul id="diff-changed" class="diff-list"></ul></div>
+</div>
+<h3 class="sub-heading">Score history (heuristic score of the checks run)</h3>
+<ol id="score-history" class="diff-list"></ol>
+</section>
 <section id="summary-panel" class="panel" hidden>
 <div class="panel-head"><h2>Summary for the owner</h2><span class="panel-meta">built only from stored results</span></div>
 <div class="role-toggle" role="group" aria-label="Summary language">
@@ -313,30 +340,12 @@
 </div>
 <p id="reminder-text" class="hint"></p>
 </section>
-<section id="diff-panel" class="panel" hidden>
-<div class="panel-head"><h2>What changed</h2><span id="diff-meta" class="panel-meta"></span></div>
-<div id="diff-counts" class="chips diff-counts"></div>
-<div class="diff-grid">
-<div class="diff-col"><h3 class="sub-heading">New</h3><ul id="diff-new" class="diff-list"></ul></div>
-<div class="diff-col"><h3 class="sub-heading">Resolved</h3><ul id="diff-resolved" class="diff-list"></ul></div>
-<div class="diff-col"><h3 class="sub-heading">Severity changed</h3><ul id="diff-changed" class="diff-list"></ul></div>
-</div>
-<h3 class="sub-heading">Score history (heuristic score of the checks run)</h3>
-<ol id="score-history" class="diff-list"></ol>
-</section>
-<section id="downloads-panel" class="panel" hidden>
-<div class="panel-head"><h2>Downloads</h2><span class="panel-meta">evidence pack is re-verified on every download</span></div>
-<div class="actions downloads">
-<a id="dl-pack" class="btn btn-primary" href="#" download>Download evidence pack</a>
-<a id="dl-report" class="btn btn-secondary" href="#" download>Download report</a>
-<a id="dl-report-md" class="btn btn-quiet" href="#" download>Report as Markdown</a>
-</div>
-<div class="actions downloads">
-<a id="dl-issues" class="btn btn-secondary" href="#" download>Download all as issues.md</a>
-<a id="dl-client" class="btn btn-secondary" href="#" download>Download client report</a>
-<a id="dl-print" class="btn btn-quiet" href="#" target="_blank" rel="noopener">Printable report (save as PDF)</a>
-</div>
-<p class="hint">The pack holds the stored (redacted) evidence, a manifest of sha256 hashes and a hash-chained custody log. Tamper-evident, not tamper-proof (unsigned). Provenance is self-reported. Designed to support review; not legally validated.</p>
+<section id="run-panel" class="panel run-panel" hidden>
+<details id="trace-box" class="trace-box" open>
+<summary class="panel-head trace-toggle" data-guide="trace-toggle"><h2>Live trace</h2><span id="run-status" class="chip"></span><span id="trace-sum" class="trace-sum"></span><span id="run-model" class="panel-meta"></span></summary>
+<ol id="trace-list" class="trace"></ol>
+<div id="trace-empty" class="skeleton" aria-label="Waiting for the first step"><div class="skel is-card"></div><div class="skel w80"></div><div class="skel w60"></div></div>
+</details>
 </section>
 <section id="result-panel" class="panel" hidden>
 <div class="panel-head"><h2>Result</h2><span id="result-order" class="panel-meta"></span></div>
@@ -356,10 +365,10 @@
 <h3 class="sub-heading">Claims not included</h3>
 <ul id="dropped-list" class="dropped"></ul>
 </section>
-<div class="panel-row">
+<div class="panel-stack">
 <section id="usage-panel" class="panel" hidden>
 <div class="panel-head"><h2>Token usage</h2><span id="usage-cap" class="panel-meta"></span></div>
-<dl id="usage-facts" class="facts"></dl>
+<div id="usage-facts" class="stat-tiles"></div>
 </section>
 <section id="audit-panel" class="panel" hidden>
 <div class="panel-head"><h2>Audit log</h2><span id="audit-status" class="chip"></span><span id="audit-count" class="panel-meta"></span></div>
